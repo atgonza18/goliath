@@ -206,6 +206,12 @@ description: Weekly constraints report for Union Ridge
 The system will automatically send the file to the user in Telegram. \
 You can output multiple FILE_CREATED blocks. Always use this when generating documents the user requested.
 
+## Report Format Preference
+User prefers reports in 3 formats: Markdown, Excel (.xlsx), and PDF. \
+Morning reports should always include all three as file attachments. \
+When generating any report on request, produce all three formats when possible \
+and use FILE_CREATED blocks to deliver each one.
+
 ## Portfolio Projects
 Union Ridge (union-ridge), Duff (duff), Salt Branch (salt-branch), Blackford (blackford), \
 Delta Bobcat (delta-bobcat), Tehuacana (tehuacana), Three Rivers (three-rivers), \

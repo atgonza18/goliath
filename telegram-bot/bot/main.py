@@ -16,6 +16,7 @@ from bot.services.preferences import PreferenceStore
 from bot.services.webhook_server import start_webhook_server
 from bot.services.queue_processor import run_queue_processor
 from bot.services.proactive import schedule_proactive_sessions
+from bot.scheduler import create_scheduler
 from bot.utils.logging_config import setup_logging
 
 logger = logging.getLogger(__name__)
@@ -81,6 +82,27 @@ async def post_init(application) -> None:
             schedule_proactive_sessions(application.job_queue, chat_id)
     else:
         logger.warning("REPORT_CHAT_ID not set — queue processor and proactive sessions disabled")
+
+    # Start the internal async scheduler (replaces system crontab)
+    scheduler = create_scheduler(bot=application.bot)
+    application.bot_data["scheduler"] = scheduler
+    task = scheduler.start()
+    _background_tasks.append(task)
+    logger.info("Internal async scheduler started")
+
+    # Send startup notification
+    if REPORT_CHAT_ID:
+        try:
+            chat_id = int(REPORT_CHAT_ID)
+            await application.bot.send_message(
+                chat_id=chat_id,
+                text="<b>GOLIATH is online.</b>\n"
+                     "Bot restarted and all systems operational.\n\n"
+                     f"<i>Scheduler active with {len(scheduler.list_tasks())} tasks.</i>",
+                parse_mode="HTML",
+            )
+        except Exception as e:
+            logger.warning(f"Failed to send startup notification: {e}")
 
 
 async def _cleanup_conversations(context: ContextTypes.DEFAULT_TYPE) -> None:

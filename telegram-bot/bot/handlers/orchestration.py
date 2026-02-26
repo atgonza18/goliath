@@ -1,5 +1,6 @@
 import asyncio
 import logging
+import random
 import subprocess
 import time
 import tempfile
@@ -14,6 +15,25 @@ from bot.services.voice import text_to_voice
 from bot.utils.formatting import chunk_message
 
 logger = logging.getLogger(__name__)
+
+# Dynamic status messages — Nimrod's personality: blunt, funny, gets stuff done
+STATUS_MESSAGES = [
+    "\U0001f504 Firing up the brain cells... gimme a sec.",
+    "\U0001f9e0 Processing... pulling memories and dispatching agents.",
+    "\u26a1 On it \u2014 running the analysis now.",
+    "\U0001f50d Digging into this one...",
+    "\U0001f4ad Thinking through this... back in a moment.",
+    "\U0001f680 Spinning up the agents. Hold tight.",
+    "\U0001f477 Got it. Let me put the team on this.",
+    "\U0001f3af Locking in... give me a minute.",
+    "\u2699\ufe0f Cranking the gears. This'll just take a sec.",
+    "\U0001f4a1 Interesting one. Let me dig in.",
+    "\U0001f50e Pulling up the data and running the numbers...",
+    "\U0001f916 Agents assembling. Stand by.",
+    "\U0001f4ca On it \u2014 crunching through the portfolio now.",
+    "\U0001f527 Working on it. The hamsters are running full speed.",
+    "\U0001f30d Scanning the empire... one moment.",
+]
 
 # Directory for downloaded photos/files
 UPLOADS_DIR = REPO_ROOT / "telegram-bot" / "data" / "uploads"
@@ -103,7 +123,7 @@ async def _run_orchestrator(
     orchestrator = NimrodOrchestrator(memory=memory)
 
     working_msg = await update.message.reply_text(
-        "On it... let me look into this."
+        random.choice(STATUS_MESSAGES)
     )
 
     run_start = time.monotonic()
@@ -163,7 +183,7 @@ async def _run_orchestrator(
             logger.info(f"Restart requested: {restart_reason}")
             # Trigger restart AFTER response is sent — start.sh kills current process and starts new one
             subprocess.Popen(
-                ["bash", "/workspaces/goliath/telegram-bot/start.sh"],
+                ["bash", "/opt/goliath/telegram-bot/start.sh"],
                 start_new_session=True,
                 stdout=subprocess.DEVNULL,
                 stderr=subprocess.DEVNULL,

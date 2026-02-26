@@ -1,7 +1,16 @@
 # GOLIATH Cron Jobs
 # Timezone: US Central (CT) — ensure server TZ is set or use TZ= prefix
 #
-# Install: Update GOLIATH_ROOT below, then:
+# NOTE: These jobs are now handled by the bot's internal async scheduler
+# (see telegram-bot/bot/scheduler.py). This crontab file is kept as a
+# FALLBACK only — for environments where the bot is not running.
+#
+# The internal scheduler runs:
+#   - 12:05 AM CT — daily_constraints_folder.py
+#   - 6:00 AM CT  — morning_report.py
+#   - 11:00 PM CT — daily_scan.py
+#
+# Install (if needed as fallback):
 #   crontab cron-jobs/crontab.txt
 # Or append:
 #   crontab -l | cat - cron-jobs/crontab.txt | crontab -
@@ -13,11 +22,11 @@
 
 GOLIATH_ROOT=/opt/goliath
 
-# 6 PM CT — Daily scan of POD, Schedule, Constraints across all 12 projects
-0 0 * * * cd $GOLIATH_ROOT && python3 cron-jobs/daily_scan.py >> cron-jobs/reports/cron.log 2>&1
+# 11 PM CT (05:00 UTC) — Daily scan of POD, Schedule, Constraints across all 12 projects
+0 5 * * * cd $GOLIATH_ROOT && python3 cron-jobs/daily_scan.py >> cron-jobs/reports/cron.log 2>&1
 
-# Midnight CT — Create daily date folder under DSC Constraints & Production Reports
-0 6 * * * cd $GOLIATH_ROOT && python3 cron-jobs/daily_constraints_folder.py >> cron-jobs/reports/cron.log 2>&1
+# 12:05 AM CT (06:05 UTC) — Create daily date folder under DSC Constraints & Production Reports
+5 6 * * * cd $GOLIATH_ROOT && python3 cron-jobs/daily_constraints_folder.py >> cron-jobs/reports/cron.log 2>&1
 
-# 8 AM CT — Send latest report to analyst via Telegram
-0 14 * * * cd $GOLIATH_ROOT && python3 cron-jobs/morning_report.py >> cron-jobs/reports/cron.log 2>&1
+# 6 AM CT (12:00 UTC) — Send morning report (todo + health + scan) to analyst via Telegram
+0 12 * * * cd $GOLIATH_ROOT && python3 cron-jobs/morning_report.py >> cron-jobs/reports/cron.log 2>&1
