@@ -1,0 +1,11 @@
+{
+  "mcpServers": {
+    "constraintspro": {
+      "command": "node",
+      "args": ["/opt/goliath/constraintspro/mcp-server/dist/index.js"],
+      "env": {
+        "CONVEX_URL": "https://charming-cuttlefish-923.convex.cloud"
+      }
+    }
+  }
+}

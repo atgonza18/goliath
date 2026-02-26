@@ -50,3 +50,6 @@ projects/**/*.zip
 dsc-constraints-production-reports/**/*.pdf
 dsc-constraints-production-reports/**/*.png
 dsc-constraints-production-reports/**/*.xlsx
+
+# Cloned repos (MCP servers, external tools)
+constraintspro/
