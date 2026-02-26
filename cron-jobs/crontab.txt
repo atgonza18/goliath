@@ -8,6 +8,7 @@
 # The internal scheduler runs:
 #   - 12:05 AM CT — daily_constraints_folder.py
 #   - 6:00 AM CT  — morning_report.py
+#   - 7:00 PM CT  — folder_cleanup.py
 #   - 11:00 PM CT — daily_scan.py
 #
 # Install (if needed as fallback):
@@ -30,3 +31,6 @@ GOLIATH_ROOT=/opt/goliath
 
 # 6 AM CT (12:00 UTC) — Send morning report (todo + health + scan) to analyst via Telegram
 0 12 * * * cd $GOLIATH_ROOT && python3 cron-jobs/morning_report.py >> cron-jobs/reports/cron.log 2>&1
+
+# 7 PM CT (01:00 UTC) — Folder cleanup scan (duplicates, misplaced files, hygiene)
+0 1 * * * cd $GOLIATH_ROOT && /usr/bin/python3 /opt/goliath/cron-jobs/folder_cleanup.py >> /opt/goliath/cron-jobs/folder_cleanup.log 2>&1

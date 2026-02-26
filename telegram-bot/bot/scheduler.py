@@ -996,6 +996,42 @@ async def task_daily_constraints_folder(scheduler: "Scheduler") -> None:
         logger.exception("Daily constraints folder task error")
 
 
+async def task_folder_cleanup(scheduler: "Scheduler") -> None:
+    """7:00 PM CT — Run folder organization scan and send results to Telegram."""
+    script = CRON_JOBS_DIR / "folder_cleanup.py"
+    if not script.exists():
+        logger.error("folder_cleanup.py not found")
+        return
+
+    try:
+        env = dict(os.environ)
+        env.pop("CLAUDECODE", None)  # Avoid nested session errors
+
+        process = await asyncio.create_subprocess_exec(
+            sys.executable, str(script),
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+            cwd=str(REPO_ROOT),
+            env=env,
+        )
+
+        stdout, stderr = await asyncio.wait_for(
+            process.communicate(), timeout=900  # 15 min max — Claude scan can take a while
+        )
+
+        if process.returncode == 0:
+            logger.info("Folder cleanup scan completed and report sent")
+        else:
+            logger.error(
+                f"folder_cleanup failed (rc={process.returncode}): "
+                f"{stderr.decode(errors='replace')[:200]}"
+            )
+    except asyncio.TimeoutError:
+        logger.error("Folder cleanup scan timed out after 900s")
+    except Exception:
+        logger.exception("Folder cleanup task error")
+
+
 # ------------------------------------------------------------------
 # Helpers
 # ------------------------------------------------------------------
@@ -1050,6 +1086,14 @@ def create_scheduler(bot=None) -> Scheduler:
         minute=5,
         callback=task_daily_constraints_folder,
         description="Create date-stamped constraints folder for the new day",
+    )
+
+    sched.add_task(
+        name="folder_cleanup",
+        hour=19,
+        minute=0,
+        callback=task_folder_cleanup,
+        description="Scan workspace for duplicates, misplaced files, and folder hygiene issues",
     )
 
     return sched
