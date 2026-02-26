@@ -1,0 +1,4 @@
+{
+  "name": "GOLIATH - DSC Operations",
+  "postStartCommand": "bash /workspaces/goliath/telegram-bot/start.sh"
+}
