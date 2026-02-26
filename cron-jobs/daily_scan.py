@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """
-Daily Project Scan — 6 PM CT
-Crontab: 0 18 * * * cd /opt/goliath && python3 cron-jobs/daily_scan.py >> cron-jobs/reports/cron.log 2>&1
+Daily Project Scan — 11 PM CT (run by internal scheduler)
 
 Scans POD, Schedule, and Constraints for all 12 projects.
+Extracts text from PDFs and Excel files so Claude can analyze real data.
 Generates a report with findings and questions for the site team.
 Saves report to cron-jobs/reports/YYYY-MM-DD_daily_scan.md
 """
@@ -25,15 +25,108 @@ PROJECTS = [
     "mayes", "graceland", "pecan-prairie", "duffy-bess",
 ]
 
+# File size limits for extraction (bytes)
+MAX_PDF_SIZE = 10_000_000   # 10 MB
+MAX_EXCEL_SIZE = 10_000_000  # 10 MB
+MAX_TEXT_SIZE = 500_000      # 500 KB
+MAX_EXTRACTED_CHARS = 15_000  # Max chars per file to include in prompt
+
+
+def extract_pdf_text(filepath: Path) -> str | None:
+    """Extract text content from a PDF file using pdfminer.six."""
+    if filepath.stat().st_size > MAX_PDF_SIZE:
+        return None
+    try:
+        from pdfminer.high_level import extract_text
+        text = extract_text(str(filepath))
+        if text and text.strip():
+            return text.strip()[:MAX_EXTRACTED_CHARS]
+        return None
+    except Exception as e:
+        return f"[PDF extraction failed: {e}]"
+
+
+def extract_excel_text(filepath: Path) -> str | None:
+    """Extract text content from an Excel file using openpyxl."""
+    if filepath.stat().st_size > MAX_EXCEL_SIZE:
+        return None
+    try:
+        import openpyxl
+        wb = openpyxl.load_workbook(str(filepath), read_only=True, data_only=True)
+        all_text = []
+        for sheet_name in wb.sheetnames:
+            ws = wb[sheet_name]
+            all_text.append(f"--- Sheet: {sheet_name} ---")
+            row_count = 0
+            for row in ws.iter_rows(values_only=True):
+                if row_count > 500:  # Cap rows per sheet
+                    all_text.append(f"... ({row_count}+ rows, truncated)")
+                    break
+                # Convert row to tab-separated string, skip empty rows
+                values = [str(v) if v is not None else "" for v in row]
+                if any(v.strip() for v in values):
+                    all_text.append("\t".join(values))
+                    row_count += 1
+        wb.close()
+        result = "\n".join(all_text)
+        if result.strip():
+            return result[:MAX_EXTRACTED_CHARS]
+        return None
+    except Exception as e:
+        return f"[Excel extraction failed: {e}]"
+
+
+def extract_xer_text(filepath: Path) -> str | None:
+    """Extract text from XER files (P6 schedule exports — plain text format)."""
+    if filepath.stat().st_size > MAX_TEXT_SIZE:
+        return None
+    try:
+        text = filepath.read_text(errors="replace")
+        if text.strip():
+            return text.strip()[:MAX_EXTRACTED_CHARS]
+        return None
+    except Exception as e:
+        return f"[XER extraction failed: {e}]"
+
+
+def extract_file_content(filepath: Path) -> tuple[str | None, str]:
+    """
+    Attempt to extract readable content from a file.
+    Returns (content_or_none, file_type_label).
+    """
+    suffix = filepath.suffix.lower()
+
+    if suffix == ".pdf":
+        return extract_pdf_text(filepath), "PDF"
+
+    elif suffix in (".xlsx", ".xlsm", ".xls"):
+        return extract_excel_text(filepath), "Excel"
+
+    elif suffix == ".xer":
+        return extract_xer_text(filepath), "XER (P6 Schedule)"
+
+    elif suffix in (".md", ".txt", ".csv", ".json", ".xml", ".log"):
+        if filepath.stat().st_size < MAX_TEXT_SIZE:
+            try:
+                content = filepath.read_text(errors="replace")
+                if content.strip():
+                    return content.strip()[:MAX_EXTRACTED_CHARS], "Text"
+            except Exception:
+                pass
+        return None, "Text"
+
+    else:
+        return None, f"Binary ({suffix})"
+
 
 def collect_project_data() -> str:
-    """Walk each project's POD, Schedule, Constraints folders and collect file info."""
+    """Walk each project's POD, Schedule, Constraints folders and extract content."""
     sections = []
 
     for project_key in PROJECTS:
         project_path = PROJECTS_DIR / project_key
         project_lines = [f"## {project_key}"]
-        has_data = False
+        has_readable_data = False
 
         for folder in SCAN_FOLDERS:
             folder_path = project_path / folder
@@ -50,26 +143,37 @@ def collect_project_data() -> str:
                 project_lines.append(f"### {folder}/\n_No data files_\n")
                 continue
 
-            has_data = True
             project_lines.append(f"### {folder}/ ({len(files)} file(s))")
 
             for fp in files:
                 rel = fp.relative_to(project_path)
                 size_kb = fp.stat().st_size / 1024
-                project_lines.append(f"- `{rel}` ({size_kb:.1f} KB)")
+                content, file_type = extract_file_content(fp)
 
-                # Include content for small text files
-                if fp.suffix in (".md", ".txt", ".csv") and fp.stat().st_size < 50_000:
-                    try:
-                        content = fp.read_text(errors="replace")
-                        project_lines.append(f"```\n{content[:5000]}\n```")
-                    except Exception:
-                        pass
+                project_lines.append(f"- `{rel}` ({size_kb:.1f} KB, {file_type})")
+
+                if content and not content.startswith("["):
+                    has_readable_data = True
+                    # Include extracted content
+                    project_lines.append(
+                        f"<extracted_content file=\"{rel}\">\n{content}\n</extracted_content>"
+                    )
+                elif content and content.startswith("["):
+                    # Extraction error message
+                    project_lines.append(f"  {content}")
+                else:
+                    project_lines.append(
+                        f"  _Could not extract text content from this {file_type} file._"
+                    )
 
             project_lines.append("")
 
-        if not has_data:
-            project_lines.append("_No data files in POD, Schedule, or Constraints._\n")
+        if not has_readable_data:
+            project_lines.append(
+                "\n⚠️ NO READABLE DATA EXTRACTED for this project. "
+                "Files exist but no text could be extracted from them. "
+                "DO NOT fabricate analysis — report 'no readable data available' for this project."
+            )
 
         sections.append("\n".join(project_lines))
 
@@ -78,33 +182,59 @@ def collect_project_data() -> str:
 
 def run_claude_scan(project_data: str) -> str:
     """Send collected data to Claude CLI for analysis and report generation."""
+    today_str = datetime.now().strftime('%B %d, %Y')
     prompt = f"""You are the GOLIATH DSC Operations Agent running a scheduled end-of-day scan.
 
 Below is the current state of POD, Schedule, and Constraints data across all 12 projects.
+Data has been extracted from PDF, Excel, XER, and text files where possible.
 
-Analyze this data and produce a report structured as follows:
+## CRITICAL RULES — READ THESE FIRST
 
-# Daily Scan Report — {datetime.now().strftime('%B %d, %Y')}
+1. **DO NOT HALLUCINATE OR FABRICATE DATA.** If a project has no extracted content (only file names
+   and sizes), you MUST report: "No readable data available — files exist but could not be extracted.
+   Manual review needed." Do NOT invent numbers, dates, forecasts, or analysis.
+
+2. **Only analyze what you can actually see.** If you have extracted text from a PDF or Excel file,
+   analyze that data. If you only have a filename and file size, say so and move on.
+
+3. **Be explicit about data sources.** For every finding, cite the specific file and data point
+   you're referencing. If you can't cite a source, don't make the claim.
+
+4. **Distinguish between data and inference.** When you calculate or infer something from the data,
+   label it clearly: "Based on the extracted data from [file], ..."
+
+5. **When in doubt, say "insufficient data."** It is far better to say "I don't have enough data
+   to assess this" than to generate a plausible-sounding but fabricated analysis.
+
+## Report Format
+
+# Daily Scan Report — {today_str}
 
 ## Executive Summary
-(2-3 sentences on overall portfolio health)
+(2-3 sentences on overall portfolio health BASED ON AVAILABLE DATA. If most projects lack
+readable data, say that clearly.)
 
 ## Findings by Project
-For EACH project that has data, provide:
-- **POD**: Production status, any variances vs plan
-- **Schedule**: Float status, any erosion or compression risks
-- **Constraints**: Active blockers, aging items, resolution status
-
-Skip projects with no data files (just note "No data — awaiting upload").
+For EACH project:
+- If readable data was extracted: Analyze POD, Schedule, and Constraints based on the actual data
+- If NO readable data: Report "No readable data available — [X] files exist but content could
+  not be extracted. File types: [list types]. Recommend uploading text/CSV versions or having
+  subagents analyze these files interactively."
+- NEVER fabricate metrics, dates, or projections
 
 ## Portfolio-Level Concerns
-(Cross-project risks, resource conflicts, weather impacts, etc.)
+(Cross-project risks based on ACTUAL DATA ONLY. If insufficient data, say so.)
 
 ## Questions for Site Teams
-For EACH project with findings, list 2-4 specific questions the DSC analyst should raise with that site team. These should be actionable, targeted questions about the data.
+For projects WITH data: 2-4 specific, data-driven questions
+For projects WITHOUT data: "What format are your reports in? Can you provide CSV/text exports?"
 
 ## Action Items
-(Recommended next steps for the DSC analyst)
+(Recommended next steps based on what was actually found)
+
+## Data Coverage Summary
+List how many projects had readable data vs. how many had only filenames.
+This helps track our data ingestion progress.
 
 ---
 
@@ -120,7 +250,6 @@ PROJECT DATA:
         "--print",
         "--dangerously-skip-permissions",
         "--output-format", "text",
-        # Note: removed --max-budget-usd flag (causes budget exceeded errors on Claude Max plan)
         prompt,
     ]
 
@@ -147,9 +276,10 @@ def main():
 
     print(f"[{datetime.now().isoformat()}] Starting daily scan...")
 
-    # Collect data from all projects
-    print("Collecting project data...")
+    # Collect data from all projects (with PDF/Excel extraction)
+    print("Collecting project data (extracting from PDFs, Excel, XER, text files)...")
     project_data = collect_project_data()
+    print(f"Collected {len(project_data)} chars of project data")
 
     # Run Claude analysis
     print("Running Claude analysis...")
