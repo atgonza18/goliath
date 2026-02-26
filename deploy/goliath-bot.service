@@ -1,0 +1,41 @@
+[Unit]
+Description=GOLIATH Telegram Bot — Autonomous Solar Portfolio Management
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=goliath
+Group=goliath
+WorkingDirectory=/opt/goliath/telegram-bot
+ExecStart=/opt/goliath/venv/bin/python -m bot.main
+ExecStop=/bin/kill -SIGTERM $MAINPID
+
+# Environment
+EnvironmentFile=/opt/goliath/.env
+
+# Auto-restart on crash
+Restart=always
+RestartSec=10
+
+# Logging (goes to journald; view with: journalctl -u goliath-bot -f)
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=goliath-bot
+
+# Security hardening
+NoNewPrivileges=yes
+ProtectSystem=strict
+ReadWritePaths=/opt/goliath
+ProtectHome=yes
+PrivateTmp=yes
+
+# Resource limits
+MemoryMax=1G
+CPUQuota=80%
+
+# Watchdog: if no response in 5 min, systemd kills and restarts
+WatchdogSec=300
+
+[Install]
+WantedBy=multi-user.target

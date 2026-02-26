@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Morning Report Delivery — 8 AM CT
-Crontab: 0 8 * * * cd /workspaces/goliath && /workspaces/goliath/cron-jobs/.venv/bin/python cron-jobs/morning_report.py
+Crontab: 0 8 * * * cd /opt/goliath && python3 cron-jobs/morning_report.py >> cron-jobs/reports/cron.log 2>&1
 
 Finds the latest daily scan report and sends it to the DSC analyst via Telegram.
 """
@@ -100,7 +100,7 @@ def main():
 
     if not TELEGRAM_CHAT_ID:
         print("Error: REPORT_CHAT_ID (or ALLOWED_CHAT_IDS) not set in .env")
-        print("Add REPORT_CHAT_ID=<your-chat-id> to /workspaces/goliath/.env")
+        print("Add REPORT_CHAT_ID=<your-chat-id> to .env in the repo root")
         return 1
 
     # Use the first chat ID if multiple are configured

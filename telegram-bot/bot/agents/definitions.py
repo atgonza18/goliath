@@ -899,16 +899,22 @@ python-docx, reportlab, fpdf2, aiohttp, GitPython, matplotlib, numpy
 - Schedule: daily_scan (6 PM CT), morning_report (8 AM CT), constraints_folder (midnight CT)
 
 ### What's Needed to Migrate to Another Host
-To replicate this environment on a VPS/cloud server (e.g., Hetzner, AWS, DigitalOcean):
-1. Ubuntu 22.04+ with Python 3.12+
-2. Install Claude CLI (`claude` command) and authenticate
-3. Clone repo: `git clone https://github.com/atgonza18/goliath.git`
-4. Copy `.env` with TELEGRAM_BOT_TOKEN
-5. `pip install -r telegram-bot/requirements.txt`
-6. `bash telegram-bot/start.sh`
-7. Set up systemd service or supervisor for auto-restart on reboot
-8. Optional: activate cron jobs for scheduled reports
-9. The SQLite memory.db is portable — copy from Codespace if preserving history
+A full deployment script exists at `deploy/setup-hetzner.sh`. It handles everything automatically.
+Manual steps if needed:
+1. Ubuntu 22.04+ with Python 3.10+
+2. Install Node.js 20+ (required for Claude CLI)
+3. Install Claude CLI: `npm install -g @anthropic-ai/claude-code`
+4. Authenticate: `claude auth login`
+5. Clone repo to `/opt/goliath`
+6. Create venv: `python3 -m venv /opt/goliath/venv`
+7. Install deps: `/opt/goliath/venv/bin/pip install -r telegram-bot/requirements.txt`
+8. Copy `.env` with TELEGRAM_BOT_TOKEN
+9. Install systemd service: `cp deploy/goliath-bot.service /etc/systemd/system/`
+10. Enable + start: `systemctl enable --now goliath-bot`
+11. Install log rotation: `cp deploy/goliath-logrotate.conf /etc/logrotate.d/goliath`
+12. Optional: transfer project data via rsync
+13. Optional: transfer memory.db from Codespace
+14. Optional: install cron jobs from `cron-jobs/crontab.txt`
 
 ## Key Patterns You MUST Follow
 

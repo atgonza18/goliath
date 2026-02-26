@@ -1,19 +1,23 @@
 # GOLIATH Cron Jobs
 # Timezone: US Central (CT) — ensure server TZ is set or use TZ= prefix
 #
-# Install with: crontab cron-jobs/crontab.txt
-# Or append with: crontab -l | cat - cron-jobs/crontab.txt | crontab -
+# Install: Update GOLIATH_ROOT below, then:
+#   crontab cron-jobs/crontab.txt
+# Or append:
+#   crontab -l | cat - cron-jobs/crontab.txt | crontab -
 #
 # Prerequisites:
-#   1. pip install requests python-dotenv (or use the telegram-bot venv)
-#   2. Ensure REPORT_CHAT_ID is set in /workspaces/goliath/.env
-#      (Your Telegram chat ID — send /start to the bot and check logs)
+#   1. pip install -r telegram-bot/requirements.txt
+#   2. Ensure REPORT_CHAT_ID is set in .env
+#   3. Claude CLI installed and authenticated
+
+GOLIATH_ROOT=/opt/goliath
 
 # 6 PM CT — Daily scan of POD, Schedule, Constraints across all 12 projects
-0 18 * * * cd /workspaces/goliath && python3 cron-jobs/daily_scan.py >> cron-jobs/reports/cron.log 2>&1
+0 0 * * * cd $GOLIATH_ROOT && python3 cron-jobs/daily_scan.py >> cron-jobs/reports/cron.log 2>&1
 
 # Midnight CT — Create daily date folder under DSC Constraints & Production Reports
-0 0 * * * cd /workspaces/goliath && python3 cron-jobs/daily_constraints_folder.py >> cron-jobs/reports/cron.log 2>&1
+0 6 * * * cd $GOLIATH_ROOT && python3 cron-jobs/daily_constraints_folder.py >> cron-jobs/reports/cron.log 2>&1
 
 # 8 AM CT — Send latest report to analyst via Telegram
-0 8 * * * cd /workspaces/goliath && python3 cron-jobs/morning_report.py >> cron-jobs/reports/cron.log 2>&1
+0 14 * * * cd $GOLIATH_ROOT && python3 cron-jobs/morning_report.py >> cron-jobs/reports/cron.log 2>&1

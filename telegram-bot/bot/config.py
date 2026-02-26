@@ -10,7 +10,7 @@ TELEGRAM_BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN", "")
 if not TELEGRAM_BOT_TOKEN or TELEGRAM_BOT_TOKEN == "your-token-here":
     raise RuntimeError(
         "TELEGRAM_BOT_TOKEN is not set. "
-        "Edit /workspaces/goliath/.env and paste your BotFather token."
+        "Edit .env in the repo root and paste your BotFather token."
     )
 
 # Optional security: whitelist of allowed chat IDs

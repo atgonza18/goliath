@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Daily Project Scan — 6 PM CT
-Crontab: 0 18 * * * cd /workspaces/goliath && /workspaces/goliath/cron-jobs/.venv/bin/python cron-jobs/daily_scan.py
+Crontab: 0 18 * * * cd /opt/goliath && python3 cron-jobs/daily_scan.py >> cron-jobs/reports/cron.log 2>&1
 
 Scans POD, Schedule, and Constraints for all 12 projects.
 Generates a report with findings and questions for the site team.
@@ -120,7 +120,7 @@ PROJECT DATA:
         "--print",
         "--dangerously-skip-permissions",
         "--output-format", "text",
-        "--max-budget-usd", "0.50",
+        # Note: removed --max-budget-usd flag (causes budget exceeded errors on Claude Max plan)
         prompt,
     ]
 
