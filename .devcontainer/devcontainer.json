@@ -1,4 +1,4 @@
 {
   "name": "GOLIATH - DSC Operations",
-  "postStartCommand": "bash /workspaces/goliath/telegram-bot/start.sh"
+  "postStartCommand": "echo 'GOLIATH bot now runs on Hetzner (178.156.152.148) — not starting in Codespace'"
 }

@@ -26,16 +26,15 @@ SyslogIdentifier=goliath-bot
 # Security hardening
 NoNewPrivileges=yes
 ProtectSystem=strict
-ReadWritePaths=/opt/goliath
-ProtectHome=yes
+ReadWritePaths=/opt/goliath /home/goliath
 PrivateTmp=yes
 
 # Resource limits
-MemoryMax=1G
+MemoryMax=1.5G
 CPUQuota=80%
 
-# Watchdog: if no response in 5 min, systemd kills and restarts
-WatchdogSec=300
+# Note: No WatchdogSec — the bot doesn't implement sd_notify heartbeats.
+# Health monitoring is handled by the healthcheck.sh cron job instead.
 
 [Install]
 WantedBy=multi-user.target
