@@ -128,6 +128,15 @@ class NimrodOrchestrator:
             for r in results
         ]
 
+        # Log partial failures so they're visible in the bot log
+        failed = [r for r in results if not r.success]
+        succeeded = [r for r in results if r.success]
+        if failed:
+            logger.warning(
+                f"Partial subagent failure: {len(failed)}/{len(results)} failed — "
+                f"{[f'{r.agent_name}: {r.error}' for r in failed]}"
+            )
+
         # Collect FILE_CREATED and RESTART_REQUIRED from subagent outputs
         restart_required = False
         restart_reason = ""
@@ -139,7 +148,7 @@ class NimrodOrchestrator:
                     restart_required = True
                     restart_reason = reason
 
-        # --- PASS 2: Nimrod synthesis ---
+        # --- PASS 2: Nimrod synthesis (proceeds even if some subagents failed) ---
         synthesis_prompt = self._build_synthesis_prompt(
             user_message, clean_response, results, memory_context, conversation_history
         )
@@ -155,10 +164,11 @@ class NimrodOrchestrator:
         self._pass2_duration = time.monotonic() - p2_start
 
         if not synthesis_result.success:
-            # Fall back to raw subagent results
+            # Fall back to raw subagent results (use HTML, not Markdown)
             fallback = clean_response + "\n\n---\nSubagent results:\n"
             for r in results:
-                fallback += f"\n**{r.agent_name}**: {r.output[:500] if r.success else r.error}\n"
+                status = r.output[:500] if r.success else f"FAILED: {r.error}"
+                fallback += f"\n<b>{r.agent_name}</b>: {status}\n"
             return OrchestrationResult(text=fallback, file_paths=all_file_paths)
 
         synthesis_text = synthesis_result.output
@@ -318,6 +328,7 @@ class NimrodOrchestrator:
             "You dispatched subagents. Here are their results:\n\n",
         ])
 
+        failed_agents = []
         for r in results:
             if r.success:
                 parts.append(
@@ -328,6 +339,7 @@ class NimrodOrchestrator:
                 parts.append(
                     f"--- {r.agent_name} (FAILED) ---\nError: {r.error}\n\n"
                 )
+                failed_agents.append(r.agent_name)
 
         parts.append(
             "Synthesize these results for the user. KEEP IT SHORT — max 3-5 paragraphs. "
@@ -335,7 +347,18 @@ class NimrodOrchestrator:
             "Use HTML formatting: <b>bold</b>, <i>italic</i>, <code>code</code>. "
             "NO markdown (no ** or # — they don't render in Telegram). "
             "If there's a lot of detail, summarize the highlights and offer to dig deeper. "
-            "If any subagent failed, note it briefly. "
+        )
+
+        # Give Nimrod explicit guidance on partial failures
+        if failed_agents:
+            parts.append(
+                f"IMPORTANT: The following subagent(s) failed or timed out: "
+                f"{', '.join(failed_agents)}. Inform the user briefly about what "
+                f"data is missing and offer to retry if they want. Continue with "
+                f"whatever results you DO have — do NOT abandon the response. "
+            )
+
+        parts.append(
             "Save important findings to memory using MEMORY_SAVE blocks."
         )
 

@@ -35,9 +35,43 @@ STATUS_MESSAGES = [
     "\U0001f30d Scanning the empire... one moment.",
 ]
 
+# Periodic "still working" updates for long-running operations
+STILL_WORKING_MESSAGES = [
+    "\u23f3 Still cranking... this is a big one.",
+    "\u23f3 Still working on it. Agents are busy.",
+    "\u23f3 Making progress... hang tight.",
+    "\u23f3 Deep in analysis mode. Almost there.",
+    "\u23f3 Still at it. Complex request — worth the wait.",
+    "\u23f3 Agents still running. I'll have something soon.",
+]
+
 # Directory for downloaded photos/files
 UPLOADS_DIR = REPO_ROOT / "telegram-bot" / "data" / "uploads"
 UPLOADS_DIR.mkdir(parents=True, exist_ok=True)
+
+
+async def _periodic_working_updates(working_msg, interval: int = 60, initial_delay: int = 30):
+    """Send periodic 'still working' updates to reassure the user during long ops.
+
+    Starts after initial_delay seconds, then repeats every interval seconds.
+    Designed to be run as an asyncio task and cancelled when the main work finishes.
+    """
+    try:
+        await asyncio.sleep(initial_delay)
+        idx = 0
+        while True:
+            try:
+                msg = STILL_WORKING_MESSAGES[idx % len(STILL_WORKING_MESSAGES)]
+                await working_msg.edit_text(msg)
+                idx += 1
+            except Exception:
+                # Telegram API error (message deleted, etc.) — silently stop
+                logger.debug("Failed to update working message, stopping periodic updates")
+                return
+            await asyncio.sleep(interval)
+    except asyncio.CancelledError:
+        # Normal cancellation when orchestration completes
+        return
 
 
 async def claude_message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -126,15 +160,22 @@ async def _run_orchestrator(
         random.choice(STATUS_MESSAGES)
     )
 
+    # Start periodic "still working" updates — fires after 30s, then every 60s.
+    # Cancelled automatically when orchestration finishes (success or failure).
+    heartbeat_task = asyncio.create_task(
+        _periodic_working_updates(working_msg, interval=60, initial_delay=30)
+    )
+
     run_start = time.monotonic()
     run_success = True
     run_error = None
 
     try:
-        # 15 minute overall timeout — generous for multi-agent report generation
+        # 30 minute overall timeout — generous for multi-agent report generation
+        # and follow-up subagent dispatches (e.g., probing questions workflows)
         orch_result = await asyncio.wait_for(
             orchestrator.handle_message(user_message, conv_history),
-            timeout=900,
+            timeout=1800,
         )
 
         result_text = orch_result.text
@@ -208,9 +249,9 @@ async def _run_orchestrator(
 
     except asyncio.TimeoutError:
         run_success = False
-        run_error = "Timed out after 15 minutes"
+        run_error = "Timed out after 30 minutes"
         await working_msg.edit_text(
-            "Damn, that one timed out after 15 minutes. Try breaking it into a smaller task."
+            "Damn, that one timed out after 30 minutes. Try breaking it into a smaller task."
         )
     except Exception as e:
         run_success = False
@@ -218,6 +259,13 @@ async def _run_orchestrator(
         logger.exception("Orchestration failed")
         await working_msg.edit_text(f"Something broke: {str(e)[:500]}")
     finally:
+        # Stop the periodic "still working" heartbeat
+        heartbeat_task.cancel()
+        try:
+            await heartbeat_task
+        except asyncio.CancelledError:
+            pass
+
         # Log the activity
         total_duration = time.monotonic() - run_start
         if activity_log:

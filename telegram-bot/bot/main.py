@@ -132,6 +132,17 @@ def main():
     app = (
         ApplicationBuilder()
         .token(TELEGRAM_BOT_TOKEN)
+        # Network timeouts — prevent the bot from hanging on flaky connections.
+        # These apply to all Telegram API calls (send_message, send_document, etc.)
+        .read_timeout(60)
+        .write_timeout(60)
+        .connect_timeout(30)
+        .pool_timeout(30)
+        # Separate timeouts for long-polling getUpdates calls
+        .get_updates_read_timeout(60)
+        .get_updates_write_timeout(60)
+        .get_updates_connect_timeout(30)
+        .get_updates_pool_timeout(30)
         .post_init(post_init)
         .build()
     )

@@ -23,6 +23,10 @@ class AgentResult:
 class SubagentRunner:
     """Invokes a Claude CLI subprocess for a specific agent definition."""
 
+    # Default per-subagent timeout (5 minutes) — prevents any single agent from
+    # blocking the pipeline indefinitely. Can be overridden per-agent or per-call.
+    DEFAULT_TIMEOUT = 300
+
     def __init__(self):
         self._env = os.environ.copy()
         self._env.pop("CLAUDECODE", None)
@@ -35,8 +39,37 @@ class SubagentRunner:
         timeout: float = None,
         no_tools: bool = False,
     ) -> AgentResult:
-        timeout = timeout or agent.timeout
+        # Resolve timeout: explicit call param > agent definition > default 300s
+        timeout = timeout or agent.timeout or self.DEFAULT_TIMEOUT
 
+        result = await self._run_once(agent, task_prompt, context, timeout, no_tools)
+
+        # Retry once on timeout — transient slow-starts are common with Claude CLI
+        if not result.success and result.error and "Timed out" in result.error:
+            logger.info(
+                f"Retrying subagent '{agent.name}' after timeout "
+                f"(attempt 2/2, timeout={timeout}s)"
+            )
+            result = await self._run_once(agent, task_prompt, context, timeout, no_tools)
+            if not result.success and result.error and "Timed out" in result.error:
+                # Both attempts timed out — return graceful error so orchestrator
+                # can continue with partial results from other subagents
+                result.error = (
+                    f"Timed out after 2 attempts ({timeout}s each). "
+                    f"This subagent's results are unavailable."
+                )
+
+        return result
+
+    async def _run_once(
+        self,
+        agent: AgentDefinition,
+        task_prompt: str,
+        context: str = "",
+        timeout: float = 300,
+        no_tools: bool = False,
+    ) -> AgentResult:
+        """Execute a single Claude CLI subprocess for the given agent."""
         full_prompt = task_prompt
         if context:
             full_prompt = f"{context}\n\n---\n\nTASK:\n{task_prompt}"
@@ -66,12 +99,9 @@ class SubagentRunner:
                 env=self._env,
             )
 
-            if timeout:
-                stdout, stderr = await asyncio.wait_for(
-                    process.communicate(), timeout=timeout
-                )
-            else:
-                stdout, stderr = await process.communicate()
+            stdout, stderr = await asyncio.wait_for(
+                process.communicate(), timeout=timeout
+            )
 
             elapsed = time.monotonic() - start
 
