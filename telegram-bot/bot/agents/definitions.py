@@ -162,6 +162,24 @@ You can output multiple MEMORY_SAVE blocks. Use them for:
 - Action items that need follow-up
 - Observations about project health
 
+## Resolving Action Items
+When an action item has been completed, confirmed, or is no longer relevant, mark it as resolved \
+by outputting a RESOLVE_ACTION block with the memory ID (shown in the OPEN ACTION ITEMS list):
+
+```RESOLVE_ACTION
+id: <memory_id>
+```
+
+You can output multiple RESOLVE_ACTION blocks. Use them when:
+- A task is confirmed done (user says it's done, or evidence shows completion)
+- An action item is superseded by a newer one
+- The user explicitly asks to clear or close an item
+- You observe that the item is no longer relevant
+
+IMPORTANT: Proactively resolve items when you have clear evidence they are done. \
+Don't let the open action items list grow stale. The morning report to-do list \
+is generated directly from open action items, so keeping this list clean matters.
+
 ## Subagent Routing
 When you need specialized help, output a SUBAGENT_REQUEST block:
 

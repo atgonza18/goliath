@@ -14,6 +14,7 @@ Uses HTML formatting (NOT Markdown) for Telegram parse_mode.
 import os
 import re
 import sys
+import sqlite3
 import requests
 from datetime import datetime
 from pathlib import Path
@@ -23,6 +24,7 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 CRON_REPORTS_DIR = REPO_ROOT / "cron-jobs" / "reports"
 TODO_REPORTS_DIR = REPO_ROOT / "reports"
 PROJECTS_DIR = REPO_ROOT / "projects"
+MEMORY_DB_PATH = REPO_ROOT / "telegram-bot" / "data" / "memory.db"
 
 load_dotenv(REPO_ROOT / ".env")
 
@@ -99,26 +101,69 @@ def get_latest_scan_report() -> tuple[Path | None, str | None]:
         return None, None
 
 
-def get_latest_todo() -> str | None:
-    """Find the most recent daily todo file from /opt/goliath/reports/."""
-    if not TODO_REPORTS_DIR.exists():
-        return None
-
-    todo_files = []
-    for pattern in ["*todo*", "*to-do*", "*TODO*"]:
-        todo_files.extend(TODO_REPORTS_DIR.glob(pattern))
-
-    if not todo_files:
-        return None
-
-    # Sort by modification time, most recent first
-    todo_files.sort(key=lambda f: f.stat().st_mtime, reverse=True)
+def get_open_action_items() -> list[dict]:
+    """Query the memory DB for all open (unresolved) action items."""
+    if not MEMORY_DB_PATH.exists():
+        return []
 
     try:
-        content = todo_files[0].read_text(errors="replace").strip()
-        return content if content else None
-    except Exception:
+        conn = sqlite3.connect(str(MEMORY_DB_PATH))
+        conn.row_factory = sqlite3.Row
+        cursor = conn.execute(
+            "SELECT id, created_at, project_key, summary, detail "
+            "FROM memories WHERE category = 'action_item' AND resolved = 0 "
+            "ORDER BY created_at DESC"
+        )
+        rows = [dict(row) for row in cursor.fetchall()]
+        conn.close()
+        return rows
+    except Exception as e:
+        print(f"Warning: could not query memory DB: {e}")
+        return []
+
+
+def build_todo_from_db() -> str | None:
+    """Build the to-do list dynamically from open action items in the memory DB."""
+    items = get_open_action_items()
+    if not items:
         return None
+
+    # Group items by project (None = general/system)
+    by_project: dict[str | None, list[dict]] = {}
+    for item in items:
+        key = item.get("project_key") or None
+        by_project.setdefault(key, []).append(item)
+
+    lines = []
+
+    # General / system items first
+    general = by_project.pop(None, [])
+    if general:
+        lines.append("<b>General / System</b>")
+        for item in general:
+            date = item["created_at"][:10]
+            lines.append(f"  - [{date}] {_html_escape(item['summary'])}")
+        lines.append("")
+
+    # Project-specific items
+    for proj_key in sorted(by_project.keys()):
+        proj_name = PROJECTS.get(proj_key, proj_key or "Unknown")
+        if isinstance(proj_name, str):
+            display_name = proj_name
+        else:
+            display_name = proj_name  # already a string from our PROJECTS dict
+        lines.append(f"<b>{_html_escape(display_name)}</b>")
+        for item in by_project[proj_key]:
+            date = item["created_at"][:10]
+            lines.append(f"  - [{date}] {_html_escape(item['summary'])}")
+        lines.append("")
+
+    return "\n".join(lines).strip() if lines else None
+
+
+def _html_escape(text: str) -> str:
+    """Escape HTML special characters for Telegram."""
+    return text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
 
 
 def build_project_health_summary() -> str:
@@ -163,18 +208,18 @@ def build_morning_report() -> str:
         f"<i>{date_str}</i>"
     )
 
-    # Section 1: Daily To-Do List
-    todo_content = get_latest_todo()
+    # Section 1: Open Action Items (dynamic from memory DB)
+    todo_content = build_todo_from_db()
     if todo_content:
-        todo_html = markdown_to_html(todo_content)
         sections.append(
-            f"<b>Daily To-Do List</b>\n\n"
-            f"{todo_html}"
+            f"<b>Open Action Items</b>\n"
+            f"<i>{len(get_open_action_items())} items pending</i>\n\n"
+            f"{todo_content}"
         )
     else:
         sections.append(
-            f"<b>Daily To-Do List</b>\n\n"
-            f"<i>No todo file found in reports/. Ask Nimrod to generate one.</i>"
+            f"<b>Open Action Items</b>\n\n"
+            f"<i>No open action items. Everything is resolved.</i>"
         )
 
     # Section 2: Project Health Summary

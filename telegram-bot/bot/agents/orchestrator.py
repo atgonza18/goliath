@@ -90,11 +90,14 @@ class NimrodOrchestrator:
         # Parse structured blocks from Nimrod's response
         subagent_requests = self._parse_subagent_requests(nimrod_text)
         memory_saves = self._parse_memory_saves(nimrod_text)
+        resolve_requests = self._parse_resolve_actions(nimrod_text)
         all_file_paths.extend(self._parse_file_created(nimrod_text))
         clean_response = self._strip_structured_blocks(nimrod_text)
 
         # Save any memories from Pass 1
         await self._process_memory_saves(memory_saves)
+        # Resolve any action items from Pass 1
+        await self._process_resolve_actions(resolve_requests)
 
         # If no subagent requests, return Nimrod's direct response
         if not subagent_requests:
@@ -163,6 +166,8 @@ class NimrodOrchestrator:
         # Parse and save memories from synthesis pass
         synthesis_memories = self._parse_memory_saves(synthesis_text)
         await self._process_memory_saves(synthesis_memories)
+        synthesis_resolves = self._parse_resolve_actions(synthesis_text)
+        await self._process_resolve_actions(synthesis_resolves)
         all_file_paths.extend(self._parse_file_created(synthesis_text))
 
         # Check synthesis output for restart signal too
@@ -210,11 +215,11 @@ class NimrodOrchestrator:
             # FTS match can fail on certain query strings; non-critical
             pass
 
-        # Open action items
+        # Open action items (include IDs so Nimrod can resolve them)
         actions = await self.memory.get_action_items(resolved=False)
         if actions:
-            action_lines = [f"- [{a.created_at[:10]}] {a.summary}" for a in actions[:10]]
-            parts.append(f"OPEN ACTION ITEMS:\n" + "\n".join(action_lines))
+            action_lines = [f"- [id:{a.id}] [{a.created_at[:10]}] {a.summary}" for a in actions[:15]]
+            parts.append(f"OPEN ACTION ITEMS ({len(actions)} total):\n" + "\n".join(action_lines))
 
         if not parts:
             return "PERSISTENT MEMORY:\n(No memories yet. This is the beginning.)"
@@ -416,11 +421,34 @@ class NimrodOrchestrator:
             return True, reason
         return False, ""
 
+    def _parse_resolve_actions(self, text: str) -> list[int]:
+        """Parse RESOLVE_ACTION blocks from agent output. Returns list of memory IDs."""
+        pattern = r"```RESOLVE_ACTION\s*\n(.*?)```"
+        matches = re.findall(pattern, text, re.DOTALL)
+
+        ids = []
+        for block in matches:
+            fields = self._parse_block_fields(block)
+            raw_id = fields.get("id", "").strip()
+            if raw_id.isdigit():
+                ids.append(int(raw_id))
+        return ids
+
+    async def _process_resolve_actions(self, memory_ids: list[int]) -> None:
+        """Mark the given action item memory IDs as resolved."""
+        for mid in memory_ids:
+            try:
+                await self.memory.resolve_action_item(mid)
+                logger.info(f"Resolved action item #{mid}")
+            except Exception:
+                logger.exception(f"Failed to resolve action item #{mid}")
+
     def _strip_structured_blocks(self, text: str) -> str:
         text = re.sub(r"```SUBAGENT_REQUEST\s*\n.*?```", "", text, flags=re.DOTALL)
         text = re.sub(r"```MEMORY_SAVE\s*\n.*?```", "", text, flags=re.DOTALL)
         text = re.sub(r"```FILE_CREATED\s*\n.*?```", "", text, flags=re.DOTALL)
         text = re.sub(r"```RESTART_REQUIRED\s*\n.*?```", "", text, flags=re.DOTALL)
+        text = re.sub(r"```RESOLVE_ACTION\s*\n.*?```", "", text, flags=re.DOTALL)
         return text.strip()
 
     @staticmethod
