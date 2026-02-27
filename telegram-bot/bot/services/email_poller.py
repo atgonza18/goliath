@@ -12,6 +12,8 @@ Attachment auto-filing:
   - POD emails: Attachments saved to projects/{key}/pod/
   - Constraints updates (from Joshua Hauger): Saved to
     dsc-constraints-production-reports/{date}/ AND project constraints/ folders
+  - Schedule updates: Saved to projects/{key}/schedule/ — detected by keywords
+    in subject or filenames. Also scans for direct emails (no PA tag).
   - Only files for portfolio projects (defined in config.PROJECTS)
   - Non-portfolio project emails with attachments are silently skipped
 
@@ -54,6 +56,18 @@ ALLOWED_EXTENSIONS = {
 
 # Known constraints update senders (case-insensitive partial match on email address)
 CONSTRAINTS_SENDERS = ['hauger', 'hogger']
+
+# Schedule-related keywords for email/filename detection (case-insensitive)
+SCHEDULE_KEYWORDS = [
+    'schedule', 'lookahead', 'look ahead', 'look-ahead',
+    'baseline', 'critical path',
+    '3 week', '4 week', '3-week', '4-week', '3wk', '4wk',
+    'gantt', 'level 3', 'level 2', 'l3 schedule', 'l2 schedule',
+    'wk lookahead', 'week look',
+]
+
+# File extensions typically associated with project schedules
+SCHEDULE_EXTENSIONS = {'.pdf', '.xer', '.mpp'}
 
 # ── Module-level dedup set ──────────────────────────────────────────────
 # This set persists for the lifetime of the bot process, surviving across
@@ -232,7 +246,7 @@ class EmailPoller:
                     classification = self._classify_email(parsed)
                     attachments = parsed.get("attachments", [])
 
-                    if classification in ("pod", "constraints"):
+                    if classification in ("pod", "constraints", "schedule"):
                         # POD/constraints emails NEVER fall through to draft queue
                         if attachments:
                             await self._file_attachments(
@@ -267,18 +281,190 @@ class EmailPoller:
                     logger.exception("Failed to process polled email")
 
             logger.info(f"Email poll cycle complete: {count} email(s) processed")
+
+            # ── Direct email scan: catch schedule PDFs sent straight to Gmail ──
+            # These don't have [INBOX:] tags so the main fetch above skips them.
+            try:
+                direct_count = await self._process_direct_schedule_emails()
+                if direct_count:
+                    logger.info(
+                        f"Direct schedule scan: {direct_count} schedule email(s) filed"
+                    )
+                    count += direct_count
+            except Exception:
+                logger.exception("Direct schedule email scan failed")
+
             return count
+
+    # ==================================================================
+    # Direct email scanning (non-PA)
+    # ==================================================================
+
+    async def _process_direct_schedule_emails(self) -> int:
+        """Scan for schedule emails sent directly to Gmail (no PA [INBOX:] tag).
+
+        Uses IMAP SUBJECT search for schedule keywords to minimize downloads.
+        Only marks an email as read if it's successfully processed as a schedule.
+        Non-schedule direct emails are left unread.
+
+        Returns number of schedule emails processed.
+        """
+        if not self.is_configured:
+            return 0
+
+        loop = asyncio.get_running_loop()
+        try:
+            raw_emails = await loop.run_in_executor(
+                None, self._fetch_direct_schedule_candidates
+            )
+        except Exception:
+            logger.exception("Failed to fetch direct schedule emails")
+            return 0
+
+        if not raw_emails:
+            return 0
+
+        count = 0
+        today = datetime.now().strftime("%Y-%m-%d")
+
+        for raw in raw_emails:
+            try:
+                parsed = self._parse_direct_email(raw)
+                if not parsed:
+                    continue
+
+                dedup = _dedup_key(parsed)
+                if dedup in _global_processed_ids:
+                    continue
+
+                # Verify it's actually a schedule email (keyword check in fetch
+                # was broad — double-check with full classification logic)
+                if not self._is_schedule_email(parsed):
+                    continue
+
+                attachments = parsed.get("attachments", [])
+                if attachments:
+                    await self._file_schedule_attachments(
+                        subject=parsed.get("subject", ""),
+                        sender=parsed.get("sender", "unknown"),
+                        attachments=attachments,
+                        today=today,
+                    )
+                    count += 1
+                _mark_processed(dedup)
+            except Exception:
+                logger.exception("Failed to process direct schedule email")
+
+        return count
+
+    def _fetch_direct_schedule_candidates(self) -> list[bytes]:
+        """Synchronous IMAP fetch for direct schedule emails (no [INBOX:] tag).
+
+        Searches for unread emails with schedule-related keywords in subject.
+        Only fetches emails that do NOT have the [INBOX:] PA relay tag.
+        Marks matched emails as read.
+
+        Runs in executor thread.
+        """
+        results = []
+        try:
+            mail = imaplib.IMAP4_SSL(self.imap_host, 993, timeout=IMAP_TIMEOUT)
+            mail.login(self.address, self.app_password)
+            mail.select("INBOX")
+
+            # Search for a few high-signal keywords — covers 95%+ of schedule emails
+            candidate_ids = set()
+            for keyword in ("schedule", "lookahead", "look ahead", "baseline"):
+                status, data = mail.search(
+                    None, f'(UNSEEN SUBJECT "{keyword}")'
+                )
+                if status == "OK" and data and data[0]:
+                    candidate_ids.update(data[0].split())
+
+            if not candidate_ids:
+                mail.logout()
+                return results
+
+            for msg_id in candidate_ids:
+                try:
+                    # Peek at subject first to skip [INBOX:] tagged emails
+                    status, header_data = mail.fetch(msg_id, "(BODY.PEEK[HEADER.FIELDS (SUBJECT)])")
+                    if status != "OK" or not header_data or not header_data[0]:
+                        continue
+
+                    header_bytes = header_data[0][1] if isinstance(header_data[0], tuple) else b""
+                    header_text = header_bytes.decode("utf-8", errors="replace").lower()
+                    if "[inbox:" in header_text:
+                        continue  # PA-relayed — handled by main fetch
+
+                    # Fetch full email
+                    status, msg_data = mail.fetch(msg_id, "(RFC822)")
+                    if status != "OK" or not msg_data or not msg_data[0]:
+                        continue
+
+                    raw_email = msg_data[0][1]
+                    results.append(raw_email)
+
+                    # Mark as read
+                    mail.store(msg_id, "+FLAGS", "\\Seen")
+                    logger.info(f"Direct schedule candidate fetched: msg_id={msg_id}")
+
+                except Exception:
+                    logger.exception(f"Failed to fetch direct email {msg_id}")
+
+            mail.logout()
+
+        except imaplib.IMAP4.error as e:
+            logger.error(f"IMAP error (direct schedule scan): {e}")
+        except Exception:
+            logger.exception("IMAP connection failed (direct schedule scan)")
+
+        return results
+
+    def _parse_direct_email(self, raw: bytes) -> Optional[dict]:
+        """Parse a direct email (no [INBOX:] tag) — sender from From: header."""
+        msg = email.message_from_bytes(raw)
+
+        # Get sender from From: header
+        raw_from = msg.get("From", "")
+        # Extract email address from "Name <email>" format
+        addr_match = re.search(r'[\w.\-+]+@[\w.\-]+\.\w+', raw_from)
+        sender = addr_match.group(0) if addr_match else raw_from
+
+        # Decode subject
+        raw_subject = msg.get("Subject", "")
+        decoded_parts = email.header.decode_header(raw_subject)
+        subject_parts = []
+        for part, charset in decoded_parts:
+            if isinstance(part, bytes):
+                subject_parts.append(part.decode(charset or "utf-8", errors="replace"))
+            else:
+                subject_parts.append(part)
+        subject = " ".join(subject_parts).strip()
+
+        message_id = msg.get("Message-ID", "")
+        body = self._extract_body(msg)
+        attachments = self._extract_attachments(msg)
+
+        return {
+            "sender": sender,
+            "subject": subject,
+            "body": body,
+            "message_id": message_id,
+            "attachments": attachments,
+        }
 
     # ==================================================================
     # Email classification
     # ==================================================================
 
     def _classify_email(self, parsed: dict) -> str:
-        """Classify an email as 'pod', 'constraints', or 'normal'.
+        """Classify an email as 'pod', 'constraints', 'schedule', or 'normal'.
 
         Returns:
             'pod'         — Production/POD report email
             'constraints' — Constraints update (typically from Joshua Hauger)
+            'schedule'    — Schedule update (lookahead, baseline, P6 export, etc.)
             'normal'      — Everything else (queued for draft response)
         """
         subject = (parsed.get("subject") or "").lower()
@@ -297,7 +483,46 @@ class EmailPoller:
         if "constraint" in subject and parsed.get("attachments"):
             return "constraints"
 
+        # Schedule detection: attachments with schedule keywords in subject or filename
+        if self._is_schedule_email(parsed):
+            return "schedule"
+
         return "normal"
+
+    def _is_schedule_email(self, parsed: dict) -> bool:
+        """Detect schedule-related emails by checking subject and attachment filenames.
+
+        An email is classified as a schedule if:
+        1. Subject contains a schedule keyword AND has schedule-type attachments, OR
+        2. Any attachment filename contains a schedule keyword AND has a schedule extension
+        """
+        subject = (parsed.get("subject") or "").lower()
+        attachments = parsed.get("attachments", [])
+
+        if not attachments:
+            return False
+
+        has_schedule_attachment = any(
+            os.path.splitext(a["filename"])[1].lower() in SCHEDULE_EXTENSIONS
+            for a in attachments
+        )
+
+        # Check subject for schedule keywords (requires schedule-type attachment)
+        if has_schedule_attachment:
+            for kw in SCHEDULE_KEYWORDS:
+                if kw in subject:
+                    return True
+
+        # Check filenames for schedule keywords + schedule extensions
+        for att in attachments:
+            fname_lower = att["filename"].lower()
+            ext = os.path.splitext(fname_lower)[1]
+            if ext in SCHEDULE_EXTENSIONS:
+                for kw in SCHEDULE_KEYWORDS:
+                    if kw in fname_lower:
+                        return True
+
+        return False
 
     # ==================================================================
     # Attachment filing
@@ -317,6 +542,11 @@ class EmailPoller:
             → projects/{project-key}/constraints/{date}_{filename}  (if project matched)
             Returns True as long as central save succeeds.
 
+        Schedule files:
+            → projects/{project-key}/schedule/{date}_{filename}  (if project matched)
+            → projects/schedule-inbox/{date}_{filename}  (if project unclear)
+            Each attachment is individually matched to a project by filename.
+
         Returns True if at least one file was saved, False otherwise.
         """
         subject = parsed.get("subject", "")
@@ -329,6 +559,10 @@ class EmailPoller:
             )
         elif classification == "constraints":
             return await self._file_constraints_attachments(
+                subject, sender, attachments, today
+            )
+        elif classification == "schedule":
+            return await self._file_schedule_attachments(
                 subject, sender, attachments, today
             )
         return False
@@ -402,6 +636,78 @@ class EmailPoller:
                 central_dir=central_dir,
             )
         return bool(saved_central)
+
+    async def _file_schedule_attachments(
+        self, subject: str, sender: str, attachments: list[dict], today: str
+    ) -> bool:
+        """File schedule attachments to the matching project's schedule/ folder.
+
+        Project matching priority (per attachment):
+        1. Match from attachment filename (most reliable — filenames usually
+           contain project name, e.g. 'Blackford Solar_4WK Lookahead_20260223.pdf')
+        2. Fall back to matching from email subject
+        3. If still no match, save to schedule-inbox/ and notify user
+
+        Handles multi-project emails: if one email has PDFs for Blackford AND
+        Duff, each goes to the correct project folder.
+        """
+        # Only process schedule-type files
+        schedule_atts = [
+            a for a in attachments
+            if os.path.splitext(a["filename"])[1].lower() in SCHEDULE_EXTENSIONS
+        ]
+        # If no schedule-extension files found, try all attachments (user
+        # explicitly sent this as a schedule email, trust them)
+        if not schedule_atts:
+            schedule_atts = attachments
+
+        # Group attachments by matched project key
+        # key = project_key or "__unmatched__"
+        grouped: dict[str, list[dict]] = {}
+        for att in schedule_atts:
+            pk = match_project_key(att["filename"]) or match_project_key(subject)
+            bucket = pk or "__unmatched__"
+            grouped.setdefault(bucket, []).append(att)
+
+        any_saved = False
+
+        # File matched attachments to their project schedule/ folders
+        for pk, atts in grouped.items():
+            if pk == "__unmatched__":
+                continue
+            target_dir = PROJECTS_DIR / pk / "schedule"
+            target_dir.mkdir(parents=True, exist_ok=True)
+            project_name = PROJECTS[pk]["name"]
+            saved = self._save_attachments(atts, target_dir, today)
+            if saved:
+                any_saved = True
+                await self._notify_schedule_filed(
+                    project_name=project_name,
+                    project_key=pk,
+                    sender=sender,
+                    subject=subject,
+                    files=saved,
+                    unmatched=False,
+                )
+
+        # File unmatched attachments to schedule-inbox/
+        unmatched = grouped.get("__unmatched__", [])
+        if unmatched:
+            inbox_dir = PROJECTS_DIR / "schedule-inbox"
+            inbox_dir.mkdir(parents=True, exist_ok=True)
+            saved = self._save_attachments(unmatched, inbox_dir, today)
+            if saved:
+                any_saved = True
+                await self._notify_schedule_filed(
+                    project_name=None,
+                    project_key=None,
+                    sender=sender,
+                    subject=subject,
+                    files=saved,
+                    unmatched=True,
+                )
+
+        return any_saved
 
     def _save_attachments(
         self, attachments: list[dict], target_dir: Path, today: str
@@ -487,6 +793,51 @@ class EmailPoller:
             )
         except Exception:
             logger.exception("Failed to send POD notification to Telegram")
+
+    async def _notify_schedule_filed(
+        self,
+        project_name: str | None,
+        project_key: str | None,
+        sender: str,
+        subject: str,
+        files: list[Path],
+        unmatched: bool = False,
+    ) -> None:
+        """Send a Telegram notification about auto-filed schedule attachments."""
+        if not self._bot or not self._chat_id:
+            logger.debug("No bot/chat_id — skipping Telegram notification")
+            return
+
+        file_list = "\n".join(f"  • <code>{f.name}</code>" for f in files)
+
+        if unmatched:
+            msg = (
+                f"📅 <b>Schedule received — project unclear</b>\n\n"
+                f"From: {sender}\n"
+                f"Subject: {subject}\n\n"
+                f"<b>Saved to</b> <code>projects/schedule-inbox/</code>:\n"
+                f"{file_list}\n\n"
+                f"⚠️ Couldn't match a project. Reply with the project name "
+                f"and I'll move it to the right folder."
+            )
+        else:
+            msg = (
+                f"📅 <b>Schedule auto-filed — {project_name}</b>\n\n"
+                f"From: {sender}\n"
+                f"Subject: {subject}\n\n"
+                f"<b>Saved to</b> <code>projects/{project_key}/schedule/</code>:\n"
+                f"{file_list}"
+            )
+
+        try:
+            await self._bot.send_message(
+                chat_id=self._chat_id,
+                text=msg,
+                parse_mode="HTML",
+                disable_web_page_preview=True,
+            )
+        except Exception:
+            logger.exception("Failed to send schedule notification to Telegram")
 
     async def _notify_constraints_filed(
         self,
