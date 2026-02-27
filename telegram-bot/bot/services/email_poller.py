@@ -33,7 +33,7 @@ from typing import Optional
 from bot.config import (
     GMAIL_ADDRESS, GMAIL_APP_PASSWORD, GMAIL_IMAP_HOST,
     PROJECTS, PROJECTS_DIR, REPORT_CHAT_ID, CONSTRAINTS_REPORTS_DIR,
-    match_project_key,
+    RELAY_TO_ADDRESS, match_project_key,
 )
 
 logger = logging.getLogger(__name__)
@@ -73,6 +73,8 @@ class EmailPoller:
         self._queue = None  # Set by main.py or scheduler after initialization
         self._bot = None    # Set for Telegram notifications
         self._chat_id = None
+        self._poll_lock = asyncio.Lock()       # Prevent concurrent poll cycles
+        self._processed_ids: set = set()       # Dedup: track processed Message-IDs
 
     @property
     def is_configured(self) -> bool:
@@ -99,6 +101,8 @@ class EmailPoller:
         """Run a single poll cycle: fetch unread [INBOX:] emails and process them.
 
         - POD and constraints emails have their attachments auto-filed.
+          They NEVER fall through to the draft queue (even without attachments).
+        - Self-forwards (sender matches RELAY_TO_ADDRESS) are silently skipped.
         - All other emails are enqueued for draft responses.
 
         Returns:
@@ -112,67 +116,118 @@ class EmailPoller:
             logger.error("EmailPoller.poll called but no queue attached")
             return 0
 
-        loop = asyncio.get_running_loop()
-        try:
-            raw_emails = await loop.run_in_executor(None, self._fetch_unread)
-        except Exception:
-            logger.exception("IMAP fetch failed")
+        # ── Prevent concurrent poll cycles ────────────────────────────
+        if self._poll_lock.locked():
+            logger.debug("Poll already in progress — skipping this cycle")
             return 0
 
-        if not raw_emails:
-            return 0
-
-        count = 0
-        for raw in raw_emails:
+        async with self._poll_lock:
+            loop = asyncio.get_running_loop()
             try:
-                parsed = self._parse_email(raw)
-                if not parsed:
-                    continue
-
-                # ── Safety filter: skip outbound relay echoes ────────────
-                subj = parsed.get("subject", "")
-                if "[SEND:" in subj.upper():
-                    logger.info(
-                        f"Skipping relay echo — subject contains [SEND:]: {subj!r}"
-                    )
-                    continue
-                # ── End safety filter ────────────────────────────────────
-
-                # ── Classify and route ───────────────────────────────────
-                classification = self._classify_email(parsed)
-                attachments = parsed.get("attachments", [])
-
-                if classification in ("pod", "constraints") and attachments:
-                    # Auto-file attachments to project folders
-                    filed = await self._file_attachments(
-                        parsed, classification, attachments
-                    )
-                    if filed:
-                        count += 1
-                        # Don't enqueue for draft — just file & notify
-                        continue
-                    # If filing failed (no project match for POD), fall through
-                    # to normal queue processing
-
-                # ── Normal email: enqueue for draft response ─────────────
-                await self._queue.enqueue(
-                    source="email",
-                    direction="inbound",
-                    sender=parsed["sender"],
-                    subject=parsed["subject"],
-                    body=parsed["body"],
-                    external_message_id=parsed.get("message_id"),
-                )
-                count += 1
-                logger.info(
-                    f"Polled inbound email from {parsed['sender']} — "
-                    f"subject: {parsed['subject']!r}"
-                )
+                raw_emails = await loop.run_in_executor(None, self._fetch_unread)
             except Exception:
-                logger.exception("Failed to process polled email")
+                logger.exception("IMAP fetch failed")
+                return 0
 
-        logger.info(f"Email poll cycle complete: {count} email(s) processed")
-        return count
+            if not raw_emails:
+                return 0
+
+            count = 0
+            for raw in raw_emails:
+                try:
+                    parsed = self._parse_email(raw)
+                    if not parsed:
+                        continue
+
+                    msg_id = parsed.get("message_id", "")
+
+                    # ── Dedup: skip if already processed this Message-ID ──
+                    if msg_id and msg_id in self._processed_ids:
+                        logger.info(
+                            f"Skipping duplicate email — already processed: {msg_id}"
+                        )
+                        continue
+                    # ── End dedup ──────────────────────────────────────────
+
+                    # ── Safety filter: skip outbound relay echoes ─────────
+                    subj = parsed.get("subject", "")
+                    if "[SEND:" in subj.upper():
+                        logger.info(
+                            f"Skipping relay echo — subject contains [SEND:]: {subj!r}"
+                        )
+                        if msg_id:
+                            self._processed_ids.add(msg_id)
+                        continue
+                    # ── End safety filter ─────────────────────────────────
+
+                    # ── Self-forward detection: skip emails from user's own address ──
+                    sender_lower = parsed["sender"].lower().strip()
+                    relay_lower = (RELAY_TO_ADDRESS or "").lower().strip()
+                    gmail_lower = (self.address or "").lower().strip()
+                    if relay_lower and sender_lower == relay_lower:
+                        logger.info(
+                            f"Skipping self-forward — sender matches RELAY_TO_ADDRESS: "
+                            f"{parsed['subject']!r}"
+                        )
+                        if msg_id:
+                            self._processed_ids.add(msg_id)
+                        continue
+                    if gmail_lower and sender_lower == gmail_lower:
+                        logger.info(
+                            f"Skipping self-sent — sender matches GMAIL_ADDRESS: "
+                            f"{parsed['subject']!r}"
+                        )
+                        if msg_id:
+                            self._processed_ids.add(msg_id)
+                        continue
+                    # ── End self-forward detection ────────────────────────
+
+                    # ── Classify and route ────────────────────────────────
+                    classification = self._classify_email(parsed)
+                    attachments = parsed.get("attachments", [])
+
+                    if classification in ("pod", "constraints"):
+                        # POD/constraints emails NEVER fall through to draft queue
+                        if attachments:
+                            await self._file_attachments(
+                                parsed, classification, attachments
+                            )
+                        else:
+                            logger.info(
+                                f"{classification.upper()} email received but no "
+                                f"attachments — skipping: {parsed['subject']!r}"
+                            )
+                        count += 1
+                        if msg_id:
+                            self._processed_ids.add(msg_id)
+                        continue
+
+                    # ── Normal email: enqueue for draft response ──────────
+                    await self._queue.enqueue(
+                        source="email",
+                        direction="inbound",
+                        sender=parsed["sender"],
+                        subject=parsed["subject"],
+                        body=parsed["body"],
+                        external_message_id=parsed.get("message_id"),
+                    )
+                    count += 1
+                    logger.info(
+                        f"Polled inbound email from {parsed['sender']} — "
+                        f"subject: {parsed['subject']!r}"
+                    )
+                    if msg_id:
+                        self._processed_ids.add(msg_id)
+
+                except Exception:
+                    logger.exception("Failed to process polled email")
+
+            # Trim processed IDs to avoid unbounded memory growth
+            if len(self._processed_ids) > 500:
+                self._processed_ids.clear()
+
+            logger.info(f"Email poll cycle complete: {count} email(s) processed")
+            return count
 
     # ==================================================================
     # Email classification
