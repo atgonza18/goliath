@@ -12,8 +12,9 @@ from bot.memory.store import MemoryStore
 
 logger = logging.getLogger(__name__)
 
-# Limit concurrent Claude subprocesses
-_semaphore = asyncio.Semaphore(3)
+# Limit concurrent Claude subprocesses — bumped to 8 for parallel request handling.
+# Multiple user messages can now run concurrently, each spawning subagents.
+_semaphore = asyncio.Semaphore(8)
 
 
 @dataclass

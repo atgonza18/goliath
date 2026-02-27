@@ -132,6 +132,9 @@ def main():
     app = (
         ApplicationBuilder()
         .token(TELEGRAM_BOT_TOKEN)
+        # Allow multiple user messages to be processed in parallel (swarm mode).
+        # Default is sequential (1 at a time). True = up to 256 concurrent.
+        .concurrent_updates(True)
         # Network timeouts — prevent the bot from hanging on flaky connections.
         # These apply to all Telegram API calls (send_message, send_document, etc.)
         .read_timeout(60)
