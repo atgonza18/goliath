@@ -23,6 +23,7 @@ import collections
 import email
 import email.header
 import email.message
+import hashlib
 import imaplib
 import logging
 import os
@@ -64,18 +65,39 @@ _MAX_PROCESSED_IDS = 2000
 _global_processed_ids: collections.OrderedDict = collections.OrderedDict()
 
 
-def _mark_processed(msg_id: str) -> None:
-    """Record a Message-ID as processed in the global dedup cache.
+def _content_dedup_key(parsed: dict) -> str:
+    """Generate a dedup key from email content when Message-ID is missing.
+
+    Uses sender + subject to create a stable hash. This catches Power Automate
+    relays that forward the same email multiple times without preserving the
+    original Message-ID header.
+    """
+    content = f"{parsed.get('sender', '')}|{parsed.get('subject', '')}"
+    return f"content:{hashlib.md5(content.encode()).hexdigest()}"
+
+
+def _dedup_key(parsed: dict) -> str:
+    """Return the best available dedup key for an email.
+
+    Prefers Message-ID when present; falls back to a content-based hash
+    so emails without Message-ID headers are still deduped.
+    """
+    msg_id = parsed.get("message_id", "")
+    return msg_id if msg_id else _content_dedup_key(parsed)
+
+
+def _mark_processed(key: str) -> None:
+    """Record a dedup key as processed in the global dedup cache.
 
     Uses an OrderedDict as an ordered set (values are always None).
     When the cap is exceeded, the oldest entries are evicted — not the
     entire set — so recently-seen IDs are never forgotten.
     """
-    if not msg_id:
+    if not key:
         return
     # Move to end if already present (refreshes position), otherwise insert
-    _global_processed_ids[msg_id] = None
-    _global_processed_ids.move_to_end(msg_id)
+    _global_processed_ids[key] = None
+    _global_processed_ids.move_to_end(key)
     # Evict oldest entries if over cap
     while len(_global_processed_ids) > _MAX_PROCESSED_IDS:
         _global_processed_ids.popitem(last=False)
@@ -166,11 +188,12 @@ class EmailPoller:
                         continue
 
                     msg_id = parsed.get("message_id", "")
+                    dedup = _dedup_key(parsed)
 
-                    # ── Dedup: skip if already processed this Message-ID ──
-                    if msg_id and msg_id in _global_processed_ids:
+                    # ── Dedup: skip if already processed ──────────────────
+                    if dedup in _global_processed_ids:
                         logger.info(
-                            f"Skipping duplicate email — already processed: {msg_id}"
+                            f"Skipping duplicate email — already processed: {dedup}"
                         )
                         continue
                     # ── End dedup ──────────────────────────────────────────
@@ -181,8 +204,7 @@ class EmailPoller:
                         logger.info(
                             f"Skipping relay echo — subject contains [SEND:]: {subj!r}"
                         )
-                        if msg_id:
-                            _mark_processed(msg_id)
+                        _mark_processed(dedup)
                         continue
                     # ── End safety filter ─────────────────────────────────
 
@@ -195,16 +217,14 @@ class EmailPoller:
                             f"Skipping self-forward — sender matches RELAY_TO_ADDRESS: "
                             f"{parsed['subject']!r}"
                         )
-                        if msg_id:
-                            _mark_processed(msg_id)
+                        _mark_processed(dedup)
                         continue
                     if gmail_lower and sender_lower == gmail_lower:
                         logger.info(
                             f"Skipping self-sent — sender matches GMAIL_ADDRESS: "
                             f"{parsed['subject']!r}"
                         )
-                        if msg_id:
-                            _mark_processed(msg_id)
+                        _mark_processed(dedup)
                         continue
                     # ── End self-forward detection ────────────────────────
 
@@ -224,8 +244,7 @@ class EmailPoller:
                                 f"attachments — skipping: {parsed['subject']!r}"
                             )
                         count += 1
-                        if msg_id:
-                            _mark_processed(msg_id)
+                        _mark_processed(dedup)
                         continue
 
                     # ── Normal email: enqueue for draft response ──────────
@@ -242,8 +261,7 @@ class EmailPoller:
                         f"Polled inbound email from {parsed['sender']} — "
                         f"subject: {parsed['subject']!r}"
                     )
-                    if msg_id:
-                        _mark_processed(msg_id)
+                    _mark_processed(dedup)
 
                 except Exception:
                     logger.exception("Failed to process polled email")
