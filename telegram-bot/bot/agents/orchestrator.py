@@ -176,6 +176,67 @@ class NimrodOrchestrator:
             restart_required = True
             restart_reason = syn_reason
 
+        # --- FOLLOW-UP SUBAGENT DISPATCH (from synthesis pass) ---
+        # Multi-step workflows (e.g., probing questions) may need Nimrod to
+        # dispatch additional subagents after seeing the first round of results.
+        # If the synthesis output contains SUBAGENT_REQUEST blocks, run them
+        # and do a final synthesis pass.
+        followup_requests = self._parse_subagent_requests(synthesis_text)
+        if followup_requests:
+            logger.info(
+                f"Nimrod dispatching {len(followup_requests)} follow-up subagent(s) from synthesis: "
+                f"{[r.agent_name for r in followup_requests]}"
+            )
+            clean_synthesis = self._strip_structured_blocks(synthesis_text)
+
+            followup_results = await self._run_subagents(followup_requests, user_message)
+
+            # Record follow-up subagent results in activity log
+            if self._subagent_log is not None:
+                self._subagent_log.extend([
+                    {
+                        "agent": r.agent_name,
+                        "success": r.success,
+                        "duration": round(r.duration_seconds, 1),
+                        "error": r.error,
+                    }
+                    for r in followup_results
+                ])
+
+            # Collect files and restart signals from follow-up subagents
+            for r in followup_results:
+                if r.success and r.output:
+                    all_file_paths.extend(self._parse_file_created(r.output))
+                    req, reason = self._parse_restart_required(r.output)
+                    if req:
+                        restart_required = True
+                        restart_reason = reason
+
+            # --- FINAL SYNTHESIS: Nimrod compiles everything ---
+            final_prompt = self._build_synthesis_prompt(
+                user_message, clean_synthesis, followup_results,
+                memory_context, conversation_history
+            )
+            async with _semaphore:
+                final_result = await self.runner.run(
+                    agent=NIMROD,
+                    task_prompt=final_prompt,
+                    no_tools=False,
+                )
+
+            if final_result.success:
+                synthesis_text = final_result.output
+                # Parse memories/files from final synthesis
+                final_memories = self._parse_memory_saves(synthesis_text)
+                await self._process_memory_saves(final_memories)
+                final_resolves = self._parse_resolve_actions(synthesis_text)
+                await self._process_resolve_actions(final_resolves)
+                all_file_paths.extend(self._parse_file_created(synthesis_text))
+                fin_restart, fin_reason = self._parse_restart_required(synthesis_text)
+                if fin_restart:
+                    restart_required = True
+                    restart_reason = fin_reason
+
         # Deduplicate file paths while preserving order
         seen = set()
         unique_files = []
