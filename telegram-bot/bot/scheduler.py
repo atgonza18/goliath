@@ -37,7 +37,11 @@ from pathlib import Path
 from typing import Callable, Awaitable, Optional
 from zoneinfo import ZoneInfo
 
-from bot.config import REPO_ROOT, REPORT_CHAT_ID, TELEGRAM_BOT_TOKEN, PROJECTS
+from bot.config import (
+    REPO_ROOT, REPORT_CHAT_ID, TELEGRAM_BOT_TOKEN, PROJECTS,
+    ESCALATION_DB_PATH, ESCALATION_SCAN_TIMES,
+    HEARTBEAT_INTERVAL_SECONDS,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -1375,6 +1379,84 @@ async def task_email_poll(scheduler: "Scheduler") -> None:
         logger.exception("Email poll error")
 
 
+# ------------------------------------------------------------------
+# Escalation Engine tasks (9 AM, 1 PM, 5 PM CT)
+# ------------------------------------------------------------------
+
+async def task_escalation_scan(scheduler: "Scheduler") -> None:
+    """Run escalation scan — pulls HIGH/MEDIUM constraints, drafts escalation emails,
+    sends each to Telegram for approve/reject.
+
+    Fires 3x/day at 9 AM, 1 PM, and 5 PM CT. Each constraint tracks its own
+    escalation level and 5-day cooldown, so repeated scans won't re-escalate
+    the same constraint until the cooldown expires.
+    """
+    if not scheduler.bot:
+        logger.error("Escalation scan: no bot instance")
+        return
+
+    chat_id = _get_chat_id()
+    if not chat_id:
+        logger.error("Escalation scan: no chat ID configured (set REPORT_CHAT_ID)")
+        return
+
+    try:
+        from bot.services.escalation import EscalationTracker
+
+        tracker = EscalationTracker(ESCALATION_DB_PATH)
+        await tracker.initialize()
+
+        drafts_sent = await tracker.run_escalation_scan(scheduler.bot, chat_id)
+
+        await tracker.close()
+
+        if drafts_sent > 0:
+            logger.info(f"Escalation scan: {drafts_sent} draft(s) sent for approval")
+        else:
+            logger.info("Escalation scan: no escalations needed this cycle")
+
+    except Exception:
+        logger.exception("Escalation scan task failed")
+
+
+# ------------------------------------------------------------------
+# Constraint Heartbeat task (every 60 minutes)
+# ------------------------------------------------------------------
+
+async def task_constraint_heartbeat(scheduler: "Scheduler") -> None:
+    """Hourly constraint heartbeat — snapshot ConstraintsPro state, compare to
+    previous snapshot, notify user only if something meaningful changed.
+
+    Silent if nothing changed (no spam).
+    """
+    if not scheduler.bot:
+        logger.error("Constraint heartbeat: no bot instance")
+        return
+
+    chat_id = _get_chat_id()
+    if not chat_id:
+        logger.error("Constraint heartbeat: no chat ID configured (set REPORT_CHAT_ID)")
+        return
+
+    try:
+        from bot.services.heartbeat import ConstraintHeartbeat
+
+        heartbeat = ConstraintHeartbeat()
+        changes = await heartbeat.run_heartbeat(scheduler.bot, chat_id)
+
+        if changes > 0:
+            logger.info(f"Constraint heartbeat: {changes} change(s) notified")
+        else:
+            logger.debug("Constraint heartbeat: no changes (silent)")
+
+    except Exception:
+        logger.exception("Constraint heartbeat task failed")
+
+
+# ------------------------------------------------------------------
+# Weekly portfolio check
+# ------------------------------------------------------------------
+
 async def task_weekly_portfolio_check(scheduler: "Scheduler") -> None:
     """Weekly reminder (Mondays) to check for new DSC project onboarding.
 
@@ -1504,6 +1586,25 @@ def create_scheduler(bot=None) -> Scheduler:
         interval_seconds=45,
         callback=task_email_poll,
         description="Poll Gmail IMAP for inbound [INBOX:] tagged emails + auto-file POD/constraints attachments",
+    )
+
+    # Escalation engine: 3x/day at 9 AM, 1 PM, 5 PM CT
+    for hour, minute in ESCALATION_SCAN_TIMES:
+        time_label = f"{hour:02d}:{minute:02d}"
+        sched.add_task(
+            name=f"escalation_{time_label}",
+            hour=hour,
+            minute=minute,
+            callback=task_escalation_scan,
+            description=f"Escalation scan at {time_label} CT — draft follow-up emails for stalled constraints",
+        )
+
+    # Constraint heartbeat: every hour
+    sched.add_interval_task(
+        name="constraint_heartbeat",
+        interval_seconds=HEARTBEAT_INTERVAL_SECONDS,
+        callback=task_constraint_heartbeat,
+        description="Hourly constraint snapshot + diff — notify on meaningful changes only",
     )
 
     return sched

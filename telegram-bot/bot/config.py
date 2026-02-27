@@ -78,6 +78,39 @@ PROJECT_SUBFOLDERS = [
 # Central constraints report folder (portfolio-wide, from Joshua Hauger)
 CONSTRAINTS_REPORTS_DIR = REPO_ROOT / "dsc-constraints-production-reports"
 
+# ---------------------------------------------------------------------------
+# Escalation Engine config
+# ---------------------------------------------------------------------------
+# SQLite DB for tracking escalation state (separate from memory.db)
+ESCALATION_DB_PATH = DATA_DIR / "escalation.db"
+
+# Cooldown between escalation levels (days). After sending a Level N email,
+# wait this many days before escalating to Level N+1.
+ESCALATION_COOLDOWN_DAYS = int(os.getenv("ESCALATION_COOLDOWN_DAYS", "5"))
+
+# Maximum escalation level (1=Helpful, 2=Firm, 3=Leadership CC)
+ESCALATION_MAX_LEVEL = 3
+
+# Escalation scan times (CT timezone, 24-hour format)
+ESCALATION_SCAN_TIMES = [
+    (9, 0),    # 9:00 AM CT
+    (13, 0),   # 1:00 PM CT
+    (17, 0),   # 5:00 PM CT
+]
+
+# For MEDIUM-priority constraints: only escalate if need-by date is within
+# this many days from today.
+ESCALATION_MEDIUM_HORIZON_DAYS = int(os.getenv("ESCALATION_MEDIUM_HORIZON_DAYS", "7"))
+
+# ---------------------------------------------------------------------------
+# Constraint Heartbeat config
+# ---------------------------------------------------------------------------
+# Snapshot storage directory
+HEARTBEAT_SNAPSHOT_DIR = REPO_ROOT / "data" / "constraint_snapshots"
+
+# Heartbeat interval in seconds (default: 3600 = 1 hour)
+HEARTBEAT_INTERVAL_SECONDS = int(os.getenv("HEARTBEAT_INTERVAL_SECONDS", "3600"))
+
 
 def match_project_key(text: str) -> str | None:
     """Try to find a portfolio project name within a text string.
