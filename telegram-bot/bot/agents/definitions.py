@@ -527,6 +527,28 @@ query involving live/current data.
 - The MCP tools return JSON. Parse it and present it in human-readable format.
 - If an MCP call fails, report the error and fall back to local file analysis if available.
 
+### NOTE-LEVEL DEDUPLICATION — MANDATORY BEFORE EVERY WRITE
+Before adding ANY note to a constraint (via `constraints_add_note`), you MUST perform \
+same-day dedup:
+
+1. Call `constraints_get_with_notes` for that constraint to retrieve ALL existing notes.
+2. Check if any note was added TODAY (same calendar date, i.e. the date portion of the \
+   note timestamp matches today's date YYYY-MM-DD).
+3. If a same-day note exists, compare it against the note you are about to add using \
+   keyword overlap: extract the key terms from both notes (constraint name, vendor name, \
+   material, action item, date references, status keywords like "resolved", "pending", \
+   "delayed", "delivered"). If the existing same-day note shares 3 or more key terms \
+   with the note you are about to add, treat it as a DUPLICATE.
+4. If DUPLICATE detected: SKIP the `constraints_add_note` call entirely. Instead, output: \
+   "DEDUP_SKIP: [constraint title] — same-day note already exists covering [overlapping topic]. \
+   Skipping to avoid duplicate."
+5. Only proceed with `constraints_add_note` if NO substantially similar same-day note exists.
+
+This dedup check applies to ALL write paths — sync pipeline execution, manual constraint \
+updates, follow-up notes, and any other note additions. The goal: if the sync pipeline \
+runs twice, or overlaps with a manual push, no duplicate notes are created. When in doubt, \
+SKIP rather than duplicate. A skipped note is harmless; a duplicate note clutters the log.
+
 ## LOCAL FILE TOOLS — SECONDARY DATA SOURCE
 You also have full file system access for local constraint files, schedule data, etc.
 

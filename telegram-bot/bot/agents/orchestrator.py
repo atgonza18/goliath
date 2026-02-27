@@ -973,6 +973,15 @@ IMPORTANT:
 - If the proposed actions list is empty, fall back to the original constraints and do your \
 own deduplication analysis before creating/updating.
 
+NOTE-LEVEL DEDUP (CRITICAL — prevents duplicate notes if pipeline runs twice or overlaps \
+with a manual push):
+- Before calling `constraints_add_note` on ANY constraint, first call \
+`constraints_get_with_notes` for that constraint and check ALL existing notes.
+- If any note from TODAY (same calendar date) already covers the same topic (shares 3+ key \
+terms like constraint name, vendor, material, action, status keywords), SKIP the note add.
+- Log every skip as: "DEDUP_SKIP: [constraint title] — same-day note already exists"
+- When in doubt, SKIP rather than duplicate. A skipped note is harmless; a duplicate clutters the log.
+
 After processing, output a sync summary:
 
 ```SYNC_SUMMARY
