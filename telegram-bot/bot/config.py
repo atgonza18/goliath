@@ -1,4 +1,5 @@
 import os
+import re
 from pathlib import Path
 from dotenv import load_dotenv
 
@@ -72,3 +73,31 @@ PROJECT_SUBFOLDERS = [
     "project-directory",
     "pod",
 ]
+
+# Central constraints report folder (portfolio-wide, from Joshua Hauger)
+CONSTRAINTS_REPORTS_DIR = REPO_ROOT / "dsc-constraints-production-reports"
+
+
+def match_project_key(text: str) -> str | None:
+    """Try to find a portfolio project name within a text string.
+
+    Returns the project key (e.g., 'salt-branch') or None if no match.
+    Uses word-boundary matching and checks longest names first to avoid
+    false positives (e.g., 'Duff' matching inside 'Duffy BESS').
+    """
+    if not text:
+        return None
+    text_lower = text.lower()
+    # Sort by name length descending so longer names match first
+    sorted_projects = sorted(
+        PROJECTS.items(),
+        key=lambda x: len(x[1]["name"]),
+        reverse=True,
+    )
+    for key, info in sorted_projects:
+        name = info["name"].lower()
+        # Word boundary match to avoid partial hits
+        pattern = r'\b' + re.escape(name) + r'\b'
+        if re.search(pattern, text_lower):
+            return key
+    return None

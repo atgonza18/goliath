@@ -1330,15 +1330,19 @@ async def _run_proactive_task(scheduler: "Scheduler", session_type: str) -> None
 async def task_email_poll(scheduler: "Scheduler") -> None:
     """Poll Gmail IMAP for inbound [INBOX:] emails and feed into message queue.
 
-    This is an interval task (every 3 minutes). It's lightweight — just an
+    This is an interval task (every 45s). It's lightweight — just an
     IMAP search + fetch cycle — so it doesn't need the full 15-minute timeout.
+
+    Also handles automatic attachment filing for:
+      - POD emails → projects/{key}/pod/
+      - Constraints updates → dsc-constraints-production-reports/{date}/
     """
     # Import here to avoid circular imports at module load time
     from bot.services.email_poller import EmailPoller
     from bot.config import GMAIL_ADDRESS, GMAIL_APP_PASSWORD, GMAIL_IMAP_HOST
 
     if not GMAIL_ADDRESS or not GMAIL_APP_PASSWORD:
-        # Silently skip if not configured — don't spam logs every 3 minutes
+        # Silently skip if not configured — don't spam logs every 45 seconds
         return
 
     # We need the message queue from bot_data. The scheduler holds a bot ref,
@@ -1358,15 +1362,46 @@ async def task_email_poll(scheduler: "Scheduler") -> None:
         imap_host=GMAIL_IMAP_HOST,
     )
     poller.set_queue(queue)
+    # Wire up bot so poller can send Telegram notifications for auto-filed attachments
+    poller.set_bot(bot)
 
     try:
         count = await asyncio.wait_for(poller.poll(), timeout=60)
         if count > 0:
-            logger.info(f"Email poll: {count} new inbound email(s) queued")
+            logger.info(f"Email poll: {count} new inbound email(s) processed")
     except asyncio.TimeoutError:
         logger.warning("Email poll timed out after 60s")
     except Exception:
         logger.exception("Email poll error")
+
+
+async def task_weekly_portfolio_check(scheduler: "Scheduler") -> None:
+    """Weekly reminder (Mondays) to check for new DSC project onboarding.
+
+    Fires daily at 8 AM CT but only sends on Mondays. On other days it's a no-op.
+    """
+    now_ct = datetime.now(CT)
+    if now_ct.weekday() != 0:  # 0 = Monday
+        return
+
+    chat_id = _get_chat_id()
+    if not chat_id or not scheduler.bot:
+        return
+
+    project_list = "\n".join(
+        f"  • {info['name']}"
+        for _key, info in sorted(PROJECTS.items(), key=lambda x: x[1]['number'])
+    )
+    msg = (
+        "📋 <b>Weekly Portfolio Check</b>\n\n"
+        "Morning boss — weekly reminder to check if any new projects "
+        "have been onboarded to the DSC portfolio.\n\n"
+        "<b>Current portfolio (12 projects):</b>\n"
+        f"{project_list}\n\n"
+        "Any additions or changes? Let me know and I'll get the folder "
+        "structure and monitoring set up."
+    )
+    await _send_telegram(scheduler.bot, chat_id, msg)
 
 
 # ------------------------------------------------------------------
@@ -1455,12 +1490,20 @@ def create_scheduler(bot=None) -> Scheduler:
         description="6 PM CT evening debrief — Nimrod reflects on the day and sets up tomorrow",
     )
 
-    # Interval task: poll Gmail for inbound emails every 3 minutes
+    sched.add_task(
+        name="weekly_portfolio_check",
+        hour=8,
+        minute=0,
+        callback=task_weekly_portfolio_check,
+        description="Monday 8 AM CT — Remind about new DSC project onboarding",
+    )
+
+    # Interval task: poll Gmail for inbound emails every 45 seconds
     sched.add_interval_task(
         name="email_poll",
         interval_seconds=45,
         callback=task_email_poll,
-        description="Poll Gmail IMAP for inbound [INBOX:] tagged emails",
+        description="Poll Gmail IMAP for inbound [INBOX:] tagged emails + auto-file POD/constraints attachments",
     )
 
     return sched
