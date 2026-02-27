@@ -171,11 +171,12 @@ async def _run_orchestrator(
     run_error = None
 
     try:
-        # 30 minute overall timeout — generous for multi-agent report generation
-        # and follow-up subagent dispatches (e.g., probing questions workflows)
+        # 2 hour zombie safety net — NOT an operational timeout.
+        # Claude CLI runs until done; this only catches truly hung orchestrations.
+        # Previous values (900s, 1800s) killed legitimate long-running workflows.
         orch_result = await asyncio.wait_for(
             orchestrator.handle_message(user_message, conv_history),
-            timeout=1800,
+            timeout=7200,
         )
 
         result_text = orch_result.text

@@ -23,11 +23,12 @@ class AgentResult:
 class SubagentRunner:
     """Invokes a Claude CLI subprocess for a specific agent definition."""
 
-    # Default per-subagent timeout (15 minutes) — generous for complex MCP-backed
-    # queries and multi-tool workflows. The 1800s orchestration ceiling is the
-    # ultimate guard; this just prevents truly hung processes from lingering.
-    # Previous value of 300s was killing productive work prematurely.
-    DEFAULT_TIMEOUT = 900
+    # Safety-net timeout ONLY — catches genuinely hung zombie processes.
+    # This should NEVER fire during normal operation. Claude CLI has no
+    # natural timeout; it runs until the task is done or context exhausts.
+    # We do NOT use this as an operational constraint — just zombie cleanup.
+    # Previous values (300s, 900s) were killing productive work. Never again.
+    DEFAULT_TIMEOUT = 3600  # 1 hour — zombie safety net only
 
     def __init__(self):
         self._env = os.environ.copy()
@@ -89,7 +90,7 @@ class SubagentRunner:
 
         cmd.append(full_prompt)
 
-        logger.info(f"Running subagent '{agent.name}' (timeout={timeout}s)")
+        logger.info(f"Running subagent '{agent.name}' (safety-net={timeout}s)")
         start = time.monotonic()
 
         try:
@@ -133,7 +134,11 @@ class SubagentRunner:
 
         except asyncio.TimeoutError:
             elapsed = time.monotonic() - start
-            logger.warning(f"Subagent '{agent.name}' timed out after {elapsed:.1f}s")
+            logger.error(
+                f"Subagent '{agent.name}' hit ZOMBIE SAFETY NET after {elapsed:.1f}s — "
+                f"this should never happen in normal operation. The process was likely "
+                f"truly hung. Killing it."
+            )
             try:
                 process.kill()
                 await process.wait()
@@ -144,7 +149,7 @@ class SubagentRunner:
                 success=False,
                 output="",
                 duration_seconds=elapsed,
-                error=f"Timed out after {timeout}s",
+                error=f"Process appeared hung and was killed after {timeout}s (zombie safety net). This is unusual — please report.",
             )
 
         except FileNotFoundError:
