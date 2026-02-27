@@ -4,12 +4,17 @@ import logging
 import re
 import time
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Optional
 
 from bot.agents.definitions import NIMROD, CONSTRAINTS_MANAGER
 from bot.agents.registry import AgentRegistry
 from bot.agents.runner import SubagentRunner, AgentResult
 from bot.memory.store import MemoryStore
+
+# Pending constraint sync proposals are saved here for approval
+_DATA_DIR = Path(__file__).resolve().parent.parent / "data"
+PENDING_SYNC_PATH = _DATA_DIR / "pending_constraint_sync.json"
 
 logger = logging.getLogger(__name__)
 
@@ -64,6 +69,11 @@ class NimrodOrchestrator:
 
     async def handle_message(self, user_message: str, conversation_history: str = "") -> OrchestrationResult:
         all_file_paths: list[str] = []
+
+        # --- FAST PATH: Constraint sync approval/rejection ---
+        sync_result = await self._check_constraint_sync_approval(user_message)
+        if sync_result is not None:
+            return sync_result
 
         # Gather memory context
         memory_context = await self._build_memory_context(user_message)
@@ -154,16 +164,17 @@ class NimrodOrchestrator:
                 if r.agent_name == "transcript_processor":
                     constraints_sync_data = self._parse_constraints_sync(r.output)
 
-        # --- CONSTRAINTS SYNC: auto-dispatch if transcript had constraints ---
-        # Runs concurrently with synthesis to save time.
-        sync_task = None
+        # --- CONSTRAINTS SYNC PROPOSAL: compare against ConstraintsPro, propose changes ---
+        # Instead of auto-pushing, we generate a read-only proposal and save it
+        # for the user to approve before anything gets written to ConstraintsPro.
+        sync_proposal_task = None
         if constraints_sync_data:
             logger.info(
                 f"Transcript contained {len(constraints_sync_data['constraints'])} "
-                f"constraint(s) — launching ConstraintsPro sync"
+                f"constraint(s) — generating sync proposal (human-in-the-loop)"
             )
-            sync_task = asyncio.create_task(
-                self._dispatch_constraints_sync(constraints_sync_data)
+            sync_proposal_task = asyncio.create_task(
+                self._propose_constraints_sync(constraints_sync_data)
             )
 
         # --- PASS 2: Nimrod synthesis (proceeds even if some subagents failed) ---
@@ -265,33 +276,33 @@ class NimrodOrchestrator:
                     restart_required = True
                     restart_reason = fin_reason
 
-        # --- AWAIT CONSTRAINTS SYNC (if running) ---
+        # --- AWAIT CONSTRAINTS SYNC PROPOSAL (if running) ---
         sync_summary_text = ""
-        if sync_task is not None:
+        if sync_proposal_task is not None:
             try:
-                sync_result = await sync_task
-                if sync_result and sync_result.success and sync_result.output:
-                    summary = self._parse_sync_summary(sync_result.output)
-                    if summary:
-                        sync_summary_text = f"\n\n---\n{summary}"
-                    # Record sync in activity log
+                proposal_result = await sync_proposal_task
+                if proposal_result and proposal_result.success and proposal_result.output:
+                    proposal_text = self._parse_sync_proposal(proposal_result.output)
+                    if proposal_text:
+                        sync_summary_text = f"\n\n---\n{proposal_text}"
+                    # Record proposal generation in activity log
                     if self._subagent_log is not None:
                         self._subagent_log.append({
-                            "agent": "constraints_manager (auto-sync)",
-                            "success": sync_result.success,
-                            "duration": round(sync_result.duration_seconds, 1),
-                            "error": sync_result.error,
+                            "agent": "constraints_manager (sync proposal)",
+                            "success": proposal_result.success,
+                            "duration": round(proposal_result.duration_seconds, 1),
+                            "error": proposal_result.error,
                         })
-                    logger.info("ConstraintsPro sync completed successfully")
-                elif sync_result and not sync_result.success:
-                    logger.warning(f"ConstraintsPro sync failed: {sync_result.error}")
+                    logger.info("ConstraintsPro sync proposal generated successfully")
+                elif proposal_result and not proposal_result.success:
+                    logger.warning(f"ConstraintsPro sync proposal failed: {proposal_result.error}")
                     sync_summary_text = (
                         "\n\n---\n<b>ConstraintsPro Sync</b>: "
-                        "Sync attempted but failed. Constraints from this transcript "
-                        "were not pushed to ConstraintsPro."
+                        "Could not generate sync proposal. Constraints from this transcript "
+                        "were saved locally but not compared against ConstraintsPro."
                     )
             except Exception:
-                logger.exception("ConstraintsPro sync task raised an exception")
+                logger.exception("ConstraintsPro sync proposal task raised an exception")
 
         # Deduplicate file paths while preserving order
         seen = set()
@@ -350,6 +361,12 @@ class NimrodOrchestrator:
     ) -> str:
         subagent_list = self.registry.subagent_descriptions()
         parts = [f"{memory_context}\n\n---\n\n"]
+
+        # Inject pending constraint sync status if one exists
+        pending_sync = self.get_pending_sync_summary()
+        if pending_sync:
+            parts.append(f"SYSTEM STATE:\n{pending_sync}\n\n---\n\n")
+
         if conversation_history:
             parts.append(f"{conversation_history}\n\n---\n\n")
         parts.append(
@@ -575,7 +592,86 @@ class NimrodOrchestrator:
             except Exception:
                 logger.exception(f"Failed to resolve action item #{mid}")
 
-    # --- Constraints Sync Pipeline ---
+    # --- Constraints Sync Pipeline (Human-in-the-Loop) ---
+
+    # Patterns that indicate user wants to approve/reject the pending sync
+    _SYNC_APPROVE_PATTERNS = [
+        r"approve\s*(the\s+)?constraint\s*sync",
+        r"push\s*(the\s+)?constraints",
+        r"sync\s*(the\s+)?constraints",
+        r"approve\s*(the\s+)?sync",
+        r"yes[,.]?\s*(push|sync|approve)",
+        r"go\s+ahead\s+(with\s+)?(the\s+)?(sync|push|constraints)",
+        r"looks\s+good[,.]?\s*(push|sync|approve)",
+    ]
+    _SYNC_REJECT_PATTERNS = [
+        r"reject\s*(the\s+)?constraint\s*sync",
+        r"discard\s*(the\s+)?constraint\s*sync",
+        r"reject\s*(the\s+)?sync",
+        r"don'?t\s+(push|sync)\s*(the\s+)?constraints",
+        r"cancel\s*(the\s+)?sync",
+        r"skip\s*(the\s+)?sync",
+    ]
+
+    async def _check_constraint_sync_approval(
+        self, user_message: str
+    ) -> Optional[OrchestrationResult]:
+        """Check if the user message is approving or rejecting a pending constraint sync.
+
+        Returns an OrchestrationResult if handled, None if this isn't a sync approval message.
+        """
+        if not self.has_pending_sync():
+            return None
+
+        msg_lower = user_message.lower().strip()
+
+        # Check for approval
+        for pattern in self._SYNC_APPROVE_PATTERNS:
+            if re.search(pattern, msg_lower):
+                logger.info("User approved constraint sync — executing")
+                p1_start = time.monotonic()
+                result = await self.execute_approved_sync()
+                self._pass1_duration = time.monotonic() - p1_start
+
+                if result and result.success:
+                    summary = self._parse_sync_summary(result.output)
+                    self._subagent_log = [{
+                        "agent": "constraints_manager (approved sync)",
+                        "success": True,
+                        "duration": round(result.duration_seconds, 1),
+                        "error": None,
+                    }]
+                    text = summary or (
+                        "<b>ConstraintsPro Sync Complete</b>\n"
+                        "Constraints have been pushed to ConstraintsPro."
+                    )
+                    return OrchestrationResult(text=text, file_paths=[])
+                else:
+                    error = result.error if result else "No pending sync data"
+                    return OrchestrationResult(
+                        text=(
+                            f"<b>ConstraintsPro Sync Failed</b>\n"
+                            f"Something went wrong: {error}\n"
+                            f"The pending sync has been preserved — you can try again."
+                        ),
+                        file_paths=[],
+                    )
+
+        # Check for rejection
+        for pattern in self._SYNC_REJECT_PATTERNS:
+            if re.search(pattern, msg_lower):
+                logger.info("User rejected constraint sync — discarding")
+                self.discard_pending_sync()
+                return OrchestrationResult(
+                    text=(
+                        "<b>Constraint sync discarded.</b>\n"
+                        "No changes were pushed to ConstraintsPro."
+                    ),
+                    file_paths=[],
+                )
+
+        # Not a sync approval/rejection — continue with normal flow
+        return None
 
     def _parse_constraints_sync(self, text: str) -> Optional[dict]:
         """Parse CONSTRAINTS_SYNC block from transcript_processor output.
@@ -615,17 +711,14 @@ class NimrodOrchestrator:
 
         return {"project": project, "constraints": constraints}
 
-    async def _dispatch_constraints_sync(
+    async def _propose_constraints_sync(
         self, sync_data: dict, source_description: str = "meeting transcript"
     ) -> Optional[AgentResult]:
-        """Auto-dispatch constraints_manager to sync extracted constraints to ConstraintsPro.
+        """Dispatch constraints_manager in READ-ONLY mode to generate a sync proposal.
 
-        This handles:
-        - Deduplication against existing ConstraintsPro data
-        - Creating new constraints
-        - Updating existing constraints with meeting notes
-        - Closing resolved constraints
-        - Priority assessment (HIGH/MEDIUM/LOW)
+        This compares extracted constraints against existing ConstraintsPro data and
+        produces a proposal of what would be created/updated/closed. The proposal is
+        saved to a JSON file for the user to approve before any writes happen.
         """
         constraints = sync_data["constraints"]
         project = sync_data.get("project", "unknown")
@@ -633,63 +726,50 @@ class NimrodOrchestrator:
         constraints_json = json.dumps(constraints, indent=2)
 
         prompt = f"""\
-You are syncing constraints extracted from a {source_description} to ConstraintsPro. \
-Follow these steps carefully:
+You are comparing constraints extracted from a {source_description} against what already \
+exists in ConstraintsPro. This is a READ-ONLY analysis — DO NOT create, update, or modify \
+anything. Your job is to produce a PROPOSAL of what WOULD change.
 
 STEP 1: Call `projects_list` to get all project IDs and names.
 
 STEP 2: For each constraint below, find the matching project by name/key and call \
 `constraints_list_by_project` to get ALL existing constraints for that project.
 
-STEP 3: DEDUPLICATION — For each extracted constraint, compare against existing constraints:
+STEP 3: DEDUPLICATION ANALYSIS — For each extracted constraint, compare against existing:
 - Match by SEMANTIC SIMILARITY, not exact text. If an existing constraint covers the same \
-issue (same blocker, same material, same vendor problem, etc.), it is a MATCH even if worded differently.
-- If you find a match:
-  a) If the extracted constraint has resolved=true, update the existing constraint's status \
-to "Resolved" using `constraints_update_status`.
-  b) Otherwise, add a note using `constraints_add_note` with the meeting discussion: \
-"[Meeting Update] {{status_discussed}}. Commitments: {{commitments}}"
-  c) If the extracted priority differs from the existing priority AND the extracted priority \
-is higher, update the priority using `constraints_update`.
-- If NO match exists AND resolved is false, CREATE a new constraint (Step 4).
+issue (same blocker, same material, same vendor problem, etc.), it is a MATCH.
+- Classify each extracted constraint as one of:
+  a) MATCH_UPDATE — Matches an existing constraint; would add meeting notes and/or update priority
+  b) MATCH_RESOLVE — Matches an existing constraint AND extracted has resolved=true; would close it
+  c) NEW — No existing match and not resolved; would create a new constraint
+  d) SKIP — Resolved but no existing match (nothing to do)
 
-STEP 4: For NEW constraints (no existing match, not resolved), create using `constraints_create`:
-- Match project ID from Step 1
-- title: Concise title (first ~80 chars of description)
-- description: Full description
-- priority: Assess as HIGH (blocks critical path, safety risk, or imminent deadline), \
-MEDIUM (impacts schedule within 2-4 weeks), or LOW (tracking item, no immediate impact). \
-Use the priority from the transcript as a starting point but adjust based on your assessment.
-- category: As specified (CONSTRUCTION/PROCUREMENT/ENGINEERING/PERMITTING/OTHER)
-- needByDate: As specified (or omit if null)
-- owner: As specified
-Then add a note: "Auto-synced from {source_description}. Discussion: {{status_discussed}}"
+STEP 4: For each classified constraint, note:
+- The extracted description, priority, owner, category
+- If MATCH: the existing ConstraintsPro constraint title and ID
+- If MATCH: what would change (notes to add, priority change, status change)
+- If NEW: what would be created (title, priority, category, owner, need-by date)
 
-STEP 5: For constraints marked resolved=true that MATCHED an existing constraint, \
-update status to "Resolved" and add a closing note: \
-"Confirmed resolved in {source_description}. {{status_discussed}}"
+DO NOT use any write tools (constraints_create, constraints_update, constraints_update_status, \
+constraints_add_note, constraints_bulk_import). READ ONLY.
 
-EXTRACTED CONSTRAINTS TO SYNC:
+EXTRACTED CONSTRAINTS FROM TRANSCRIPT:
 {constraints_json}
 
-IMPORTANT:
-- This is an AUTHORIZED WRITE operation — you are explicitly instructed to create/update/close.
-- NEVER create duplicates. When in doubt, add a note to the existing constraint instead.
-- Prioritize accuracy: HIGH = critical path/safety/imminent, MEDIUM = schedule impact, LOW = tracking.
+After your analysis, output a SYNC_PROPOSAL block with a JSON array of proposed actions:
 
-After processing, output a sync summary:
-
-```SYNC_SUMMARY
-created: <number of new constraints created>
-updated: <number of existing constraints updated with notes>
-closed: <number of constraints marked resolved>
-skipped: <number skipped for any reason>
-details: <brief description of what was synced>
+```SYNC_PROPOSAL
+project: {project}
+meeting_date: {time.strftime('%Y-%m-%d')}
+source: {source_description}
+actions: [{{"action": "CREATE|UPDATE|RESOLVE|SKIP", "description": "...", "priority": "HIGH|MEDIUM|LOW", "owner": "...", "category": "...", "need_by_date": "YYYY-MM-DD or null", "existing_title": "title of matching constraint or null", "existing_id": "ConstraintsPro ID or null", "notes_to_add": "meeting notes text or null", "priority_change": "OLD -> NEW or null", "reason": "brief explanation of why this action"}}]
 ```
+
+The JSON must be valid and on a single line after "actions: ".
 """
 
         logger.info(
-            f"Auto-dispatching constraints_manager for sync — "
+            f"Dispatching constraints_manager for sync PROPOSAL (read-only) — "
             f"{len(constraints)} constraint(s) from {source_description}, "
             f"project={project}"
         )
@@ -704,14 +784,275 @@ details: <brief description of what was synced>
 
         if result.success:
             logger.info(
-                f"Constraints sync completed in {result.duration_seconds:.1f}s"
+                f"Constraints sync proposal generated in {result.duration_seconds:.1f}s"
             )
+            # Parse and save the proposal for later approval
+            self._save_pending_sync(result.output, sync_data)
         else:
             logger.error(
-                f"Constraints sync failed: {result.error}"
+                f"Constraints sync proposal failed: {result.error}"
             )
 
         return result
+
+    def _save_pending_sync(self, proposal_output: str, original_sync_data: dict) -> None:
+        """Save the pending sync proposal to a JSON file for later approval."""
+        proposal = self._parse_sync_proposal_data(proposal_output)
+        if not proposal:
+            logger.warning("Could not parse SYNC_PROPOSAL — saving raw sync data only")
+            proposal = {"actions": [], "raw_output": proposal_output[:3000]}
+
+        pending = {
+            "created_at": time.strftime("%Y-%m-%dT%H:%M:%S"),
+            "project": original_sync_data.get("project", "unknown"),
+            "original_constraints": original_sync_data["constraints"],
+            "proposal": proposal,
+        }
+
+        try:
+            _DATA_DIR.mkdir(parents=True, exist_ok=True)
+            with open(PENDING_SYNC_PATH, "w") as f:
+                json.dump(pending, f, indent=2)
+            logger.info(f"Saved pending constraint sync to {PENDING_SYNC_PATH}")
+        except Exception:
+            logger.exception("Failed to save pending constraint sync")
+
+    def _parse_sync_proposal_data(self, text: str) -> Optional[dict]:
+        """Parse SYNC_PROPOSAL block and return structured data."""
+        pattern = r"```SYNC_PROPOSAL\s*\n(.*?)```"
+        match = re.search(pattern, text, re.DOTALL)
+        if not match:
+            return None
+
+        block = match.group(1)
+        fields = {}
+        for line in block.strip().split("\n"):
+            if ":" in line:
+                key, _, value = line.partition(":")
+                fields[key.strip()] = value.strip()
+
+        raw_actions = fields.get("actions", "").strip()
+        actions = []
+        if raw_actions:
+            try:
+                actions = json.loads(raw_actions)
+                if not isinstance(actions, list):
+                    actions = []
+            except json.JSONDecodeError:
+                logger.warning("Failed to parse SYNC_PROPOSAL actions JSON")
+
+        return {
+            "project": fields.get("project", ""),
+            "meeting_date": fields.get("meeting_date", ""),
+            "source": fields.get("source", ""),
+            "actions": actions,
+        }
+
+    def _parse_sync_proposal(self, text: str) -> Optional[str]:
+        """Extract SYNC_PROPOSAL block and format as an HTML notification for the user."""
+        proposal = self._parse_sync_proposal_data(text)
+        if not proposal or not proposal.get("actions"):
+            # Even without a structured proposal, check if a pending sync was saved
+            if PENDING_SYNC_PATH.exists():
+                return (
+                    "<b>ConstraintsPro Sync Proposal</b>\n"
+                    "Constraints from this transcript have been compared against ConstraintsPro. "
+                    "Say <b>\"approve constraint sync\"</b> to push changes, or "
+                    "<b>\"reject constraint sync\"</b> to discard."
+                )
+            return None
+
+        actions = proposal["actions"]
+        creates = [a for a in actions if a.get("action") == "CREATE"]
+        updates = [a for a in actions if a.get("action") == "UPDATE"]
+        resolves = [a for a in actions if a.get("action") == "RESOLVE"]
+        skips = [a for a in actions if a.get("action") == "SKIP"]
+
+        total_changes = len(creates) + len(updates) + len(resolves)
+        if total_changes == 0:
+            return (
+                "<b>ConstraintsPro Sync</b>: No changes needed — "
+                "all constraints from this transcript already match ConstraintsPro."
+            )
+
+        parts = ["<b>ConstraintsPro Sync Proposal</b> (pending your approval)"]
+
+        if creates:
+            parts.append(f"\n<b>CREATE ({len(creates)} new):</b>")
+            for c in creates:
+                desc = (c.get("description") or "")[:80]
+                prio = c.get("priority", "?")
+                owner = c.get("owner", "unassigned")
+                parts.append(f"  - [{prio}] {desc} (owner: {owner})")
+
+        if updates:
+            parts.append(f"\n<b>UPDATE ({len(updates)} existing):</b>")
+            for u in updates:
+                existing = u.get("existing_title") or u.get("description", "")
+                existing = existing[:80]
+                notes = (u.get("notes_to_add") or "")[:60]
+                prio_change = u.get("priority_change")
+                detail = f"+ notes" + (f", priority {prio_change}" if prio_change else "")
+                parts.append(f"  - {existing} ({detail})")
+
+        if resolves:
+            parts.append(f"\n<b>RESOLVE ({len(resolves)}):</b>")
+            for r in resolves:
+                existing = (r.get("existing_title") or r.get("description", ""))[:80]
+                parts.append(f"  - {existing}")
+
+        if skips:
+            parts.append(f"\n<i>Skipped: {len(skips)} (resolved, no match in ConstraintsPro)</i>")
+
+        parts.append(
+            "\nSay <b>\"approve constraint sync\"</b> to push these changes, "
+            "or <b>\"reject constraint sync\"</b> to discard."
+        )
+
+        return "\n".join(parts)
+
+    async def execute_approved_sync(self) -> Optional[AgentResult]:
+        """Execute a previously proposed constraint sync after user approval.
+
+        Reads the pending sync data from disk and dispatches constraints_manager
+        with WRITE permissions to actually create/update/close constraints.
+        """
+        if not PENDING_SYNC_PATH.exists():
+            logger.warning("No pending constraint sync found")
+            return None
+
+        try:
+            with open(PENDING_SYNC_PATH, "r") as f:
+                pending = json.load(f)
+        except Exception:
+            logger.exception("Failed to read pending constraint sync")
+            return None
+
+        constraints = pending.get("original_constraints", [])
+        project = pending.get("project", "unknown")
+        proposal = pending.get("proposal", {})
+        actions = proposal.get("actions", [])
+        source = proposal.get("source", "meeting transcript")
+
+        if not constraints:
+            logger.warning("Pending sync has no constraints")
+            return None
+
+        constraints_json = json.dumps(constraints, indent=2)
+        actions_json = json.dumps(actions, indent=2) if actions else "[]"
+
+        prompt = f"""\
+The user has APPROVED syncing constraints from a {source} to ConstraintsPro. \
+Execute the following changes:
+
+STEP 1: Call `projects_list` to get all project IDs and names.
+
+STEP 2: For each constraint below, find the matching project and call \
+`constraints_list_by_project` to get existing constraints.
+
+STEP 3: Execute the APPROVED ACTIONS. Here is what was proposed and approved:
+
+PROPOSED ACTIONS (from the comparison analysis):
+{actions_json}
+
+ORIGINAL EXTRACTED CONSTRAINTS:
+{constraints_json}
+
+For each action:
+- CREATE: Use `constraints_create` with the specified fields. Add a note: \
+"Synced from {source} ({time.strftime('%Y-%m-%d')}). Discussion: [status_discussed]"
+- UPDATE: Use `constraints_add_note` to add meeting notes. If priority_change is specified, \
+use `constraints_update` to change priority.
+- RESOLVE: Use `constraints_update_status` to set status to "Resolved". Add a closing note: \
+"Confirmed resolved in {source} ({time.strftime('%Y-%m-%d')}). [status_discussed]"
+- SKIP: Do nothing.
+
+IMPORTANT:
+- This is an AUTHORIZED WRITE operation — the user explicitly approved these changes.
+- NEVER create duplicates. Match against existing constraints by semantic similarity.
+- If the proposed actions list is empty, fall back to the original constraints and do your \
+own deduplication analysis before creating/updating.
+
+After processing, output a sync summary:
+
+```SYNC_SUMMARY
+created: <number of new constraints created>
+updated: <number of existing constraints updated with notes>
+closed: <number of constraints marked resolved>
+skipped: <number skipped for any reason>
+details: <brief description of what was synced>
+```
+"""
+
+        logger.info(
+            f"Executing APPROVED constraints sync — "
+            f"{len(constraints)} constraint(s), project={project}"
+        )
+
+        async with _semaphore:
+            result = await self.runner.run(
+                agent=CONSTRAINTS_MANAGER,
+                task_prompt=prompt,
+                context=f"Project: {project}" if project and project != "unknown" else "",
+                timeout=300,
+            )
+
+        if result.success:
+            logger.info(
+                f"Approved constraints sync completed in {result.duration_seconds:.1f}s"
+            )
+            # Clean up the pending file
+            try:
+                PENDING_SYNC_PATH.unlink(missing_ok=True)
+                logger.info("Cleaned up pending constraint sync file")
+            except Exception:
+                logger.exception("Failed to clean up pending sync file")
+        else:
+            logger.error(
+                f"Approved constraints sync failed: {result.error}"
+            )
+
+        return result
+
+    def discard_pending_sync(self) -> bool:
+        """Discard a pending constraint sync proposal (user rejected it)."""
+        if PENDING_SYNC_PATH.exists():
+            try:
+                PENDING_SYNC_PATH.unlink()
+                logger.info("Discarded pending constraint sync")
+                return True
+            except Exception:
+                logger.exception("Failed to discard pending sync")
+        return False
+
+    @staticmethod
+    def has_pending_sync() -> bool:
+        """Check if there is a pending constraint sync awaiting approval."""
+        return PENDING_SYNC_PATH.exists()
+
+    @staticmethod
+    def get_pending_sync_summary() -> Optional[str]:
+        """Get a brief summary of the pending sync for Nimrod's context."""
+        if not PENDING_SYNC_PATH.exists():
+            return None
+        try:
+            with open(PENDING_SYNC_PATH, "r") as f:
+                pending = json.load(f)
+            project = pending.get("project", "unknown")
+            created_at = pending.get("created_at", "unknown")
+            constraints = pending.get("original_constraints", [])
+            actions = pending.get("proposal", {}).get("actions", [])
+            creates = len([a for a in actions if a.get("action") == "CREATE"])
+            updates = len([a for a in actions if a.get("action") == "UPDATE"])
+            resolves = len([a for a in actions if a.get("action") == "RESOLVE"])
+            return (
+                f"PENDING CONSTRAINT SYNC (from {created_at}, project: {project}): "
+                f"{len(constraints)} constraints extracted — "
+                f"proposal: {creates} new, {updates} updates, {resolves} to resolve. "
+                f"Awaiting user approval."
+            )
+        except Exception:
+            return "PENDING CONSTRAINT SYNC: File exists but could not be read."
 
     def _parse_sync_summary(self, text: str) -> Optional[str]:
         """Extract SYNC_SUMMARY block from constraints_manager output
@@ -738,7 +1079,7 @@ details: <brief description of what was synced>
         if total_actions == 0:
             return None
 
-        parts = ["<b>ConstraintsPro Sync</b> (auto from transcript)"]
+        parts = ["<b>ConstraintsPro Sync Complete</b>"]
         if created and created != "0":
             parts.append(f"  Created: {created} new")
         if updated and updated != "0":
@@ -757,6 +1098,7 @@ details: <brief description of what was synced>
         text = re.sub(r"```RESTART_REQUIRED\s*\n.*?```", "", text, flags=re.DOTALL)
         text = re.sub(r"```RESOLVE_ACTION\s*\n.*?```", "", text, flags=re.DOTALL)
         text = re.sub(r"```CONSTRAINTS_SYNC\s*\n.*?```", "", text, flags=re.DOTALL)
+        text = re.sub(r"```SYNC_PROPOSAL\s*\n.*?```", "", text, flags=re.DOTALL)
         text = re.sub(r"```SYNC_SUMMARY\s*\n.*?```", "", text, flags=re.DOTALL)
         return text.strip()
 

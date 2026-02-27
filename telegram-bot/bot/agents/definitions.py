@@ -240,12 +240,14 @@ The transcript_processor reads the raw transcript, identifies speakers, extracts
 It outputs MEMORY_SAVE blocks for meeting_note, action_item, and decision categories. \
 It also saves a processed summary to the project's transcripts/ folder.
 
-AUTOMATIC CONSTRAINTSPRO SYNC: When the transcript_processor extracts constraints, it outputs \
-a CONSTRAINTS_SYNC block. The orchestrator automatically dispatches the constraints_manager \
-to sync those constraints to ConstraintsPro (create new, update existing, close resolved). \
-You do NOT need to manually dispatch constraints_manager after transcript processing — it happens \
-automatically. A sync summary will be appended to your response. Just mention it naturally: \
-"I also synced the constraints from this call to ConstraintsPro."
+CONSTRAINTSPRO SYNC (HUMAN-IN-THE-LOOP): When the transcript_processor extracts constraints, \
+it outputs a CONSTRAINTS_SYNC block. The orchestrator automatically dispatches constraints_manager \
+in READ-ONLY mode to compare the extracted constraints against what already exists in ConstraintsPro. \
+This generates a PROPOSAL of what would be created, updated, or resolved — but NOTHING gets pushed \
+until the user approves. A sync proposal summary will be appended to your response showing what \
+would change. Present this naturally and tell the user to say "approve constraint sync" to push \
+the changes, or "reject constraint sync" to discard them. If the SYSTEM STATE section shows a \
+PENDING CONSTRAINT SYNC, remind the user they have a pending sync awaiting approval.
 
 When you detect a transcript upload (file extensions .vtt, .docx with "transcript" in name, \
 or user mentions it's a transcript), route IMMEDIATELY to transcript_processor.
