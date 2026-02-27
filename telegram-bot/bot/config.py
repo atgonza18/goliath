@@ -103,6 +103,21 @@ ESCALATION_SCAN_TIMES = [
 ESCALATION_MEDIUM_HORIZON_DAYS = int(os.getenv("ESCALATION_MEDIUM_HORIZON_DAYS", "7"))
 
 # ---------------------------------------------------------------------------
+# Follow-Up Queue config
+# ---------------------------------------------------------------------------
+# SQLite DB for follow-up queue state (separate from memory.db and escalation.db)
+FOLLOWUP_DB_PATH = DATA_DIR / "followup.db"
+
+# Follow-up scan times (CT timezone, 24-hour format) — staggered from escalation
+FOLLOWUP_SCAN_TIMES = [
+    (10, 0),   # 10:00 AM CT
+    (16, 0),   # 4:00 PM CT
+]
+
+# Constraints approaching need-by date within this many hours trigger a reminder
+FOLLOWUP_HORIZON_HOURS = int(os.getenv("FOLLOWUP_HORIZON_HOURS", "48"))
+
+# ---------------------------------------------------------------------------
 # Constraint Heartbeat config
 # ---------------------------------------------------------------------------
 # Snapshot storage directory

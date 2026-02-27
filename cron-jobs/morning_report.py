@@ -11,12 +11,15 @@ Sends an enhanced morning report to Telegram including:
 Uses HTML formatting (NOT Markdown) for Telegram parse_mode.
 """
 
+import asyncio
+import json
 import os
 import re
 import sys
 import sqlite3
 import requests
-from datetime import datetime
+from datetime import datetime, timedelta
+from html import escape as html_escape_fn
 from pathlib import Path
 from dotenv import load_dotenv
 
@@ -195,6 +198,185 @@ def build_project_health_summary() -> str:
     return "\n".join(lines)
 
 
+# ------------------------------------------------------------------
+# Trend analysis sections (constraint movement + follow-up queue)
+# ------------------------------------------------------------------
+
+SNAPSHOT_DIR = REPO_ROOT / "data" / "constraint_snapshots"
+FOLLOWUP_DB_PATH = REPO_ROOT / "telegram-bot" / "data" / "followup.db"
+
+
+def get_constraint_movement_24h() -> str:
+    """Load heartbeat snapshots and build an HTML summary of constraint changes."""
+    latest_path = SNAPSHOT_DIR / "latest.json"
+    previous_path = SNAPSHOT_DIR / "previous.json"
+
+    if not latest_path.exists():
+        return "<i>No constraint snapshots available yet.</i>"
+
+    try:
+        latest = json.loads(latest_path.read_text())
+    except (json.JSONDecodeError, OSError):
+        return "<i>Unable to read latest constraint snapshot.</i>"
+
+    total = len(latest.get("constraints", []))
+
+    # Check snapshot age
+    age_str = ""
+    try:
+        ts = latest.get("timestamp", "")
+        snapshot_dt = datetime.fromisoformat(ts)
+        age_hours = (datetime.utcnow() - snapshot_dt).total_seconds() / 3600
+        age_str = f" | Snapshot age: {age_hours:.1f}h"
+    except (ValueError, TypeError):
+        pass
+
+    if not previous_path.exists():
+        return (
+            f"<i>{total} total constraints tracked{age_str}</i>\n"
+            f"No previous snapshot for comparison — first run."
+        )
+
+    try:
+        previous = json.loads(previous_path.read_text())
+    except (json.JSONDecodeError, OSError):
+        return (
+            f"<i>{total} total constraints tracked{age_str}</i>\n"
+            f"Unable to read previous snapshot for comparison."
+        )
+
+    old_constraints = previous.get("constraints", [])
+    new_constraints = latest.get("constraints", [])
+
+    old_by_id = {c.get("id"): c for c in old_constraints if c.get("id")}
+    new_by_id = {c.get("id"): c for c in new_constraints if c.get("id")}
+
+    new_items = []
+    resolved_items = []
+    status_items = []
+    priority_items = []
+
+    priority_rank = {"LOW": 0, "MEDIUM": 1, "HIGH": 2, "CRITICAL": 3}
+
+    for cid, constraint in new_by_id.items():
+        priority = (constraint.get("priority") or "").upper()
+        status = (constraint.get("status") or "").lower()
+        project = constraint.get("project", "Unknown")
+        desc = constraint.get("description", "")[:120]
+
+        if cid not in old_by_id:
+            if priority in ("HIGH", "MEDIUM"):
+                new_items.append(f"  + [{priority}] {_html_escape(project)}: {_html_escape(desc)}")
+            continue
+
+        old_c = old_by_id[cid]
+        old_status = (old_c.get("status") or "").lower()
+        old_priority = (old_c.get("priority") or "").upper()
+
+        if status != old_status:
+            if status in ("resolved", "closed", "completed"):
+                resolved_items.append(f"  - {_html_escape(project)}: {_html_escape(desc)}")
+            else:
+                status_items.append(
+                    f"  ~ {_html_escape(project)}: {old_status} -> {status} — {_html_escape(desc)}"
+                )
+
+        new_rank = priority_rank.get(priority, -1)
+        old_rank = priority_rank.get(old_priority, -1)
+        if new_rank != old_rank:
+            direction = "elevated" if new_rank > old_rank else "lowered"
+            priority_items.append(
+                f"  ^ {_html_escape(project)}: {old_priority} -> {priority} ({direction}) — {_html_escape(desc)}"
+            )
+
+    total_changes = len(new_items) + len(resolved_items) + len(status_items) + len(priority_items)
+    lines = [f"<i>{total} total constraints tracked{age_str}</i>"]
+
+    if total_changes == 0:
+        lines.append("\nNo constraint changes in the last 24 hours.")
+        return "\n".join(lines)
+
+    lines.append(f"\n<b>{total_changes} change(s) detected:</b>")
+
+    if new_items:
+        lines.append(f"\n<b>New Constraints ({len(new_items)})</b>")
+        lines.extend(new_items[:8])
+    if resolved_items:
+        lines.append(f"\n<b>Resolved ({len(resolved_items)})</b>")
+        lines.extend(resolved_items[:8])
+    if status_items:
+        lines.append(f"\n<b>Status Changed ({len(status_items)})</b>")
+        lines.extend(status_items[:8])
+    if priority_items:
+        lines.append(f"\n<b>Priority Changed ({len(priority_items)})</b>")
+        lines.extend(priority_items[:8])
+
+    return "\n".join(lines)
+
+
+def get_followup_queue_summary() -> str:
+    """Query the follow-up queue DB for due/overdue items and format as HTML."""
+    if not FOLLOWUP_DB_PATH.exists():
+        return "<i>Follow-up queue not yet initialized.</i>"
+
+    try:
+        conn = sqlite3.connect(str(FOLLOWUP_DB_PATH))
+        conn.row_factory = sqlite3.Row
+        today = datetime.utcnow().strftime("%Y-%m-%d")
+
+        # Overdue items
+        cursor = conn.execute(
+            "SELECT * FROM follow_ups WHERE follow_up_date < ? AND status = 'pending' "
+            "ORDER BY follow_up_date ASC",
+            (today,),
+        )
+        overdue = [dict(row) for row in cursor.fetchall()]
+
+        # Due today
+        cursor = conn.execute(
+            "SELECT * FROM follow_ups WHERE follow_up_date = ? AND status = 'pending' "
+            "ORDER BY created_at ASC",
+            (today,),
+        )
+        due_today = [dict(row) for row in cursor.fetchall()]
+
+        conn.close()
+
+        if not overdue and not due_today:
+            return "<i>No follow-ups due or overdue today.</i>"
+
+        lines = []
+
+        if overdue:
+            lines.append(f"<b>Overdue ({len(overdue)})</b>")
+            for item in overdue[:10]:
+                project = _html_escape(str(item.get("project_key", "?")))
+                commitment = _html_escape(str(item.get("commitment", ""))[:120])
+                due = item.get("follow_up_date", "?")
+                owner = _html_escape(str(item.get("owner", "?")))
+                lines.append(
+                    f"  - [{project}] {commitment}\n"
+                    f"    <i>Due: {due} | Owner: {owner}</i>"
+                )
+
+        if due_today:
+            lines.append(f"<b>Due Today ({len(due_today)})</b>")
+            for item in due_today[:10]:
+                project = _html_escape(str(item.get("project_key", "?")))
+                commitment = _html_escape(str(item.get("commitment", ""))[:120])
+                owner = _html_escape(str(item.get("owner", "?")))
+                lines.append(
+                    f"  - [{project}] {commitment}\n"
+                    f"    <i>Owner: {owner}</i>"
+                )
+
+        return "\n".join(lines)
+
+    except Exception as e:
+        print(f"Warning: could not query follow-up DB: {e}")
+        return "<i>Follow-up queue unavailable.</i>"
+
+
 def build_morning_report() -> str:
     """Assemble the full morning report in HTML format."""
     now = datetime.now()
@@ -248,6 +430,34 @@ def build_morning_report() -> str:
         sections.append(
             f"<b>Latest Daily Scan</b>\n\n"
             f"<i>No scan reports found yet. The nightly scan may not have run.</i>"
+        )
+
+    # Section 4: Constraint Movement (24h)
+    try:
+        constraint_movement = get_constraint_movement_24h()
+        sections.append(
+            f"<b>Constraint Movement (24h)</b>\n"
+            f"{constraint_movement}"
+        )
+    except Exception as e:
+        print(f"Warning: constraint movement section failed: {e}")
+        sections.append(
+            f"<b>Constraint Movement (24h)</b>\n"
+            f"<i>Unable to analyze constraint changes.</i>"
+        )
+
+    # Section 5: Follow-Up Queue
+    try:
+        followup_summary = get_followup_queue_summary()
+        sections.append(
+            f"<b>Follow-Up Queue</b>\n"
+            f"{followup_summary}"
+        )
+    except Exception as e:
+        print(f"Warning: follow-up queue section failed: {e}")
+        sections.append(
+            f"<b>Follow-Up Queue</b>\n"
+            f"<i>Unable to load follow-up queue.</i>"
         )
 
     # Footer
