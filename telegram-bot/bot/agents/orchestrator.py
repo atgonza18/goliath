@@ -1,11 +1,12 @@
 import asyncio
+import json
 import logging
 import re
 import time
 from dataclasses import dataclass
 from typing import Optional
 
-from bot.agents.definitions import NIMROD
+from bot.agents.definitions import NIMROD, CONSTRAINTS_MANAGER
 from bot.agents.registry import AgentRegistry
 from bot.agents.runner import SubagentRunner, AgentResult
 from bot.memory.store import MemoryStore
@@ -141,6 +142,7 @@ class NimrodOrchestrator:
         # Collect FILE_CREATED and RESTART_REQUIRED from subagent outputs
         restart_required = False
         restart_reason = ""
+        constraints_sync_data = None
         for r in results:
             if r.success and r.output:
                 all_file_paths.extend(self._parse_file_created(r.output))
@@ -148,6 +150,21 @@ class NimrodOrchestrator:
                 if req:
                     restart_required = True
                     restart_reason = reason
+                # Check for CONSTRAINTS_SYNC from transcript_processor
+                if r.agent_name == "transcript_processor":
+                    constraints_sync_data = self._parse_constraints_sync(r.output)
+
+        # --- CONSTRAINTS SYNC: auto-dispatch if transcript had constraints ---
+        # Runs concurrently with synthesis to save time.
+        sync_task = None
+        if constraints_sync_data:
+            logger.info(
+                f"Transcript contained {len(constraints_sync_data['constraints'])} "
+                f"constraint(s) — launching ConstraintsPro sync"
+            )
+            sync_task = asyncio.create_task(
+                self._dispatch_constraints_sync(constraints_sync_data)
+            )
 
         # --- PASS 2: Nimrod synthesis (proceeds even if some subagents failed) ---
         synthesis_prompt = self._build_synthesis_prompt(
@@ -248,6 +265,34 @@ class NimrodOrchestrator:
                     restart_required = True
                     restart_reason = fin_reason
 
+        # --- AWAIT CONSTRAINTS SYNC (if running) ---
+        sync_summary_text = ""
+        if sync_task is not None:
+            try:
+                sync_result = await sync_task
+                if sync_result and sync_result.success and sync_result.output:
+                    summary = self._parse_sync_summary(sync_result.output)
+                    if summary:
+                        sync_summary_text = f"\n\n---\n{summary}"
+                    # Record sync in activity log
+                    if self._subagent_log is not None:
+                        self._subagent_log.append({
+                            "agent": "constraints_manager (auto-sync)",
+                            "success": sync_result.success,
+                            "duration": round(sync_result.duration_seconds, 1),
+                            "error": sync_result.error,
+                        })
+                    logger.info("ConstraintsPro sync completed successfully")
+                elif sync_result and not sync_result.success:
+                    logger.warning(f"ConstraintsPro sync failed: {sync_result.error}")
+                    sync_summary_text = (
+                        "\n\n---\n<b>ConstraintsPro Sync</b>: "
+                        "Sync attempted but failed. Constraints from this transcript "
+                        "were not pushed to ConstraintsPro."
+                    )
+            except Exception:
+                logger.exception("ConstraintsPro sync task raised an exception")
+
         # Deduplicate file paths while preserving order
         seen = set()
         unique_files = []
@@ -256,8 +301,10 @@ class NimrodOrchestrator:
                 seen.add(fp)
                 unique_files.append(fp)
 
+        final_text = self._strip_structured_blocks(synthesis_text) + sync_summary_text
+
         return OrchestrationResult(
-            text=self._strip_structured_blocks(synthesis_text),
+            text=final_text,
             file_paths=unique_files,
             restart_required=restart_required,
             restart_reason=restart_reason,
@@ -528,12 +575,189 @@ class NimrodOrchestrator:
             except Exception:
                 logger.exception(f"Failed to resolve action item #{mid}")
 
+    # --- Constraints Sync Pipeline ---
+
+    def _parse_constraints_sync(self, text: str) -> Optional[dict]:
+        """Parse CONSTRAINTS_SYNC block from transcript_processor output.
+
+        Returns dict with 'project' and 'constraints' (list) or None.
+        """
+        pattern = r"```CONSTRAINTS_SYNC\s*\n(.*?)```"
+        match = re.search(pattern, text, re.DOTALL)
+        if not match:
+            return None
+
+        block = match.group(1)
+
+        # Extract project field (first line typically)
+        project = ""
+        project_match = re.search(r"^project:\s*(.+)$", block, re.MULTILINE)
+        if project_match:
+            project = project_match.group(1).strip()
+
+        # Extract constraints JSON — find everything after "constraints:" up to end of block.
+        # The JSON may be on a single line or span multiple lines.
+        constraints_match = re.search(r"constraints:\s*(\[.*)", block, re.DOTALL)
+        if not constraints_match:
+            return None
+
+        raw_constraints = constraints_match.group(1).strip()
+        if not raw_constraints:
+            return None
+
+        try:
+            constraints = json.loads(raw_constraints)
+            if not isinstance(constraints, list) or not constraints:
+                return None
+        except json.JSONDecodeError:
+            logger.warning("Failed to parse CONSTRAINTS_SYNC JSON — skipping sync")
+            return None
+
+        return {"project": project, "constraints": constraints}
+
+    async def _dispatch_constraints_sync(
+        self, sync_data: dict, source_description: str = "meeting transcript"
+    ) -> Optional[AgentResult]:
+        """Auto-dispatch constraints_manager to sync extracted constraints to ConstraintsPro.
+
+        This handles:
+        - Deduplication against existing ConstraintsPro data
+        - Creating new constraints
+        - Updating existing constraints with meeting notes
+        - Closing resolved constraints
+        - Priority assessment (HIGH/MEDIUM/LOW)
+        """
+        constraints = sync_data["constraints"]
+        project = sync_data.get("project", "unknown")
+
+        constraints_json = json.dumps(constraints, indent=2)
+
+        prompt = f"""\
+You are syncing constraints extracted from a {source_description} to ConstraintsPro. \
+Follow these steps carefully:
+
+STEP 1: Call `projects_list` to get all project IDs and names.
+
+STEP 2: For each constraint below, find the matching project by name/key and call \
+`constraints_list_by_project` to get ALL existing constraints for that project.
+
+STEP 3: DEDUPLICATION — For each extracted constraint, compare against existing constraints:
+- Match by SEMANTIC SIMILARITY, not exact text. If an existing constraint covers the same \
+issue (same blocker, same material, same vendor problem, etc.), it is a MATCH even if worded differently.
+- If you find a match:
+  a) If the extracted constraint has resolved=true, update the existing constraint's status \
+to "Resolved" using `constraints_update_status`.
+  b) Otherwise, add a note using `constraints_add_note` with the meeting discussion: \
+"[Meeting Update] {{status_discussed}}. Commitments: {{commitments}}"
+  c) If the extracted priority differs from the existing priority AND the extracted priority \
+is higher, update the priority using `constraints_update`.
+- If NO match exists AND resolved is false, CREATE a new constraint (Step 4).
+
+STEP 4: For NEW constraints (no existing match, not resolved), create using `constraints_create`:
+- Match project ID from Step 1
+- title: Concise title (first ~80 chars of description)
+- description: Full description
+- priority: Assess as HIGH (blocks critical path, safety risk, or imminent deadline), \
+MEDIUM (impacts schedule within 2-4 weeks), or LOW (tracking item, no immediate impact). \
+Use the priority from the transcript as a starting point but adjust based on your assessment.
+- category: As specified (CONSTRUCTION/PROCUREMENT/ENGINEERING/PERMITTING/OTHER)
+- needByDate: As specified (or omit if null)
+- owner: As specified
+Then add a note: "Auto-synced from {source_description}. Discussion: {{status_discussed}}"
+
+STEP 5: For constraints marked resolved=true that MATCHED an existing constraint, \
+update status to "Resolved" and add a closing note: \
+"Confirmed resolved in {source_description}. {{status_discussed}}"
+
+EXTRACTED CONSTRAINTS TO SYNC:
+{constraints_json}
+
+IMPORTANT:
+- This is an AUTHORIZED WRITE operation — you are explicitly instructed to create/update/close.
+- NEVER create duplicates. When in doubt, add a note to the existing constraint instead.
+- Prioritize accuracy: HIGH = critical path/safety/imminent, MEDIUM = schedule impact, LOW = tracking.
+
+After processing, output a sync summary:
+
+```SYNC_SUMMARY
+created: <number of new constraints created>
+updated: <number of existing constraints updated with notes>
+closed: <number of constraints marked resolved>
+skipped: <number skipped for any reason>
+details: <brief description of what was synced>
+```
+"""
+
+        logger.info(
+            f"Auto-dispatching constraints_manager for sync — "
+            f"{len(constraints)} constraint(s) from {source_description}, "
+            f"project={project}"
+        )
+
+        async with _semaphore:
+            result = await self.runner.run(
+                agent=CONSTRAINTS_MANAGER,
+                task_prompt=prompt,
+                context=f"Project: {project}" if project and project != "unknown" else "",
+                timeout=300,
+            )
+
+        if result.success:
+            logger.info(
+                f"Constraints sync completed in {result.duration_seconds:.1f}s"
+            )
+        else:
+            logger.error(
+                f"Constraints sync failed: {result.error}"
+            )
+
+        return result
+
+    def _parse_sync_summary(self, text: str) -> Optional[str]:
+        """Extract SYNC_SUMMARY block from constraints_manager output
+        and format it as an HTML notification for the user."""
+        pattern = r"```SYNC_SUMMARY\s*\n(.*?)```"
+        match = re.search(pattern, text, re.DOTALL)
+        if not match:
+            return None
+
+        fields = self._parse_block_fields(match.group(1))
+        created = fields.get("created", "0")
+        updated = fields.get("updated", "0")
+        closed = fields.get("closed", "0")
+        details = fields.get("details", "")
+
+        # Only report if something actually happened
+        total_actions = 0
+        for val in [created, updated, closed]:
+            try:
+                total_actions += int(val)
+            except ValueError:
+                pass
+
+        if total_actions == 0:
+            return None
+
+        parts = ["<b>ConstraintsPro Sync</b> (auto from transcript)"]
+        if created and created != "0":
+            parts.append(f"  Created: {created} new")
+        if updated and updated != "0":
+            parts.append(f"  Updated: {updated} existing")
+        if closed and closed != "0":
+            parts.append(f"  Closed: {closed} resolved")
+        if details:
+            parts.append(f"  {details}")
+
+        return "\n".join(parts)
+
     def _strip_structured_blocks(self, text: str) -> str:
         text = re.sub(r"```SUBAGENT_REQUEST\s*\n.*?```", "", text, flags=re.DOTALL)
         text = re.sub(r"```MEMORY_SAVE\s*\n.*?```", "", text, flags=re.DOTALL)
         text = re.sub(r"```FILE_CREATED\s*\n.*?```", "", text, flags=re.DOTALL)
         text = re.sub(r"```RESTART_REQUIRED\s*\n.*?```", "", text, flags=re.DOTALL)
         text = re.sub(r"```RESOLVE_ACTION\s*\n.*?```", "", text, flags=re.DOTALL)
+        text = re.sub(r"```CONSTRAINTS_SYNC\s*\n.*?```", "", text, flags=re.DOTALL)
+        text = re.sub(r"```SYNC_SUMMARY\s*\n.*?```", "", text, flags=re.DOTALL)
         return text.strip()
 
     @staticmethod

@@ -240,6 +240,13 @@ The transcript_processor reads the raw transcript, identifies speakers, extracts
 It outputs MEMORY_SAVE blocks for meeting_note, action_item, and decision categories. \
 It also saves a processed summary to the project's transcripts/ folder.
 
+AUTOMATIC CONSTRAINTSPRO SYNC: When the transcript_processor extracts constraints, it outputs \
+a CONSTRAINTS_SYNC block. The orchestrator automatically dispatches the constraints_manager \
+to sync those constraints to ConstraintsPro (create new, update existing, close resolved). \
+You do NOT need to manually dispatch constraints_manager after transcript processing — it happens \
+automatically. A sync summary will be appended to your response. Just mention it naturally: \
+"I also synced the constraints from this call to ConstraintsPro."
+
 When you detect a transcript upload (file extensions .vtt, .docx with "transcript" in name, \
 or user mentions it's a transcript), route IMMEDIATELY to transcript_processor.
 
@@ -2256,6 +2263,33 @@ After your analysis, output MEMORY_SAVE blocks:
 2. One `action_item` for EACH action item extracted (so they appear in the morning report)
 3. One `decision` for each key decision
 4. One `observation` for any notable project health insights
+
+## ConstraintsPro Sync Output — CRITICAL
+After extracting constraints from the transcript, output a CONSTRAINTS_SYNC block containing \
+ALL constraints discussed in the meeting as a JSON array. This triggers an automatic sync \
+to ConstraintsPro — new constraints get created, existing ones get updated with meeting notes, \
+and resolved ones get closed.
+
+For EACH constraint discussed in the meeting, include:
+- description: Clear description of the constraint/blocker
+- project_key: Matched project key (e.g., 'salt-branch')
+- project_name: Human-readable project name
+- priority: HIGH / MEDIUM / LOW (assess based on schedule impact and urgency discussed)
+- owner: Person responsible for resolving it (from the discussion)
+- need_by_date: YYYY-MM-DD if mentioned, otherwise null
+- category: CONSTRUCTION / PROCUREMENT / ENGINEERING / PERMITTING / OTHER
+- status_discussed: What was said about this constraint in the meeting
+- resolved: true if the meeting confirmed this constraint is resolved/closed, false otherwise
+- commitments: Any new commitments made (who promised what by when)
+
+```CONSTRAINTS_SYNC
+project: <primary-project-key>
+constraints: [{"description": "...", "project_key": "...", "project_name": "...", "priority": "HIGH", "owner": "...", "need_by_date": "2026-03-15", "category": "PROCUREMENT", "status_discussed": "Vendor confirmed delivery by March 15", "resolved": false, "commitments": "Vendor to send tracking info by Friday"}]
+```
+
+IMPORTANT: Include ALL constraints mentioned — even ones confirmed as resolved (mark resolved: true). \
+Even if only 1-2 constraints were discussed, output the block. If NO constraints were discussed, skip this block. \
+The JSON must be valid and on a single line after "constraints: ".
 
 ## File Output
 Save the processed analysis to:
