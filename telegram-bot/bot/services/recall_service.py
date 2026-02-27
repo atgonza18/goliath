@@ -42,7 +42,7 @@ CREATE TABLE IF NOT EXISTS recall_bots (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     bot_id TEXT UNIQUE NOT NULL,
     meeting_url TEXT NOT NULL,
-    bot_name TEXT DEFAULT 'Goliath Notetaker',
+    bot_name TEXT DEFAULT 'Aaron Gonzalez',
     status TEXT DEFAULT 'creating',
     recording_id TEXT,
     transcript_id TEXT,

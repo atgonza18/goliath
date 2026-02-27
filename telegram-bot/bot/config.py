@@ -67,7 +67,7 @@ RELAY_TO_ADDRESS = os.getenv("RELAY_TO_ADDRESS", "")
 # ---------------------------------------------------------------------------
 RECALL_API_KEY = os.getenv("RECALL_API_KEY", "")
 RECALL_API_BASE_URL = os.getenv("RECALL_API_BASE_URL", "https://us-east-1.recall.ai")
-RECALL_BOT_NAME = os.getenv("RECALL_BOT_NAME", "Goliath Notetaker")
+RECALL_BOT_NAME = os.getenv("RECALL_BOT_NAME", "Aaron Gonzalez")
 
 # Subfolder names within each project
 PROJECT_SUBFOLDERS = [

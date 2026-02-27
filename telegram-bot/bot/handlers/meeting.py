@@ -50,7 +50,7 @@ async def join_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(
             "<b>Usage:</b> <code>/join &lt;Teams meeting link&gt;</code>\n\n"
             "Paste a Microsoft Teams meeting link and I'll send the "
-            "Goliath Notetaker bot to join, record, and transcribe the call.\n\n"
+            "notetaker bot to join, record, and transcribe the call.\n\n"
             "You can also just paste a Teams link in chat and I'll ask if you want me to join.",
             parse_mode="HTML",
         )
@@ -58,8 +58,8 @@ async def join_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     chat_id = update.effective_chat.id
     await update.message.reply_text(
-        "🤖 <b>Sending Goliath Notetaker to join the meeting...</b>\n"
-        "The bot will appear as a participant. Someone may need to admit it from the lobby.",
+        "🤖 <b>Sending Aaron Gonzalez (notetaker) to join the meeting...</b>\n"
+        "The bot will appear as 'Aaron Gonzalez' in the participant list.",
         parse_mode="HTML",
     )
 
