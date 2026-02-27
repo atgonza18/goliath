@@ -126,6 +126,24 @@ HEARTBEAT_SNAPSHOT_DIR = REPO_ROOT / "data" / "constraint_snapshots"
 # Heartbeat interval in seconds (default: 3600 = 1 hour)
 HEARTBEAT_INTERVAL_SECONDS = int(os.getenv("HEARTBEAT_INTERVAL_SECONDS", "3600"))
 
+# ---------------------------------------------------------------------------
+# Constraint Auto-Logger config (Email -> ConstraintsPro bridge)
+# ---------------------------------------------------------------------------
+# Known senders of constraint-related emails (case-insensitive partial match
+# on email address). Emails from these senders classified as "constraints" by
+# the email poller will also trigger auto-logging to ConstraintsPro.
+CONSTRAINT_EMAIL_SENDERS = ['hauger', 'hogger']
+
+# Subject keywords that indicate constraint content — if a non-POD,
+# non-schedule email has one of these in the subject AND attachments,
+# it's likely a constraints email worth auto-logging.
+CONSTRAINT_EMAIL_KEYWORDS = [
+    'constraint', 'constraints',
+    'production & constraints', 'production and constraints',
+    'blocker', 'blockers',
+    'open items', 'open issues',
+]
+
 
 def match_project_key(text: str) -> str | None:
     """Try to find a portfolio project name within a text string.

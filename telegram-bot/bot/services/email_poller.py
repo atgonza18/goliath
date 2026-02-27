@@ -17,6 +17,12 @@ Attachment auto-filing:
   - Only files for portfolio projects (defined in config.PROJECTS)
   - Non-portfolio project emails with attachments are silently skipped
 
+Constraint auto-logging (Feature #5):
+  - Constraint-classified emails are also parsed for individual constraints
+  - Each constraint is auto-created in ConstraintsPro via the constraints_manager agent
+  - User is notified in Telegram with a summary for review
+  - Runs as a background task so it never blocks the polling cycle
+
 Credentials come from env vars: GMAIL_ADDRESS, GMAIL_APP_PASSWORD, GMAIL_IMAP_HOST.
 """
 
@@ -38,6 +44,7 @@ from bot.config import (
     GMAIL_ADDRESS, GMAIL_APP_PASSWORD, GMAIL_IMAP_HOST,
     PROJECTS, PROJECTS_DIR, REPORT_CHAT_ID, CONSTRAINTS_REPORTS_DIR,
     RELAY_TO_ADDRESS, match_project_key,
+    CONSTRAINT_EMAIL_SENDERS, CONSTRAINT_EMAIL_KEYWORDS,
 )
 
 logger = logging.getLogger(__name__)
@@ -257,6 +264,15 @@ class EmailPoller:
                                 f"{classification.upper()} email received but no "
                                 f"attachments — skipping: {parsed['subject']!r}"
                             )
+
+                        # ── Constraint auto-logging (Feature #5) ─────────
+                        # Spawn a background task to parse constraints from
+                        # the email and create them in ConstraintsPro.
+                        # Non-blocking — the poller continues immediately.
+                        if classification == "constraints":
+                            self._spawn_constraint_logging(parsed)
+                        # ── End constraint auto-logging ───────────────────
+
                         count += 1
                         _mark_processed(dedup)
                         continue
@@ -874,6 +890,89 @@ class EmailPoller:
             )
         except Exception:
             logger.exception("Failed to send constraints notification to Telegram")
+
+    # ==================================================================
+    # Constraint auto-logging (Feature #5)
+    # ==================================================================
+
+    def _spawn_constraint_logging(self, parsed: dict) -> None:
+        """Spawn a background task to auto-log constraints from an email
+        into ConstraintsPro.
+
+        This is fire-and-forget — it runs asynchronously and never blocks
+        the email polling cycle. Errors are caught and logged internally.
+
+        Args:
+            parsed: Parsed email dict with 'sender', 'subject', 'body',
+                    and optionally 'attachments'.
+        """
+        if not self._bot or not self._chat_id:
+            logger.debug(
+                "Constraint auto-logging skipped — no bot/chat_id configured"
+            )
+            return
+
+        # Don't auto-log if the email has no body content to parse
+        body = (parsed.get("body") or "").strip()
+        if not body:
+            logger.info(
+                "Constraint auto-logging skipped — email has no body text"
+            )
+            return
+
+        sender = parsed.get("sender", "unknown")
+        subject = parsed.get("subject", "")
+
+        logger.info(
+            f"Spawning constraint auto-logger for email from {sender}: "
+            f"{subject!r}"
+        )
+
+        asyncio.create_task(
+            self._run_constraint_logging(
+                email_body=body,
+                sender=sender,
+                subject=subject,
+            ),
+            name=f"constraint-autolog-{sender}",
+        )
+
+    async def _run_constraint_logging(
+        self,
+        email_body: str,
+        sender: str,
+        subject: str,
+    ) -> None:
+        """Background task that runs the constraint auto-logger.
+
+        Catches all exceptions so it never crashes the bot process.
+        """
+        try:
+            from bot.services.constraint_logger import ConstraintLogger
+
+            clogger = ConstraintLogger()
+            created_count = await clogger.process_and_log(
+                bot=self._bot,
+                chat_id=self._chat_id,
+                email_body=email_body,
+                sender=sender,
+                subject=subject,
+            )
+
+            if created_count > 0:
+                logger.info(
+                    f"Constraint auto-logger: {created_count} constraint(s) "
+                    f"created from {sender}'s email"
+                )
+            else:
+                logger.info(
+                    f"Constraint auto-logger: no new constraints from "
+                    f"{sender}'s email"
+                )
+        except Exception:
+            logger.exception(
+                f"Constraint auto-logging failed for email from {sender}"
+            )
 
     # ==================================================================
     # IMAP operations
