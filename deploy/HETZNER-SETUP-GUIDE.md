@@ -150,7 +150,7 @@ sudo -u goliath claude auth login
 
 This will give you a URL to open in your browser. Open it, sign in with your Anthropic account, and authorize the CLI. Come back to the terminal — it should say "authenticated" or similar.
 
-### Step 4: Transfer your project data from Codespace
+### Step 4: Transfer your project data
 
 This copies all your PDFs, Excel files, and project data to the new server.
 
@@ -158,15 +158,9 @@ Open a **NEW terminal window on your laptop** (don't close the server one). Run:
 
 #### On Mac:
 ```bash
-# First, get the Codespace files to your laptop, then push to Hetzner
-# Or if you have the files locally already, skip the first line
-
 # From your laptop, push files to the server:
 scp -r /path/to/your/local/project/files/* root@YOUR_IP_ADDRESS:/opt/goliath/projects/
 ```
-
-#### Easier alternative — do it FROM the Codespace terminal:
-If you're still in Codespaces, you can push directly (but you'll need to set up SSH from Codespace to Hetzner, which is fiddly).
 
 **Simplest approach:** Once Syncthing is set up (Part 5), just drop your files in the sync folder. They'll transfer automatically.
 
@@ -176,9 +170,9 @@ For now, you can skip this step and set up Syncthing first.
 
 If you want Goliath to remember everything from previous sessions:
 
-From Codespaces or your laptop (wherever memory.db is):
+From your laptop (wherever memory.db is):
 ```bash
-scp /workspaces/goliath/telegram-bot/data/memory.db root@YOUR_IP_ADDRESS:/opt/goliath/telegram-bot/data/
+scp /path/to/memory.db root@YOUR_IP_ADDRESS:/opt/goliath/telegram-bot/data/
 ```
 
 ### Step 6: Fix file ownership and start the bot
@@ -383,7 +377,7 @@ ssh root@YOUR_IP_ADDRESS
 systemctl restart goliath-bot
 ```
 
-### Update the code (after pushing changes from Codespace/GitHub):
+### Update the code (after pushing changes to GitHub):
 Either tell Goliath via Telegram:
 > "Pull the latest code from GitHub and restart yourself"
 

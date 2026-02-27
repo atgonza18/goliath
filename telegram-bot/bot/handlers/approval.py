@@ -23,24 +23,32 @@ async def send_approval_request(bot, chat_id: int, queue_item: dict) -> None:
     source = queue_item["source"]
     sender = escape(queue_item["sender"] or "Unknown")
     subject = escape(queue_item["subject"] or "(no subject)")
-    body_preview = escape((queue_item["body"] or "")[:500])
-    draft = escape(queue_item["draft_response"] or "")
+    # Short body preview — just enough context to know what the email was about
+    raw_body = (queue_item["body"] or "").strip()
+    body_short = escape(raw_body[:200].rsplit(" ", 1)[0] + ("…" if len(raw_body) > 200 else ""))
+    # Full draft — show everything so the user can review before approving
+    # Telegram max message is 4096 chars; reserve ~400 for header/buttons
+    raw_draft = (queue_item["draft_response"] or "").strip()
+    max_draft = 3600
+    draft_display = escape(
+        raw_draft[:max_draft] + ("…" if len(raw_draft) > max_draft else "")
+    )
     queue_id = queue_item["id"]
 
     if source == "email":
-        header = f"📧 <b>New email from {sender}</b>"
-        meta = f"<b>Subject:</b> {subject}"
+        header = f"📧 <b>{sender}</b>"
+        meta = f"<b>Re:</b> {subject}"
     else:
         channel = escape(queue_item.get("channel") or "DM")
-        header = f"💬 <b>New Teams message from {sender}</b>"
+        header = f"💬 <b>{sender}</b>"
         meta = f"<b>Channel:</b> {channel}"
 
     text = (
         f"{header}\n"
-        f"{meta}\n\n"
-        f"<b>Message:</b>\n<i>{body_preview}</i>\n\n"
-        f"<b>Draft response:</b>\n{draft}\n\n"
-        f"Approve, edit, or reject this response?"
+        f"{meta}\n"
+        f"<i>{body_short}</i>\n\n"
+        f"<b>Draft reply:</b>\n{draft_display}\n\n"
+        f"Approve, edit, or reject?"
     )
 
     keyboard = InlineKeyboardMarkup([
@@ -87,9 +95,29 @@ async def approval_callback_handler(update: Update, context: ContextTypes.DEFAUL
 
     if action == "approve":
         await queue.approve(queue_id)
+
+        # If source is email, send it now via Gmail SMTP
+        send_status = ""
+        if item["source"] == "email":
+            email_service = context.bot_data.get("email_service")
+            if email_service and email_service.is_configured:
+                try:
+                    sent = await email_service.send_approved_message(queue_id)
+                    if sent:
+                        send_status = "\nEmail sent successfully."
+                    else:
+                        send_status = "\nEmail send failed — check logs. Item remains approved for retry."
+                except Exception as e:
+                    logger.exception(f"Email send failed for queue item {queue_id}")
+                    send_status = f"\nEmail send error: {str(e)[:100]}"
+            else:
+                send_status = "\nEmail service not configured — queued for outbox pickup."
+
+        # Show full draft in confirmation (capped at Telegram's 4096 limit minus header)
+        draft_text = escape(item['draft_response'] or '')[:3400]
         await query.edit_message_text(
-            f"✅ <b>Approved</b> — response queued for sending.\n\n"
-            f"<i>{escape(item['draft_response'] or '')[:300]}</i>",
+            f"✅ <b>Approved & sent.</b>{send_status}\n\n"
+            f"<i>{draft_text}</i>",
             parse_mode="HTML",
         )
         return ConversationHandler.END
@@ -101,9 +129,11 @@ async def approval_callback_handler(update: Update, context: ContextTypes.DEFAUL
 
     elif action == "edit":
         context.user_data["editing_queue_id"] = queue_id
+        # Show full draft so user knows what they're editing
+        draft_text = escape(item['draft_response'] or '')[:3400]
         await query.edit_message_text(
             f"✏️ <b>Editing response</b>\n\n"
-            f"Current draft:\n<i>{escape(item['draft_response'] or '')[:500]}</i>\n\n"
+            f"Current draft:\n<i>{draft_text}</i>\n\n"
             f"Type your edited response below:",
             parse_mode="HTML",
         )
@@ -137,8 +167,10 @@ async def receive_edited_response(update: Update, context: ContextTypes.DEFAULT_
         ]
     ])
 
+    # Show full updated draft for review
+    draft_text = escape(edited_text[:3400])
     await update.message.reply_text(
-        f"<b>Updated draft:</b>\n{escape(edited_text[:500])}\n\nApprove, edit again, or reject?",
+        f"<b>Updated draft:</b>\n{draft_text}\n\nApprove, edit again, or reject?",
         parse_mode="HTML",
         reply_markup=keyboard,
     )

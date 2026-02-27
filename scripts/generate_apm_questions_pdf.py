@@ -35,7 +35,9 @@ LIGHT_GRAY = HexColor("#F4F6F7")
 BORDER_GRAY = HexColor("#BDC3C7")
 WHITE = white
 
-OUTPUT_DIR = "/workspaces/goliath/dsc-constraints-production-reports/2026-02-25"
+# Auto-detect environment: /opt/goliath (Hetzner) or /workspaces/goliath (Codespaces)
+_REPO_ROOT = "/opt/goliath" if os.path.isdir("/opt/goliath") else "/workspaces/goliath"
+OUTPUT_DIR = os.path.join(_REPO_ROOT, "dsc-constraints-production-reports/2026-02-25")
 OUTPUT_FILE = os.path.join(OUTPUT_DIR, "2026-02-25_Pecan-Prairie_APM-Questions.pdf")
 
 

@@ -10,30 +10,34 @@ Goliath is an autonomous multi-agent AI system for solar construction portfolio 
 
 ### Run the Telegram Bot
 ```bash
-# Start/restart (also used by Codespace auto-start)
-bash /workspaces/goliath/telegram-bot/start.sh
+# On Hetzner (primary runtime):
+systemctl restart goliath-bot          # systemd service
+journalctl -u goliath-bot -f           # view logs
+
+# Manual start/restart (works on both Hetzner and Codespaces):
+bash /opt/goliath/telegram-bot/start.sh
 
 # Run interactively (see live logs)
-cd /workspaces/goliath/telegram-bot && python -m bot.main
+cd /opt/goliath/telegram-bot && python -m bot.main
 
 # Stop
-kill $(cat /workspaces/goliath/telegram-bot/bot.pid)
+kill $(cat /opt/goliath/telegram-bot/bot.pid)
 ```
 
 ### Install Dependencies
 ```bash
-pip install -r /workspaces/goliath/telegram-bot/requirements.txt
+pip install -r /opt/goliath/telegram-bot/requirements.txt
 ```
 
 ### Run Cron Jobs Manually
 ```bash
-python /workspaces/goliath/cron-jobs/daily_scan.py
-python /workspaces/goliath/cron-jobs/morning_report.py
+python /opt/goliath/cron-jobs/daily_scan.py
+python /opt/goliath/cron-jobs/morning_report.py
 ```
 
 ### Debugging
 ```bash
-tail -f /workspaces/goliath/telegram-bot/bot.log
+tail -f /opt/goliath/telegram-bot/bot.log
 ps aux | grep bot.main | grep -v grep
 pkill -f "claude --print"  # kill stuck subagent processes
 ```
@@ -78,9 +82,10 @@ All agent calls are stateless — continuity comes from SQLite memory injection,
 
 ### Environment
 
-- Runs in GitHub Codespaces; auto-starts via `.devcontainer/postStartCommand`
+- **Primary runtime:** Hetzner VPS at `/opt/goliath/`; runs as systemd service `goliath-bot`
+- **Secondary/dev:** GitHub Codespaces at `/workspaces/goliath/`; the user sometimes opens Codespaces for manual repo editing. Auto-starts via `.devcontainer/postStartCommand`
 - `.env` contains `TELEGRAM_BOT_TOKEN` and optional `ALLOWED_CHAT_IDS` / `REPORT_CHAT_ID`
-- All hardcoded paths assume `/workspaces/goliath/` root
+- Python paths auto-detect the root via `Path(__file__).resolve()` -- no hardcoded base path
 - Telegram messages use HTML formatting (`<b>`, `<i>`, `<code>`), not Markdown
 
 ### Resolved Pitfalls

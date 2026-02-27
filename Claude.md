@@ -10,8 +10,8 @@ You are the DSC (Dallas Support Center) operations analyst agent. You monitor, a
 - Nimrod delegates to specialized subagents for project analysis
 - Results synthesized and returned via Telegram (text + voice memo)
 - Photos and documents can be sent through Telegram for analysis
-- Bot auto-starts on Codespace boot via `.devcontainer/postStartCommand`
-- Bot process: `cd /workspaces/goliath/telegram-bot && python -m bot.main`
+- Bot runs as a systemd service on Hetzner (`goliath-bot.service`); also auto-starts on Codespace boot via `.devcontainer/postStartCommand`
+- Bot process: `cd /opt/goliath/telegram-bot && python -m bot.main`
 
 ### Agent Orchestration (Two-Pass Flow)
 ```
@@ -72,7 +72,7 @@ User Message → Nimrod (routing, no tools) → SUBAGENT_REQUEST blocks
 ## Folder Structure
 
 ```
-/workspaces/goliath/
+/opt/goliath/                              # Hetzner primary; /workspaces/goliath/ in Codespaces
 ├── Claude.md                          # This file — master system context
 ├── TODO.md                            # Open tasks and known issues
 ├── .env                               # Bot token, chat IDs (gitignored)
@@ -163,12 +163,12 @@ User Message → Nimrod (routing, no tools) → SUBAGENT_REQUEST blocks
 - Continuity is maintained via the SQLite memory system, not conversation history.
 - Context window exhaustion is not an issue — prompts are bounded by memory injection limits.
 - Bot token is in `.env` (gitignored). Never commit secrets.
-- Codespace `/workspaces/` volume persists across restarts. Memory DB survives reboots.
+- On Hetzner, all data persists on disk. On Codespaces, the `/workspaces/` volume persists across restarts.
 
 ## File Organization Conventions
-- Project files: `/workspaces/goliath/projects/<project-key>/<subfolder>/`
-- Project reports: `/workspaces/goliath/projects/<project-key>/reports/`
-- Portfolio-wide reports: `/workspaces/goliath/reports/`
+- Project files: `/opt/goliath/projects/<project-key>/<subfolder>/`
+- Project reports: `/opt/goliath/projects/<project-key>/reports/`
+- Portfolio-wide reports: `/opt/goliath/reports/`
 - Date-prefix time-sensitive files: `YYYY-MM-DD-description.ext`
 - Hyphens, lowercase, no spaces or special characters in paths
 - Create directories with `mkdir -p` as needed — don't ask, just create them
@@ -178,7 +178,7 @@ User Message → Nimrod (routing, no tools) → SUBAGENT_REQUEST blocks
 When you create a file (PDF, DOCX, XLSX, etc.) that should be sent to the user, output a FILE_CREATED block:
 
 ```FILE_CREATED
-path: /workspaces/goliath/path/to/file.pdf
+path: /opt/goliath/path/to/file.pdf
 description: Brief description
 ```
 

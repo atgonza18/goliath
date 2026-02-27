@@ -5,10 +5,24 @@ Replaces system crontab with a lightweight asyncio-based scheduler that:
   - Runs tasks at specific times in America/Chicago timezone
   - Survives individual task failures without crashing
   - Provides a registry of scheduled tasks for introspection
+  - Prevents double-firing via in-flight guards and eager last_run stamping
+
+Race-condition prevention (the three-layer defense):
+  1. In-flight set: each task name is added to _in_flight BEFORE execution and
+     removed AFTER completion. _next_due_task() skips tasks that are in-flight.
+  2. Eager last_run: last_run is stamped BEFORE the callback runs, so the
+     "ran less than 2 min ago" guard in _next_due_task() fires immediately.
+  3. Proactive dedup: proactive sessions have their own date-based dedup dict
+     as an extra safety net (one run per session type per calendar day).
 
 Scheduled tasks:
+  - 12:05 AM CT — Create daily constraints folder
   - 5:00 AM CT  — Morning report (Bible verse + todo list + scan to Telegram)
+  - 6:00 AM CT  — Morning proactive thinking session
+  - 6:00 PM CT  — Evening proactive thinking session
+  - 7:00 PM CT  — Folder cleanup scan
   - 11:00 PM CT — Daily scan (run Claude analysis of all 12 projects)
+  - Every 45s  — Poll Gmail IMAP for inbound [INBOX:] tagged emails
 """
 
 import asyncio
@@ -37,12 +51,27 @@ REPORTS_DIR = REPO_ROOT / "reports"
 
 @dataclass
 class ScheduledTask:
-    """A single scheduled task definition."""
+    """A single scheduled task definition.
+
+    Fields:
+        name:        Unique identifier (used as in-flight guard key).
+        hour/minute: Target fire time in CT timezone (24-hour clock).
+                     Set both to -1 for interval-based tasks.
+        callback:    Async callable — receives the Scheduler instance.
+        interval_seconds: If set (> 0), task fires repeatedly at this interval
+                     instead of at a fixed daily time. hour/minute are ignored.
+        last_run:    Timestamp of the most recent *start* of this task
+                     (set eagerly, before callback runs, to prevent re-trigger).
+        last_status: "ok" | "error" | None — outcome of the most recent run.
+        last_error:  Truncated error message if last_status == "error".
+        enabled:     Set False to skip without unregistering.
+    """
     name: str
-    hour: int              # 0-23 in CT
-    minute: int            # 0-59
+    hour: int              # 0-23 in CT (ignored for interval tasks)
+    minute: int            # 0-59 (ignored for interval tasks)
     callback: Callable[..., Awaitable[None]]
     description: str = ""
+    interval_seconds: int = 0  # 0 = daily task, >0 = repeating interval
     last_run: Optional[datetime] = None
     last_status: Optional[str] = None   # "ok", "error"
     last_error: Optional[str] = None
@@ -50,13 +79,25 @@ class ScheduledTask:
 
 
 class Scheduler:
-    """Lightweight async scheduler that fires tasks at specified times (CT timezone)."""
+    """Lightweight async scheduler that fires tasks at specified times (CT timezone).
+
+    Thread-safety note: this scheduler runs entirely within a single asyncio
+    event loop, so there are no threading concerns. The in-flight guard protects
+    against the scheduler loop re-entering a task that is still awaited from a
+    previous iteration (e.g. if sleep(61) elapses before a long-running task
+    completes — which CAN happen because _fire_task is awaited inline and the
+    sleep only runs after it returns, but the _next_due_task check can still
+    see a stale last_run if it was not stamped eagerly).
+    """
 
     def __init__(self, bot=None):
         self._tasks: list[ScheduledTask] = []
         self._running = False
         self._task_handle: Optional[asyncio.Task] = None
         self.bot = bot  # telegram Bot instance for sending messages
+        # In-flight guard: set of task names currently executing.
+        # Checked by _next_due_task() and _fire_task() to prevent double-firing.
+        self._in_flight: set[str] = set()
 
     # ------------------------------------------------------------------
     # Task registration
@@ -83,15 +124,41 @@ class Scheduler:
             f"Scheduler: registered '{name}' at {hour:02d}:{minute:02d} CT — {description}"
         )
 
+    def add_interval_task(
+        self,
+        name: str,
+        interval_seconds: int,
+        callback: Callable[..., Awaitable[None]],
+        description: str = "",
+    ) -> None:
+        """Register a repeating interval task (fires every N seconds)."""
+        task = ScheduledTask(
+            name=name,
+            hour=-1,
+            minute=-1,
+            callback=callback,
+            interval_seconds=interval_seconds,
+            description=description,
+        )
+        self._tasks.append(task)
+        logger.info(
+            f"Scheduler: registered interval task '{name}' every {interval_seconds}s — {description}"
+        )
+
     def list_tasks(self) -> list[dict]:
         """Return a list of all scheduled tasks with their status."""
         result = []
         for t in self._tasks:
+            if t.interval_seconds > 0:
+                time_str = f"every {t.interval_seconds}s"
+            else:
+                time_str = f"{t.hour:02d}:{t.minute:02d}"
             result.append({
                 "name": t.name,
-                "time_ct": f"{t.hour:02d}:{t.minute:02d}",
+                "time_ct": time_str,
                 "description": t.description,
                 "enabled": t.enabled,
+                "in_flight": t.name in self._in_flight,
                 "last_run": t.last_run.isoformat() if t.last_run else None,
                 "last_status": t.last_status,
                 "last_error": t.last_error,
@@ -107,11 +174,22 @@ class Scheduler:
         lines = [f"<b>Scheduled Tasks</b>  (now: {now_ct.strftime('%I:%M %p CT')})\n"]
 
         for t in self._tasks:
-            status_icon = "+" if t.enabled else "-"
-            time_str = f"{t.hour:02d}:{t.minute:02d} CT"
+            # Status icon: R = running, + = enabled, - = disabled
+            if t.name in self._in_flight:
+                status_icon = "R"
+            elif t.enabled:
+                status_icon = "+"
+            else:
+                status_icon = "-"
+
+            if t.interval_seconds > 0:
+                mins = t.interval_seconds // 60
+                time_str = f"every {mins}m" if mins >= 1 else f"every {t.interval_seconds}s"
+            else:
+                time_str = f"{t.hour:02d}:{t.minute:02d} CT"
             last = ""
             if t.last_run:
-                last = f" | last: {t.last_run.strftime('%m/%d %I:%M %p')} [{t.last_status}]"
+                last = f" | last: {t.last_run.strftime('%m/%d %I:%M %p')} [{t.last_status or 'running'}]"
             lines.append(
                 f"<code>[{status_icon}]</code> <b>{t.name}</b> @ {time_str}{last}"
             )
@@ -143,7 +221,19 @@ class Scheduler:
         logger.info("Scheduler stopped")
 
     async def _run_loop(self) -> None:
-        """Main loop: sleep until the next task fires, then run it."""
+        """Main loop: sleep until the next task fires, then run it.
+
+        The loop wakes up every 60s (at most) to re-evaluate which task is
+        next. When a task is due (seconds_until <= 0), it fires inline —
+        meaning the loop blocks on that task. This is intentional: since
+        _fire_task stamps last_run eagerly and uses the in-flight guard,
+        even if we awaited the task concurrently, a re-entrant call would
+        be safely skipped.
+
+        After firing, a 61-second cooldown prevents the same minute from
+        being re-evaluated. Combined with the 120-second last_run guard
+        in _next_due_task, this provides ample protection.
+        """
         # Wait a few seconds on startup so the bot is fully initialized
         await asyncio.sleep(5)
         logger.info("Scheduler loop active")
@@ -154,7 +244,7 @@ class Scheduler:
                 next_task, seconds_until = self._next_due_task(now_ct)
 
                 if next_task is None or seconds_until is None:
-                    # No tasks registered — just idle
+                    # No eligible tasks (all disabled, in-flight, or none registered)
                     await asyncio.sleep(60)
                     continue
 
@@ -178,7 +268,14 @@ class Scheduler:
                 await asyncio.sleep(60)
 
     def _next_due_task(self, now_ct: datetime) -> tuple[Optional[ScheduledTask], Optional[float]]:
-        """Find the next task that should fire, and how many seconds until it fires."""
+        """Find the next task that should fire, and how many seconds until it fires.
+
+        Skips tasks that are:
+          - disabled
+          - currently in-flight (already executing)
+          - ran less than 2 minutes ago for daily tasks (last_run is set eagerly)
+          - ran less than interval_seconds ago for interval tasks
+        """
         if not self._tasks:
             return None, None
 
@@ -189,6 +286,27 @@ class Scheduler:
             if not task.enabled:
                 continue
 
+            # GUARD 1: Skip tasks that are already executing.
+            # This is the primary defense against double-firing.
+            if task.name in self._in_flight:
+                continue
+
+            # --- Interval-based tasks ---
+            if task.interval_seconds > 0:
+                if task.last_run:
+                    last_run_ct = task.last_run.astimezone(CT) if task.last_run.tzinfo else task.last_run
+                    elapsed = (now_ct - last_run_ct).total_seconds()
+                    seconds = max(0, task.interval_seconds - elapsed)
+                else:
+                    # Never run before — fire immediately
+                    seconds = 0
+
+                if best_seconds is None or seconds < best_seconds:
+                    best_task = task
+                    best_seconds = seconds
+                continue
+
+            # --- Daily time-based tasks ---
             # Build the target time for today
             target_today = now_ct.replace(
                 hour=task.hour, minute=task.minute, second=0, microsecond=0
@@ -200,11 +318,13 @@ class Scheduler:
             else:
                 target = target_today
 
-            # Skip if this task already ran in the current minute window
+            # GUARD 2: Skip if this task started recently (last_run is stamped
+            # eagerly at task start, so this catches in-progress tasks even if
+            # the in-flight set were somehow missed).
             if task.last_run:
                 last_run_ct = task.last_run.astimezone(CT) if task.last_run.tzinfo else task.last_run
                 if (now_ct - last_run_ct).total_seconds() < 120:
-                    # Ran less than 2 minutes ago — skip to tomorrow
+                    # Started less than 2 minutes ago — skip to tomorrow
                     target = target_today + timedelta(days=1)
 
             seconds = (target - now_ct).total_seconds()
@@ -216,13 +336,41 @@ class Scheduler:
         return best_task, best_seconds
 
     async def _fire_task(self, task: ScheduledTask) -> None:
-        """Execute a single scheduled task with error handling."""
-        logger.info(f"Scheduler: firing task '{task.name}'")
+        """Execute a single scheduled task with error handling.
+
+        Three-layer defense against double-firing:
+          1. In-flight guard: if task.name is already in _in_flight, bail out.
+          2. Eager last_run: stamp last_run BEFORE the callback runs, so the
+             _next_due_task "ran < 2 min ago" check kicks in immediately.
+          3. Task-level dedup: proactive tasks have their own date-based guard
+             (see _run_proactive_task).
+
+        last_status is set to "ok" or "error" only AFTER the callback completes.
+        While the task is in-flight, last_status remains from the previous run
+        (or None), but the in_flight indicator in list_tasks() shows "R".
+        """
+        # --- In-flight guard (layer 1) ---
+        if task.name in self._in_flight:
+            logger.warning(
+                f"Scheduler: SKIPPING '{task.name}' — already in-flight "
+                f"(this is the double-fire guard working correctly)"
+            )
+            return
+
+        # --- Stamp last_run eagerly (layer 2) ---
+        # This ensures _next_due_task() sees a recent last_run immediately,
+        # even before the callback returns.
+        task.last_run = datetime.now(CT)
+
+        # --- Mark as in-flight ---
+        self._in_flight.add(task.name)
+        logger.info(f"Scheduler: firing task '{task.name}' (in-flight: {self._in_flight})")
         start = time.monotonic()
 
         try:
             await asyncio.wait_for(task.callback(self), timeout=900)  # 15 min max
             duration = time.monotonic() - start
+            # Update last_run to the actual completion time (still prevents re-fire)
             task.last_run = datetime.now(CT)
             task.last_status = "ok"
             task.last_error = None
@@ -239,6 +387,10 @@ class Scheduler:
             task.last_status = "error"
             task.last_error = str(e)[:500]
             logger.exception(f"Scheduler: '{task.name}' failed after {duration:.1f}s")
+        finally:
+            # --- Always clear the in-flight flag ---
+            self._in_flight.discard(task.name)
+            logger.debug(f"Scheduler: '{task.name}' removed from in-flight set")
 
 
 # ======================================================================
@@ -1033,6 +1185,191 @@ async def task_folder_cleanup(scheduler: "Scheduler") -> None:
 
 
 # ------------------------------------------------------------------
+# Proactive Thinking Sessions
+# Migrated from job_queue to this custom scheduler for reliable
+# single-fire execution. Protected by three layers:
+#   1. Scheduler in-flight set  (prevents concurrent execution)
+#   2. Eager last_run stamp     (prevents re-trigger within 2 min)
+#   3. Date-based dedup dict    (prevents same-day re-run)
+# ------------------------------------------------------------------
+
+async def task_proactive_morning(scheduler: "Scheduler") -> None:
+    """6:00 AM CT — Morning proactive thinking session."""
+    await _run_proactive_task(scheduler, session_type="morning")
+
+
+async def task_proactive_evening(scheduler: "Scheduler") -> None:
+    """6:00 PM CT — Evening proactive thinking session."""
+    await _run_proactive_task(scheduler, session_type="evening")
+
+
+async def _run_proactive_task(scheduler: "Scheduler", session_type: str) -> None:
+    """Run a proactive thinking session through the custom scheduler.
+
+    Layer 3 dedup guard (secondary safety net): keeps a module-level dict of
+    {session_type: date_str}. If this session type already ran today, skip it.
+    This survives even if the in-flight set or last_run were somehow bypassed.
+    """
+    if not scheduler.bot:
+        logger.error(f"Proactive {session_type}: no bot instance")
+        return
+
+    chat_id = _get_chat_id()
+    if not chat_id:
+        logger.error(f"Proactive {session_type}: no chat ID configured")
+        return
+
+    # --- Layer 3 dedup guard: check if we already ran this session today ---
+    # This is a secondary safety net on top of the scheduler's in-flight set
+    # (layer 1) and eager last_run stamp (layer 2). It ensures that even if
+    # the scheduler somehow fires this task twice in one day (e.g. bot restart
+    # near the scheduled time), the proactive session only runs once.
+    now_ct = datetime.now(CT)
+    today_str = now_ct.strftime("%Y-%m-%d")
+    dedup_key = f"proactive_{session_type}"
+
+    # Module-level dict survives across calls within the same process lifetime
+    if not hasattr(_run_proactive_task, "_dedup"):
+        _run_proactive_task._dedup = {}
+
+    last_run_date = _run_proactive_task._dedup.get(dedup_key)
+    if last_run_date == today_str:
+        logger.warning(
+            f"Proactive {session_type} already ran today ({today_str}) — "
+            f"layer 3 dedup guard triggered, skipping duplicate"
+        )
+        return
+
+    # Mark as running for today BEFORE executing
+    _run_proactive_task._dedup[dedup_key] = today_str
+
+    logger.info(f"Starting {session_type} proactive thinking session for chat_id={chat_id}")
+    start_time = time.monotonic()
+
+    try:
+        # Import here to avoid circular imports
+        from bot.agents.definitions import NIMROD
+        from bot.agents.runner import SubagentRunner
+        from bot.memory.store import MemoryStore
+        from bot.config import MEMORY_DB_PATH
+        from bot.services.proactive import MORNING_PROMPT, EVENING_PROMPT
+
+        # Build memory context
+        memory = MemoryStore(MEMORY_DB_PATH)
+        await memory.initialize()
+
+        memory_parts = []
+        recent = await memory.format_for_prompt(limit=15)
+        if recent and recent != "(No relevant memories found.)":
+            memory_parts.append(f"RECENT MEMORIES:\n{recent}")
+
+        actions = await memory.get_action_items(resolved=False)
+        if actions:
+            action_lines = [f"- [{a.created_at[:10]}] {a.summary}" for a in actions[:10]]
+            memory_parts.append(f"OPEN ACTION ITEMS:\n" + "\n".join(action_lines))
+
+        memory_context = "\n\n".join(memory_parts) if memory_parts else "(No memories yet.)"
+
+        # Choose prompt
+        session_prompt = MORNING_PROMPT if session_type == "morning" else EVENING_PROMPT
+        full_prompt = (
+            f"PERSISTENT MEMORY:\n{memory_context}\n\n"
+            f"---\n\n"
+            f"{session_prompt}"
+        )
+
+        # Run Nimrod
+        runner = SubagentRunner()
+        result = await runner.run(
+            agent=NIMROD,
+            task_prompt=full_prompt,
+            no_tools=False,
+        )
+
+        duration = time.monotonic() - start_time
+
+        if result.success and result.output:
+            import re
+            text = re.sub(r"```MEMORY_SAVE\s*\n.*?```", "", result.output, flags=re.DOTALL)
+            text = re.sub(r"```SUBAGENT_REQUEST\s*\n.*?```", "", result.output, flags=re.DOTALL)
+            text = re.sub(r"```FILE_CREATED\s*\n.*?```", "", result.output, flags=re.DOTALL)
+            text = text.strip()
+
+            if text:
+                await _send_telegram(scheduler.bot, chat_id, text)
+                logger.info(f"Proactive {session_type} session sent ({duration:.1f}s)")
+
+                # Save to memory
+                try:
+                    await memory.save(
+                        category="observation",
+                        summary=f"Sent {session_type} proactive thinking message to user",
+                        detail=text[:500],
+                        source="nimrod",
+                        tags=f"proactive,{session_type}",
+                    )
+                except Exception:
+                    pass
+            else:
+                logger.warning(f"Proactive {session_type} session produced empty output")
+        else:
+            logger.error(f"Proactive {session_type} session failed: {result.error}")
+            # Clear dedup so it can retry if manually triggered
+            _run_proactive_task._dedup.pop(dedup_key, None)
+
+    except Exception:
+        logger.exception(f"Proactive {session_type} session error")
+        # Clear dedup on error so it can retry
+        _run_proactive_task._dedup.pop(dedup_key, None)
+
+
+# ------------------------------------------------------------------
+# Email polling task
+# ------------------------------------------------------------------
+
+async def task_email_poll(scheduler: "Scheduler") -> None:
+    """Poll Gmail IMAP for inbound [INBOX:] emails and feed into message queue.
+
+    This is an interval task (every 3 minutes). It's lightweight — just an
+    IMAP search + fetch cycle — so it doesn't need the full 15-minute timeout.
+    """
+    # Import here to avoid circular imports at module load time
+    from bot.services.email_poller import EmailPoller
+    from bot.config import GMAIL_ADDRESS, GMAIL_APP_PASSWORD, GMAIL_IMAP_HOST
+
+    if not GMAIL_ADDRESS or not GMAIL_APP_PASSWORD:
+        # Silently skip if not configured — don't spam logs every 3 minutes
+        return
+
+    # We need the message queue from bot_data. The scheduler holds a bot ref,
+    # and bot._bot_data_ref is set during initialization (see main.py).
+    bot = scheduler.bot
+    queue = None
+    if bot and hasattr(bot, "_bot_data_ref"):
+        queue = bot._bot_data_ref.get("message_queue")
+
+    if not queue:
+        logger.debug("Email poll skipped — message queue not available yet")
+        return
+
+    poller = EmailPoller(
+        address=GMAIL_ADDRESS,
+        app_password=GMAIL_APP_PASSWORD,
+        imap_host=GMAIL_IMAP_HOST,
+    )
+    poller.set_queue(queue)
+
+    try:
+        count = await asyncio.wait_for(poller.poll(), timeout=60)
+        if count > 0:
+            logger.info(f"Email poll: {count} new inbound email(s) queued")
+    except asyncio.TimeoutError:
+        logger.warning("Email poll timed out after 60s")
+    except Exception:
+        logger.exception("Email poll error")
+
+
+# ------------------------------------------------------------------
 # Helpers
 # ------------------------------------------------------------------
 
@@ -1061,7 +1398,13 @@ def _get_chat_id() -> Optional[int]:
 # ======================================================================
 
 def create_scheduler(bot=None) -> Scheduler:
-    """Create a Scheduler with all default GOLIATH tasks registered."""
+    """Create a Scheduler with all default GOLIATH tasks registered.
+
+    All tasks fire once per day at their specified CT time. The scheduler's
+    three-layer defense (in-flight set, eager last_run, proactive dedup)
+    ensures no task ever double-fires, even for long-running tasks like
+    the morning report (can take 12+ minutes with attachment generation).
+    """
     sched = Scheduler(bot=bot)
 
     sched.add_task(
@@ -1094,6 +1437,30 @@ def create_scheduler(bot=None) -> Scheduler:
         minute=0,
         callback=task_folder_cleanup,
         description="Scan workspace for duplicates, misplaced files, and folder hygiene issues",
+    )
+
+    sched.add_task(
+        name="proactive_morning",
+        hour=6,
+        minute=0,
+        callback=task_proactive_morning,
+        description="6 AM CT morning thinking session — Nimrod reviews memories and sends ideas",
+    )
+
+    sched.add_task(
+        name="proactive_evening",
+        hour=18,
+        minute=0,
+        callback=task_proactive_evening,
+        description="6 PM CT evening debrief — Nimrod reflects on the day and sets up tomorrow",
+    )
+
+    # Interval task: poll Gmail for inbound emails every 3 minutes
+    sched.add_interval_task(
+        name="email_poll",
+        interval_seconds=45,
+        callback=task_email_poll,
+        description="Poll Gmail IMAP for inbound [INBOX:] tagged emails",
     )
 
     return sched

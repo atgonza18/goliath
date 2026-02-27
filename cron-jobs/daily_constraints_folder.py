@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Daily Constraints Folder Creator — Midnight CT
-Crontab: 0 0 * * * cd /workspaces/goliath && python cron-jobs/daily_constraints_folder.py
+Crontab: 0 0 * * * cd /opt/goliath && python cron-jobs/daily_constraints_folder.py
 
 Creates a new date-stamped subfolder under dsc-constraints-production-reports/
 each day so constraint logs, reports, and snapshots have a home before

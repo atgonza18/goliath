@@ -3,7 +3,8 @@ from pathlib import Path
 from dotenv import load_dotenv
 
 # Load .env from repo root
-REPO_ROOT = Path(__file__).resolve().parent.parent.parent  # /workspaces/goliath
+# Auto-detect environment: Hetzner (/opt/goliath) or Codespaces (/workspaces/goliath)
+REPO_ROOT = Path(__file__).resolve().parent.parent.parent  # /opt/goliath (Hetzner) or /workspaces/goliath (Codespaces)
 load_dotenv(REPO_ROOT / ".env")
 
 TELEGRAM_BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN", "")
@@ -48,6 +49,17 @@ WEBHOOK_PORT = int(os.getenv("WEBHOOK_PORT", "8000"))
 WEBHOOK_AUTH_TOKEN = os.getenv("WEBHOOK_AUTH_TOKEN", "")
 TEAMS_INCOMING_WEBHOOK_URL = os.getenv("TEAMS_INCOMING_WEBHOOK_URL", "")
 REPORT_CHAT_ID = os.getenv("REPORT_CHAT_ID", "")
+
+# Gmail SMTP/IMAP integration (for email relay via Power Automate)
+# Support both GMAIL_ADDRESS and legacy GOLIATH_GMAIL env var names
+GMAIL_ADDRESS = os.getenv("GMAIL_ADDRESS", "") or os.getenv("GOLIATH_GMAIL", "")
+GMAIL_APP_PASSWORD = os.getenv("GMAIL_APP_PASSWORD", "") or os.getenv("GOLIATH_GMAIL_APP_PASSWORD", "")
+GMAIL_IMAP_HOST = os.getenv("GMAIL_IMAP_HOST", "imap.gmail.com")
+GMAIL_SMTP_HOST = os.getenv("GMAIL_SMTP_HOST", "smtp.gmail.com")
+
+# Outbound relay: send approved emails TO this address (user's MasTec Outlook)
+# so Power Automate can pick them up and forward from the user's work email.
+RELAY_TO_ADDRESS = os.getenv("RELAY_TO_ADDRESS", "")
 
 # Subfolder names within each project
 PROJECT_SUBFOLDERS = [

@@ -1,0 +1,294 @@
+<html>
+<body style="font-family: Arial, sans-serif; max-width: 750px; margin: auto; color: #222; line-height: 1.6;">
+
+<h1 style="color: #1a73e8;">Goliath Email Integration — Complete Setup Guide</h1>
+<p><i>This guide sets up two-way email so Goliath can send and receive emails on your behalf through your Office 365 account.</i></p>
+
+<hr>
+
+<h2>🏗️ How It Works</h2>
+<pre style="background: #f4f4f4; padding: 12px; border-radius: 6px; font-size: 13px; overflow-x: auto;">
+<b>OUTBOUND (Goliath sends email as you):</b>
+You tell Goliath → drafts email → you approve in Telegram
+→ Goliath drops email in Gmail with tag [SEND: recipient@email.com]
+→ Power Automate picks it up → sends via your Office 365
+→ Recipient gets email FROM your work address
+
+<b>INBOUND (Goliath processes your incoming email):</b>
+Email arrives in your Office 365 inbox
+→ Power Automate forwards it to Goliath's Gmail with tag [INBOX: sender]
+→ Goliath picks it up, drafts a response
+→ You approve/edit/reject in Telegram
+→ If approved, goes through the outbound flow above
+</pre>
+
+<hr>
+
+<h2>📦 PART 1: Power Automate — Flow #1 (Outbound Relay)</h2>
+<p><b>Purpose:</b> Monitors Gmail for tagged emails and sends them via Office 365.</p>
+
+<h3>Step 1: Create the Flow</h3>
+<ol>
+  <li>Go to <a href="https://make.powerautomate.com">make.powerautomate.com</a></li>
+  <li>Click <b>+ Create</b> → <b>Automated cloud flow</b></li>
+  <li>Name it: <code>Goliath Outbound Email Relay</code></li>
+  <li>Skip the trigger selection (click "Skip")</li>
+</ol>
+
+<h3>Step 2: Add the Gmail Trigger</h3>
+<ol>
+  <li>Search for <b>"Gmail"</b> connector</li>
+  <li>Select trigger: <b>"When a new email arrives (V3)"</b></li>
+  <li>Sign in with: <code>nimrodgreatski@gmail.com</code></li>
+  <li>Configure:
+    <ul>
+      <li><b>Label:</b> INBOX</li>
+      <li><b>Subject Filter:</b> <code>[SEND:</code></li>
+      <li><b>Include Attachments:</b> No</li>
+      <li><b>Importance:</b> Any</li>
+    </ul>
+  </li>
+</ol>
+
+<h3>Step 3: Add "Send an email (V2)" Action</h3>
+<ol>
+  <li>Click <b>+ New step</b> → search <b>"Office 365 Outlook"</b></li>
+  <li>Select: <b>"Send an email (V2)"</b></li>
+  <li>Sign in with your <b>work Office 365 account</b></li>
+  <li>Configure fields using these <b>expressions</b> (click "Expression" tab in dynamic content):</li>
+</ol>
+
+<table border="1" cellpadding="8" cellspacing="0" style="border-collapse: collapse; font-size: 13px; margin: 8px 0;">
+  <tr style="background:#e8f0fe;"><th>Field</th><th>Value (Expression)</th></tr>
+  <tr>
+    <td><b>To</b></td>
+    <td><code>trim(split(split(triggerOutputs()?['body/subject'],'[SEND:')[1],']')[0])</code></td>
+  </tr>
+  <tr>
+    <td><b>Subject</b></td>
+    <td><code>trim(substring(triggerOutputs()?['body/subject'],add(indexOf(triggerOutputs()?['body/subject'],']'),1)))</code></td>
+  </tr>
+  <tr>
+    <td><b>Body</b></td>
+    <td>Dynamic content → <b>Body</b> (from Gmail trigger)</td>
+  </tr>
+</table>
+
+<p><b>⚠️ IMPORTANT:</b> For <b>To</b> and <b>Subject</b>, click the <b>"Expression"</b> tab (not "Dynamic content"), paste the expression, and click OK. For <b>Body</b>, use dynamic content directly.</p>
+
+<h3>Step 4: Add "Delete email (V2)" Action</h3>
+<ol>
+  <li>Click <b>+ New step</b> → search <b>"Gmail"</b></li>
+  <li>Select: <b>"Delete email (V2)"</b></li>
+  <li>Message ID → Dynamic content → <b>Message Id</b> (from Gmail trigger)</li>
+</ol>
+
+<h3>Step 5: Save and Turn On</h3>
+<ol>
+  <li>Click <b>Save</b></li>
+  <li>Click <b>Turn on</b> (top right)</li>
+</ol>
+
+<hr>
+
+<h2>📨 PART 2: Power Automate — Flow #2 (Inbound Forward)</h2>
+<p><b>Purpose:</b> Forwards incoming Office 365 emails to Gmail so Goliath can process them.</p>
+
+<h3>Step 1: Create the Flow</h3>
+<ol>
+  <li>Click <b>+ Create</b> → <b>Automated cloud flow</b></li>
+  <li>Name it: <code>Goliath Inbound Email Forward</code></li>
+  <li>Skip trigger selection</li>
+</ol>
+
+<h3>Step 2: Add the Office 365 Trigger</h3>
+<ol>
+  <li>Search for <b>"Office 365 Outlook"</b></li>
+  <li>Select trigger: <b>"When a new email arrives (V3)"</b></li>
+  <li>Configure:
+    <ul>
+      <li><b>Folder:</b> Inbox</li>
+      <li><b>Include Attachments:</b> No (for now)</li>
+      <li><b>Only with Attachments:</b> No</li>
+    </ul>
+  </li>
+</ol>
+
+<h3>Step 3: Add a Condition (Prevent Loops)</h3>
+<p>Skip emails from the relay to avoid infinite loops:</p>
+<ol>
+  <li>Click <b>+ New step</b> → <b>Condition</b></li>
+  <li>Value: <code>From</code> (dynamic content) | <b>does not contain</b> | <code>nimrodgreatski</code></li>
+  <li>Put the next step inside the <b>"If yes"</b> branch</li>
+</ol>
+
+<h3>Step 4: Add "Send email (V2)" via Gmail</h3>
+<ol>
+  <li>Inside "If yes" → <b>+ Add an action</b> → search <b>"Gmail"</b></li>
+  <li>Select: <b>"Send email (V2)"</b></li>
+  <li>Configure:</li>
+</ol>
+
+<table border="1" cellpadding="8" cellspacing="0" style="border-collapse: collapse; font-size: 13px; margin: 8px 0;">
+  <tr style="background:#e8f0fe;"><th>Field</th><th>Value</th></tr>
+  <tr>
+    <td><b>To</b></td>
+    <td><code>nimrodgreatski@gmail.com</code></td>
+  </tr>
+  <tr>
+    <td><b>Subject</b></td>
+    <td>Expression: <code>concat('[INBOX: ', triggerOutputs()?['body/from'], '] ', triggerOutputs()?['body/subject'])</code></td>
+  </tr>
+  <tr>
+    <td><b>Body</b></td>
+    <td>Dynamic content → <b>Body</b> (from Office 365 trigger)</td>
+  </tr>
+</table>
+
+<h3>Step 5: Save and Turn On</h3>
+
+<hr>
+
+<h2>🐍 PART 3: Goliath Code Snippets</h2>
+<p>These go in the Goliath codebase. No additional Python packages needed — <code>smtplib</code>, <code>imaplib</code>, and <code>email</code> are all built into Python.</p>
+
+<h3>A. Email Sender (email_service.py)</h3>
+<pre style="background: #1e1e1e; color: #d4d4d4; padding: 14px; border-radius: 6px; font-size: 12px; overflow-x: auto;">
+import smtplib
+import logging
+from email.mime.text import MIMEText
+from email.mime.multipart import MIMEMultipart
+import os
+
+logger = logging.getLogger(__name__)
+
+GMAIL = os.getenv("GOLIATH_GMAIL")
+GMAIL_PWD = os.getenv("GOLIATH_GMAIL_APP_PASSWORD")
+
+def send_outbound_email(to: str, subject: str, body: str, html: bool = False):
+    # Send email via Gmail SMTP for Power Automate to relay via Office 365.
+    # Subject is tagged so PA knows where to route it.
+    msg = MIMEMultipart()
+    msg['From'] = GMAIL
+    msg['To'] = GMAIL  # Send to ourselves — PA picks it up
+    msg['Subject'] = f"[SEND: {to}] {subject}"
+
+    content_type = 'html' if html else 'plain'
+    msg.attach(MIMEText(body, content_type))
+
+    with smtplib.SMTP_SSL('smtp.gmail.com', 465) as server:
+        server.login(GMAIL, GMAIL_PWD)
+        server.sendmail(GMAIL, [GMAIL], msg.as_string())
+
+    logger.info(f"Outbound relay email sent to={to} subject={subject!r}")
+</pre>
+
+<h3>B. Email Poller (email_poller.py)</h3>
+<pre style="background: #1e1e1e; color: #d4d4d4; padding: 14px; border-radius: 6px; font-size: 12px; overflow-x: auto;">
+import imaplib
+import email
+import re
+import logging
+import os
+from email.header import decode_header
+
+logger = logging.getLogger(__name__)
+
+GMAIL = os.getenv("GOLIATH_GMAIL")
+GMAIL_PWD = os.getenv("GOLIATH_GMAIL_APP_PASSWORD")
+
+def get_body(msg):
+    # Extract plain text body from email message.
+    if msg.is_multipart():
+        for part in msg.walk():
+            if part.get_content_type() == 'text/plain':
+                return part.get_payload(decode=True).decode('utf-8', errors='replace')
+    return msg.get_payload(decode=True).decode('utf-8', errors='replace')
+
+def poll_inbox():
+    # Check Gmail for [INBOX:] tagged emails from Power Automate.
+    mail = imaplib.IMAP4_SSL('imap.gmail.com')
+    mail.login(GMAIL, GMAIL_PWD)
+    mail.select('INBOX')
+
+    _, msg_ids = mail.search(None, 'SUBJECT "[INBOX:"')
+    messages = []
+
+    for msg_id in msg_ids[0].split():
+        _, data = mail.fetch(msg_id, '(RFC822)')
+        msg = email.message_from_bytes(data[0][1])
+        subject = str(msg['Subject'])
+
+        match = re.match(r'\[INBOX:\s*(.+?)\]\s*(.*)', subject)
+        if match:
+            messages.append({
+                'from': match.group(1),
+                'subject': match.group(2),
+                'body': get_body(msg),
+                'message_id': msg['Message-ID']
+            })
+            # Mark for deletion after processing
+            mail.store(msg_id, '+FLAGS', '\\Deleted')
+
+    mail.expunge()
+    mail.logout()
+    logger.info(f"Polled inbox: {len(messages)} new messages")
+    return messages
+</pre>
+
+<hr>
+
+<h2>🧪 PART 4: Testing</h2>
+
+<h3>Test Outbound (Flow #1):</h3>
+<ol>
+  <li>Send a test email to Gmail:
+    <pre style="background:#f4f4f4; padding:8px; font-size:12px;">To: nimrodgreatski@gmail.com
+Subject: [SEND: solvemyproblema@gmail.com] Test from Goliath
+Body: This is a test email sent via Goliath's outbound relay.</pre>
+  </li>
+  <li>Check Power Automate flow run history — it should trigger within 1-3 minutes</li>
+  <li>Check <code>solvemyproblema@gmail.com</code> — you should receive the email from your Office 365 address</li>
+  <li>Check Gmail — the source email should be deleted by the flow</li>
+</ol>
+
+<h3>Test Inbound (Flow #2):</h3>
+<ol>
+  <li>Send an email TO your Office 365 work address from any external account</li>
+  <li>Check Power Automate flow run history — Flow #2 should trigger</li>
+  <li>Check <code>nimrodgreatski@gmail.com</code> — you should see a forwarded email with subject: <code>[INBOX: sender@email.com] Original Subject</code></li>
+</ol>
+
+<hr>
+
+<h2>🔧 Troubleshooting</h2>
+<ul>
+  <li><b>Flow not triggering:</b> Gmail triggers can take 1-5 min. Check "Run history" in Power Automate. If no runs, re-authenticate the Gmail connection.</li>
+  <li><b>Expression errors:</b> Make sure you paste expressions in the <b>Expression</b> tab (fx icon), NOT in the text field directly.</li>
+  <li><b>"Invalid connection" error:</b> Re-authenticate both Gmail and Office 365 connectors under Connections in Power Automate.</li>
+  <li><b>Email not deleting from Gmail:</b> The Gmail connector needs "modify" permission. Re-authorize if needed.</li>
+  <li><b>Loop protection:</b> Flow #2 has a condition to skip emails from nimrodgreatski to prevent infinite loops. Make sure this condition is set correctly.</li>
+</ul>
+
+<hr>
+
+<h2>📁 Architecture Diagram</h2>
+<pre style="background: #f4f4f4; padding: 12px; border-radius: 6px; font-size: 12px;">
+┌─────────────┐     SMTP      ┌──────────┐   PA Flow #1   ┌───────────┐
+│   GOLIATH   │───────────────→│  Gmail   │───────────────→│ Office365 │──→ Recipient
+│  (Claude)   │               │  Inbox   │  parse [SEND:] │  (Send)   │
+└──────┬──────┘               └──────────┘                └───────────┘
+       │                           ↑
+       │ IMAP poll                 │ PA Flow #2
+       │ for [INBOX:]              │ forward + tag
+       │                           │
+       │                      ┌───────────┐
+       └──────────────────────│ Office365 │←── Incoming email
+                              │  (Inbox)  │
+                              └───────────┘
+</pre>
+
+<p style="color:#666; font-size: 12px; margin-top: 24px;">— Generated by Goliath 🏗️ | Questions? Reply to this email or ping via Telegram.</p>
+
+</body>
+</html>

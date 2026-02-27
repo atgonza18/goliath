@@ -5,12 +5,18 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 cd "$SCRIPT_DIR"
 
-# Kill existing bot process if running (prevent duplicates)
-if [ -f bot.pid ] && kill -0 "$(cat bot.pid)" 2>/dev/null; then
-    echo "Stopping existing bot (PID $(cat bot.pid))..."
-    kill "$(cat bot.pid)" 2>/dev/null || true
-    sleep 2
+# Kill ALL existing bot processes (prevent duplicates / double responses)
+echo "Killing all existing bot.main processes..."
+pkill -f "python -m bot.main" 2>/dev/null || true
+pkill -f "python -m bot.main" 2>/dev/null || true
+sleep 2
+# Verify they're dead
+if pgrep -f "python -m bot.main" > /dev/null 2>&1; then
+    echo "Stubborn processes found, sending SIGKILL..."
+    pkill -9 -f "python -m bot.main" 2>/dev/null || true
+    sleep 1
 fi
+rm -f bot.pid
 
 # Activate venv if present (Hetzner uses /opt/goliath/venv)
 if [ -d "$REPO_ROOT/venv" ]; then

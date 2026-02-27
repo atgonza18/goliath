@@ -11,8 +11,11 @@ You already did this with @BotFather on Telegram. You should have a token that l
 ### Step 2: Add your token to the config
 Open the `.env` file in the repo root:
 ```bash
-# In the Codespace terminal:
-code /workspaces/goliath/.env
+# On Hetzner:
+nano /opt/goliath/.env
+
+# In Codespaces (if using for development):
+code /opt/goliath/.env
 ```
 
 Replace `your-token-here` with your actual token:
@@ -24,7 +27,11 @@ Save the file.
 
 ### Step 3: Start the bot
 ```bash
-cd /workspaces/goliath/telegram-bot
+# On Hetzner (recommended):
+systemctl start goliath-bot
+
+# Or manually:
+cd /opt/goliath/telegram-bot
 python -m bot.main
 ```
 
@@ -91,16 +98,23 @@ You can use the folder key or the full name:
 
 ## Running the Bot
 
+### Run via systemd (Hetzner — recommended)
+```bash
+systemctl start goliath-bot
+systemctl status goliath-bot
+journalctl -u goliath-bot -f
+```
+
 ### Run in the foreground (see live logs)
 ```bash
-cd /workspaces/goliath/telegram-bot
+cd /opt/goliath/telegram-bot
 python -m bot.main
 ```
 Press `Ctrl+C` to stop.
 
 ### Run in the background
 ```bash
-cd /workspaces/goliath/telegram-bot
+cd /opt/goliath/telegram-bot
 nohup python -m bot.main > bot.log 2>&1 &
 echo $! > bot.pid
 echo "Bot started with PID $(cat bot.pid)"
@@ -108,7 +122,7 @@ echo "Bot started with PID $(cat bot.pid)"
 
 ### Stop the background bot
 ```bash
-kill $(cat /workspaces/goliath/telegram-bot/bot.pid)
+kill $(cat /opt/goliath/telegram-bot/bot.pid)
 ```
 
 ### Check if the bot is running
@@ -118,7 +132,7 @@ ps aux | grep "bot.main" | grep -v grep
 
 ### View logs
 ```bash
-tail -f /workspaces/goliath/telegram-bot/bot.log
+tail -f /opt/goliath/telegram-bot/bot.log
 ```
 
 ---
@@ -136,7 +150,7 @@ By default, anyone who finds your bot on Telegram can send it commands. To lock 
 3. That number is your chat ID
 
 ### Set the whitelist
-Edit `/workspaces/goliath/.env` and add:
+Edit `/opt/goliath/.env` and add:
 ```
 ALLOWED_CHAT_IDS=123456789
 ```
@@ -153,7 +167,7 @@ Restart the bot for this to take effect.
 ## Claude AI Integration
 
 When you send a plain text message (not a `/command`), the bot routes your question to Claude, which:
-- Has access to all project files in `/workspaces/goliath/projects/`
+- Has access to all project files in `/opt/goliath/projects/`
 - Knows the DSC role and all 12 projects (via Claude.md)
 - Can read and write files on your behalf
 - Responds with analysis formatted for Telegram
@@ -176,24 +190,21 @@ When you send a plain text message (not a `/command`), the bot routes your quest
 ## Troubleshooting
 
 ### "TELEGRAM_BOT_TOKEN is not set"
-You haven't added your token yet. Edit `/workspaces/goliath/.env` and paste your BotFather token.
+You haven't added your token yet. Edit `/opt/goliath/.env` and paste your BotFather token.
 
 ### Bot starts but doesn't respond in Telegram
 1. Make sure you're messaging the right bot (check the username)
 2. If you set `ALLOWED_CHAT_IDS`, make sure your chat ID is included
-3. Check the logs: `tail -f /workspaces/goliath/telegram-bot/bot.log`
+3. Check the logs: `tail -f /opt/goliath/telegram-bot/bot.log` (or `journalctl -u goliath-bot -f` on Hetzner)
 
 ### "Claude CLI not found"
-The `claude` command-line tool needs to be installed and in your PATH. In the Codespace terminal, verify with:
+The `claude` command-line tool needs to be installed and in your PATH. Verify with:
 ```bash
 which claude
 ```
 
-### Bot stops when Codespace sleeps
-GitHub Codespaces go idle after inactivity. The bot will stop when this happens. Options:
-- Keep the Codespace active (interact with it periodically)
-- Use the `gh codespace` CLI to wake it up remotely
-- Consider moving to a persistent VM for production use
+### Bot stops unexpectedly
+On Hetzner, the bot runs as a systemd service and auto-restarts on failure. Check status with `systemctl status goliath-bot`. If using Codespaces for development, note that Codespaces go idle after inactivity and the bot will stop.
 
 ### Messages show weird formatting
 The bot uses Markdown v1 for formatting. If Claude's response contains unsupported markdown characters, you may see raw formatting. This is cosmetic and doesn't affect functionality.

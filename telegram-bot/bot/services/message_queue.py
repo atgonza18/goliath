@@ -55,6 +55,39 @@ class MessageQueue:
         external_message_id: str = None,
         direction: str = "inbound",
     ) -> int:
+        # ── Deduplication Layer ──────────────────────────────────────────
+        # Primary dedup: check by external_message_id (e.g., IMAP Message-ID)
+        if external_message_id:
+            cursor = await self._db.execute(
+                "SELECT id, status FROM message_queue WHERE external_message_id = ? LIMIT 1",
+                (external_message_id,),
+            )
+            existing = await cursor.fetchone()
+            if existing:
+                logger.info(
+                    f"Dedup (message_id): {external_message_id!r} already exists as "
+                    f"queue item {existing['id']} (status={existing['status']}) — skipping"
+                )
+                return existing["id"]
+
+        # Secondary dedup: same sender + subject + direction within last 2 hours
+        # Catches re-forwarded emails where Message-ID changes
+        if sender and subject:
+            cursor = await self._db.execute(
+                "SELECT id, status FROM message_queue "
+                "WHERE sender = ? AND subject = ? AND direction = ? "
+                "AND created_at > strftime('%Y-%m-%dT%H:%M:%S', 'now', '-2 hours') LIMIT 1",
+                (sender, subject, direction),
+            )
+            existing = await cursor.fetchone()
+            if existing:
+                logger.info(
+                    f"Dedup (sender/subject): already queued as item {existing['id']} "
+                    f"(status={existing['status']}) — skipping"
+                )
+                return existing["id"]
+        # ── End Dedup ────────────────────────────────────────────────────
+
         cursor = await self._db.execute(
             "INSERT INTO message_queue "
             "(source, direction, sender, recipient, subject, body, channel, is_dm, external_message_id) "
@@ -114,6 +147,16 @@ class MessageQueue:
         )
         await self._db.commit()
         logger.info(f"Queue item {queue_id} rejected")
+
+    async def mark_sent(self, queue_id: int) -> None:
+        """Mark a single queue item as sent (called after successful email delivery)."""
+        await self._db.execute(
+            "UPDATE message_queue SET status = 'sent', "
+            "sent_at = strftime('%Y-%m-%dT%H:%M:%S','now') WHERE id = ?",
+            (queue_id,),
+        )
+        await self._db.commit()
+        logger.info(f"Queue item {queue_id} marked as sent")
 
     async def get_outbox(self, source: str = None) -> list[dict]:
         if source:

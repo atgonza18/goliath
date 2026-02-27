@@ -1,0 +1,89 @@
+{
+  "$schema": "https://schema.management.azure.com/providers/Microsoft.Logic/schemas/2016-06-01/workflowdefinition.json#",
+  "contentVersion": "1.0.0.0",
+  "triggers": {
+    "When_a_new_email_arrives_(V3)": {
+      "type": "ApiConnectionNotification",
+      "inputs": {
+        "host": {
+          "connection": {
+            "name": "@parameters('$connections')['shared_gmail']['connectionId']"
+          }
+        },
+        "fetch": {
+          "method": "get",
+          "pathTemplate": {
+            "template": "/v2/Mail/OnNewEmail"
+          },
+          "queries": {
+            "subjectFilter": "[SEND:",
+            "importance": "Any",
+            "starred": "Any",
+            "fetchOnlyWithAttachments": false,
+            "includeAttachments": false,
+            "label": "INBOX"
+          }
+        },
+        "subscribe": {
+          "method": "post",
+          "pathTemplate": {
+            "template": "/trigger/v2/Mail/OnNewEmail"
+          },
+          "queries": {
+            "subjectFilter": "[SEND:",
+            "importance": "Any",
+            "starred": "Any",
+            "fetchOnlyWithAttachments": false,
+            "includeAttachments": false,
+            "label": "INBOX"
+          }
+        }
+      },
+      "splitOn": "@triggerBody()?['value']"
+    }
+  },
+  "actions": {
+    "Send_an_email_(V2)": {
+      "type": "ApiConnection",
+      "inputs": {
+        "host": {
+          "connection": {
+            "name": "@parameters('$connections')['shared_office365']['connectionId']"
+          }
+        },
+        "method": "post",
+        "path": "/v2/Mail",
+        "body": {
+          "To": "@{split(split(triggerOutputs()?['body/subject'],'[SEND:')[1],']')[0]}",
+          "Subject": "@{trim(substring(triggerOutputs()?['body/subject'],add(indexOf(triggerOutputs()?['body/subject'],']'),1)))}",
+          "Body": "<p>@{triggerOutputs()?['body/body']}</p>",
+          "Importance": "Normal"
+        }
+      },
+      "runAfter": {}
+    },
+    "Delete_email_(V2)": {
+      "type": "ApiConnection",
+      "inputs": {
+        "host": {
+          "connection": {
+            "name": "@parameters('$connections')['shared_gmail']['connectionId']"
+          }
+        },
+        "method": "delete",
+        "path": "/v2/Mail/@{triggerOutputs()?['body/id']}"
+      },
+      "runAfter": {
+        "Send_an_email_(V2)": [
+          "Succeeded"
+        ]
+      }
+    }
+  },
+  "parameters": {
+    "$connections": {
+      "type": "Object",
+      "defaultValue": {}
+    }
+  }
+}

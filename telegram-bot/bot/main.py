@@ -6,6 +6,7 @@ from telegram.ext import ApplicationBuilder, ContextTypes
 from bot.config import (
     TELEGRAM_BOT_TOKEN, MEMORY_DB_PATH,
     WEBHOOK_PORT, WEBHOOK_AUTH_TOKEN, REPORT_CHAT_ID,
+    GMAIL_ADDRESS, GMAIL_APP_PASSWORD,
 )
 from bot.handlers import register_all_handlers
 from bot.memory.store import MemoryStore
@@ -15,7 +16,7 @@ from bot.services.message_queue import MessageQueue
 from bot.services.preferences import PreferenceStore
 from bot.services.webhook_server import start_webhook_server
 from bot.services.queue_processor import run_queue_processor
-from bot.services.proactive import schedule_proactive_sessions
+from bot.services.email_service import EmailService
 from bot.scheduler import create_scheduler
 from bot.utils.logging_config import setup_logging
 
@@ -51,6 +52,20 @@ async def post_init(application) -> None:
     await queue.initialize()
     application.bot_data["message_queue"] = queue
 
+    # Email service (Gmail SMTP sender for approved drafts)
+    email_service = EmailService()
+    email_service.set_queue(queue)
+    application.bot_data["email_service"] = email_service
+    if email_service.is_configured:
+        logger.info("Email service initialized (Gmail SMTP ready)")
+    else:
+        logger.warning("Email service not configured — GMAIL_ADDRESS or GMAIL_APP_PASSWORD missing")
+
+    # Expose bot_data on the bot instance so scheduler tasks and approval
+    # handlers can access services (queue, email_service) without holding
+    # a reference to the Application object.
+    application.bot._bot_data_ref = application.bot_data
+
     # Clean up stale conversation turns on startup
     await conversation.cleanup_old(max_age_hours=48)
 
@@ -77,9 +92,8 @@ async def post_init(application) -> None:
         _background_tasks.append(task)
         logger.info(f"Queue processor started, sending approvals to chat_id={chat_id}")
 
-        # Schedule proactive thinking sessions (6 AM + 6 PM CT)
-        if application.job_queue:
-            schedule_proactive_sessions(application.job_queue, chat_id)
+        # Proactive sessions (6 AM + 6 PM CT) now handled by the custom scheduler
+        # to avoid job_queue double-firing issues
     else:
         logger.warning("REPORT_CHAT_ID not set — queue processor and proactive sessions disabled")
 

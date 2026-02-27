@@ -18,7 +18,9 @@ from reportlab.lib.colors import HexColor
 import os
 
 # Output path
-OUTPUT_DIR = "/workspaces/goliath/dsc-constraints-production-reports/2026-02-25/apm-questions"
+# Auto-detect environment: /opt/goliath (Hetzner) or /workspaces/goliath (Codespaces)
+_REPO_ROOT = "/opt/goliath" if os.path.isdir("/opt/goliath") else "/workspaces/goliath"
+OUTPUT_DIR = os.path.join(_REPO_ROOT, "dsc-constraints-production-reports/2026-02-25/apm-questions")
 
 # Color definitions
 RED = HexColor("#C0392B")
