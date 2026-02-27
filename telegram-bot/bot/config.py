@@ -66,7 +66,7 @@ RELAY_TO_ADDRESS = os.getenv("RELAY_TO_ADDRESS", "")
 # Recall.ai Meeting Bot config (automated Teams transcription)
 # ---------------------------------------------------------------------------
 RECALL_API_KEY = os.getenv("RECALL_API_KEY", "")
-RECALL_API_BASE_URL = os.getenv("RECALL_API_BASE_URL", "https://us-east-1.recall.ai")
+RECALL_API_BASE_URL = os.getenv("RECALL_API_BASE_URL", "https://us-west-2.recall.ai")
 RECALL_BOT_NAME = os.getenv("RECALL_BOT_NAME", "Aaron Gonzalez")
 
 # Subfolder names within each project
