@@ -19,6 +19,7 @@ Credentials come from env vars: GMAIL_ADDRESS, GMAIL_APP_PASSWORD, GMAIL_IMAP_HO
 """
 
 import asyncio
+import collections
 import email
 import email.header
 import email.message
@@ -53,6 +54,32 @@ ALLOWED_EXTENSIONS = {
 # Known constraints update senders (case-insensitive partial match on email address)
 CONSTRAINTS_SENDERS = ['hauger', 'hogger']
 
+# ── Module-level dedup set ──────────────────────────────────────────────
+# This set persists for the lifetime of the bot process, surviving across
+# EmailPoller instances (which are recreated every ~45s by the scheduler).
+# We use an OrderedDict as an ordered set so we can evict the oldest entries
+# when the cap is reached, rather than clearing everything at once (which
+# would momentarily forget all IDs and risk re-processing).
+_MAX_PROCESSED_IDS = 2000
+_global_processed_ids: collections.OrderedDict = collections.OrderedDict()
+
+
+def _mark_processed(msg_id: str) -> None:
+    """Record a Message-ID as processed in the global dedup cache.
+
+    Uses an OrderedDict as an ordered set (values are always None).
+    When the cap is exceeded, the oldest entries are evicted — not the
+    entire set — so recently-seen IDs are never forgotten.
+    """
+    if not msg_id:
+        return
+    # Move to end if already present (refreshes position), otherwise insert
+    _global_processed_ids[msg_id] = None
+    _global_processed_ids.move_to_end(msg_id)
+    # Evict oldest entries if over cap
+    while len(_global_processed_ids) > _MAX_PROCESSED_IDS:
+        _global_processed_ids.popitem(last=False)
+
 
 class EmailPoller:
     """Async-friendly Gmail IMAP poller for inbound emails.
@@ -74,7 +101,6 @@ class EmailPoller:
         self._bot = None    # Set for Telegram notifications
         self._chat_id = None
         self._poll_lock = asyncio.Lock()       # Prevent concurrent poll cycles
-        self._processed_ids: set = set()       # Dedup: track processed Message-IDs
 
     @property
     def is_configured(self) -> bool:
@@ -142,7 +168,7 @@ class EmailPoller:
                     msg_id = parsed.get("message_id", "")
 
                     # ── Dedup: skip if already processed this Message-ID ──
-                    if msg_id and msg_id in self._processed_ids:
+                    if msg_id and msg_id in _global_processed_ids:
                         logger.info(
                             f"Skipping duplicate email — already processed: {msg_id}"
                         )
@@ -156,7 +182,7 @@ class EmailPoller:
                             f"Skipping relay echo — subject contains [SEND:]: {subj!r}"
                         )
                         if msg_id:
-                            self._processed_ids.add(msg_id)
+                            _mark_processed(msg_id)
                         continue
                     # ── End safety filter ─────────────────────────────────
 
@@ -170,7 +196,7 @@ class EmailPoller:
                             f"{parsed['subject']!r}"
                         )
                         if msg_id:
-                            self._processed_ids.add(msg_id)
+                            _mark_processed(msg_id)
                         continue
                     if gmail_lower and sender_lower == gmail_lower:
                         logger.info(
@@ -178,7 +204,7 @@ class EmailPoller:
                             f"{parsed['subject']!r}"
                         )
                         if msg_id:
-                            self._processed_ids.add(msg_id)
+                            _mark_processed(msg_id)
                         continue
                     # ── End self-forward detection ────────────────────────
 
@@ -199,7 +225,7 @@ class EmailPoller:
                             )
                         count += 1
                         if msg_id:
-                            self._processed_ids.add(msg_id)
+                            _mark_processed(msg_id)
                         continue
 
                     # ── Normal email: enqueue for draft response ──────────
@@ -217,14 +243,10 @@ class EmailPoller:
                         f"subject: {parsed['subject']!r}"
                     )
                     if msg_id:
-                        self._processed_ids.add(msg_id)
+                        _mark_processed(msg_id)
 
                 except Exception:
                     logger.exception("Failed to process polled email")
-
-            # Trim processed IDs to avoid unbounded memory growth
-            if len(self._processed_ids) > 500:
-                self._processed_ids.clear()
 
             logger.info(f"Email poll cycle complete: {count} email(s) processed")
             return count
