@@ -23,9 +23,11 @@ class AgentResult:
 class SubagentRunner:
     """Invokes a Claude CLI subprocess for a specific agent definition."""
 
-    # Default per-subagent timeout (5 minutes) — prevents any single agent from
-    # blocking the pipeline indefinitely. Can be overridden per-agent or per-call.
-    DEFAULT_TIMEOUT = 300
+    # Default per-subagent timeout (15 minutes) — generous for complex MCP-backed
+    # queries and multi-tool workflows. The 1800s orchestration ceiling is the
+    # ultimate guard; this just prevents truly hung processes from lingering.
+    # Previous value of 300s was killing productive work prematurely.
+    DEFAULT_TIMEOUT = 900
 
     def __init__(self):
         self._env = os.environ.copy()
@@ -39,7 +41,7 @@ class SubagentRunner:
         timeout: float = None,
         no_tools: bool = False,
     ) -> AgentResult:
-        # Resolve timeout: explicit call param > agent definition > default 300s
+        # Resolve timeout: explicit call param > agent definition > default 900s
         timeout = timeout or agent.timeout or self.DEFAULT_TIMEOUT
 
         result = await self._run_once(agent, task_prompt, context, timeout, no_tools)
@@ -66,7 +68,7 @@ class SubagentRunner:
         agent: AgentDefinition,
         task_prompt: str,
         context: str = "",
-        timeout: float = 300,
+        timeout: float = 900,
         no_tools: bool = False,
     ) -> AgentResult:
         """Execute a single Claude CLI subprocess for the given agent."""
