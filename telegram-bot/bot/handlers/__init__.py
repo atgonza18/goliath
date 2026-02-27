@@ -11,6 +11,7 @@ from bot.handlers.orchestration import (
     document_message_handler,
 )
 from bot.handlers.approval import build_approval_conversation_handler
+from bot.handlers.meeting import join_handler, meetings_handler
 from bot.config import ALLOWED_CHAT_IDS
 
 
@@ -40,6 +41,10 @@ def register_all_handlers(app: Application) -> None:
     app.add_handler(CommandHandler("history", history_handler, filters=user_filter))
     app.add_handler(CommandHandler("logs", logs_handler, filters=user_filter))
     app.add_handler(CommandHandler("voice", voice_handler, filters=user_filter))
+
+    # Meeting bot commands (Recall.ai integration)
+    app.add_handler(CommandHandler("join", join_handler, filters=user_filter))
+    app.add_handler(CommandHandler("meetings", meetings_handler, filters=user_filter))
 
     # Approval inline buttons + edit conversation flow (must be before catch-all)
     approval_handler = build_approval_conversation_handler(user_filter)

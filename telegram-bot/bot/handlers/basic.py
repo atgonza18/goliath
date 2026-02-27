@@ -37,7 +37,9 @@ async def help_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "/agents — See my specialist team\n"
         "/logs — Activity log (what agents ran, timing, success/fail)\n"
         "/voice on|off — Toggle voice memos\n"
-        "/history — Conversation history (or: /history clear)\n\n"
+        "/history — Conversation history (or: /history clear)\n"
+        "/join <teams_link> — Send notetaker bot to a Teams meeting\n"
+        "/meetings — Show active/recent meeting bot sessions\n\n"
         "Or just type whatever you need in plain English — I'll figure it out."
     )
     await update.message.reply_text(help_text)

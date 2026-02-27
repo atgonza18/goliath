@@ -7,6 +7,7 @@ from bot.config import (
     TELEGRAM_BOT_TOKEN, MEMORY_DB_PATH,
     WEBHOOK_PORT, WEBHOOK_AUTH_TOKEN, REPORT_CHAT_ID,
     GMAIL_ADDRESS, GMAIL_APP_PASSWORD,
+    RECALL_API_KEY,
 )
 from bot.handlers import register_all_handlers
 from bot.memory.store import MemoryStore
@@ -17,6 +18,7 @@ from bot.services.preferences import PreferenceStore
 from bot.services.webhook_server import start_webhook_server
 from bot.services.queue_processor import run_queue_processor
 from bot.services.email_service import EmailService
+from bot.services.recall_service import RecallService
 from bot.scheduler import create_scheduler
 from bot.utils.logging_config import setup_logging
 
@@ -61,6 +63,15 @@ async def post_init(application) -> None:
     else:
         logger.warning("Email service not configured — GMAIL_ADDRESS or GMAIL_APP_PASSWORD missing")
 
+    # Recall.ai meeting bot service (automated Teams transcription)
+    recall_service = RecallService(memory._db)
+    await recall_service.initialize()
+    application.bot_data["recall_service"] = recall_service
+    if recall_service.is_configured:
+        logger.info("Recall.ai meeting bot service initialized")
+    else:
+        logger.warning("Recall.ai not configured — RECALL_API_KEY missing from .env")
+
     # Expose bot_data on the bot instance so scheduler tasks and approval
     # handlers can access services (queue, email_service) without holding
     # a reference to the Application object.
@@ -77,7 +88,10 @@ async def post_init(application) -> None:
 
     # Start webhook server
     if WEBHOOK_AUTH_TOKEN:
-        webhook_runner = await start_webhook_server(queue, WEBHOOK_AUTH_TOKEN, WEBHOOK_PORT)
+        webhook_runner = await start_webhook_server(
+            queue, WEBHOOK_AUTH_TOKEN, WEBHOOK_PORT,
+            recall_service=recall_service,
+        )
         application.bot_data["webhook_runner"] = webhook_runner
         logger.info(f"Webhook server running on port {WEBHOOK_PORT}")
     else:
