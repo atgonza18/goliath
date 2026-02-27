@@ -72,6 +72,7 @@ PROJECT_SUBFOLDERS = [
     "project-details/budget",
     "project-directory",
     "pod",
+    "transcripts",
 ]
 
 # Central constraints report folder (portfolio-wide, from Joshua Hauger)
@@ -96,8 +97,9 @@ def match_project_key(text: str) -> str | None:
     )
     for key, info in sorted_projects:
         name = info["name"].lower()
-        # Word boundary match to avoid partial hits
-        pattern = r'\b' + re.escape(name) + r'\b'
+        # Use lookaround that treats underscores as non-word chars
+        # \b fails with underscores because \b sees _ as a word character
+        pattern = r'(?<![a-zA-Z0-9])' + re.escape(name) + r'(?![a-zA-Z0-9])'
         if re.search(pattern, text_lower):
             return key
     return None

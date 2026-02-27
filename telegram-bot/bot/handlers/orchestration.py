@@ -109,11 +109,29 @@ async def photo_message_handler(update: Update, context: ContextTypes.DEFAULT_TY
     await _run_orchestrator(update, context, user_message)
 
 
+def _is_transcript_file(filename: str, caption: str = "") -> bool:
+    """Detect if an uploaded file is a meeting transcript."""
+    name_lower = filename.lower()
+    caption_lower = (caption or "").lower()
+
+    # Direct format match — .vtt files are almost always transcripts
+    if name_lower.endswith(".vtt"):
+        return True
+
+    # Keyword match in filename
+    transcript_keywords = ["transcript", "transcription", "meeting notes", "call notes", "meeting_notes"]
+    for kw in transcript_keywords:
+        if kw in name_lower or kw in caption_lower:
+            return True
+
+    return False
+
+
 async def document_message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle document/file uploads — download and pass to Claude."""
     chat_id = update.effective_chat.id
     doc = update.message.document
-    caption = update.message.caption or f"Analyze this file: {doc.file_name}"
+    caption = update.message.caption or ""
     logger.info(f"Document from chat_id={chat_id}: {doc.file_name} ({doc.file_size} bytes)")
 
     # Download the file
@@ -122,11 +140,24 @@ async def document_message_handler(update: Update, context: ContextTypes.DEFAULT
     await doc_file.download_to_drive(str(file_path))
     logger.info(f"Document saved to {file_path}")
 
-    user_message = (
-        f"{caption}\n\n"
-        f"[The user uploaded a file: {doc.file_name} — saved to: {file_path}]\n"
-        f"Read and analyze this file."
-    )
+    # Detect transcript files and route with transcript-specific instructions
+    if _is_transcript_file(doc.file_name, caption):
+        logger.info(f"Transcript detected: {doc.file_name}")
+        user_message = (
+            f"{caption or 'Process this meeting transcript.'}\n\n"
+            f"[TRANSCRIPT UPLOAD DETECTED: {doc.file_name} — saved to: {file_path}]\n"
+            f"This is a meeting/call transcript. Route to transcript_processor subagent for full analysis.\n"
+            f"Extract: meeting summary, speakers, project identification, constraints discussed, "
+            f"action items (WHO/WHAT/WHEN), key decisions, risks, and follow-ups.\n"
+            f"Save action items and decisions to memory. File the processed summary to the project's "
+            f"transcripts/ folder."
+        )
+    else:
+        user_message = (
+            f"{caption or f'Analyze this file: {doc.file_name}'}\n\n"
+            f"[The user uploaded a file: {doc.file_name} — saved to: {file_path}]\n"
+            f"Read and analyze this file."
+        )
 
     await _run_orchestrator(update, context, user_message)
 

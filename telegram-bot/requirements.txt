@@ -9,3 +9,4 @@ reportlab==4.4.10
 fpdf2==2.8.6
 requests>=2.31.0
 pdfminer.six>=20231228
+webvtt-py>=0.5.1
