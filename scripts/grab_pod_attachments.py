@@ -45,12 +45,18 @@ ALLOWED_EXTENSIONS = {
 CONSTRAINTS_SENDERS = ['hauger', 'hogger']
 
 
-def classify_email(subject: str, sender: str) -> str:
+def classify_email(subject: str, sender: str, attachments: list | None = None) -> str:
     """Classify an email as pod, constraints, or normal."""
     subj = subject.lower()
     sndr = sender.lower()
-    if re.search(r'\bpod\b', subj):
+    pod_patterns = (r'\bpod\b', r'plan\s+of\s+the\s+day')
+    if any(re.search(p, subj) for p in pod_patterns):
         return "pod"
+    # Check attachment filenames for POD indicators
+    for att in (attachments or []):
+        att_name = (att.get("filename") or "").lower()
+        if any(re.search(p, att_name) for p in pod_patterns):
+            return "pod"
     for name in CONSTRAINTS_SENDERS:
         if name in sndr:
             return "constraints"
