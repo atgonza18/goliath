@@ -16,6 +16,122 @@ from bot.utils.formatting import chunk_message
 
 logger = logging.getLogger(__name__)
 
+# ---------------------------------------------------------------------------
+# Per-chat concurrency control
+# ---------------------------------------------------------------------------
+# Prevents two orchestrations from running simultaneously in the same chat,
+# which causes conflicting status messages (e.g. "10/10 complete" vs "Phase 1 done").
+#
+# Design:
+#   - _chat_locks:  one asyncio.Lock per chat_id, lazily created
+#   - _chat_queues: pending (update, context, user_message) tuples per chat_id
+#
+# When a message arrives and the lock is already held, we acknowledge and queue it.
+# When an orchestration finishes, we drain the queue: only the LATEST message is
+# processed (intermediate ones are dropped — the most recent message is what the
+# user cares about).
+# ---------------------------------------------------------------------------
+_chat_locks: dict[int, asyncio.Lock] = {}
+_chat_queues: dict[int, list] = {}
+
+
+def _get_chat_lock(chat_id: int) -> asyncio.Lock:
+    """Return the asyncio.Lock for a given chat, creating it lazily."""
+    if chat_id not in _chat_locks:
+        _chat_locks[chat_id] = asyncio.Lock()
+    return _chat_locks[chat_id]
+
+
+async def _enqueue_or_run(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
+    user_message: str,
+):
+    """Gate _run_orchestrator behind a per-chat lock.
+
+    If the chat is idle → acquire the lock and run immediately.
+    If the chat is busy → acknowledge the user, queue the message, return.
+    When a run finishes → pop the LATEST queued message and run it (discard older ones).
+    """
+    chat_id = update.effective_chat.id
+    lock = _get_chat_lock(chat_id)
+
+    # Fast path: nobody running → grab the lock and go
+    if not lock.locked():
+        await _locked_run(lock, chat_id, update, context, user_message)
+        return
+
+    # Slow path: orchestration already in progress → queue
+    if chat_id not in _chat_queues:
+        _chat_queues[chat_id] = []
+    _chat_queues[chat_id].append((update, context, user_message))
+    logger.info(
+        f"Chat {chat_id}: orchestration busy — queued message "
+        f"(queue depth: {len(_chat_queues[chat_id])})"
+    )
+    try:
+        await update.message.reply_text(
+            "Still working on your last request \u2014 I'll get to this next. \U0001f504"
+        )
+    except Exception:
+        logger.debug("Failed to send queue acknowledgment", exc_info=True)
+
+
+async def _locked_run(
+    lock: asyncio.Lock,
+    chat_id: int,
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
+    user_message: str,
+):
+    """Acquire the lock, run the orchestrator, then drain any queued messages."""
+    async with lock:
+        try:
+            await _run_orchestrator(update, context, user_message)
+        except Exception:
+            # _run_orchestrator has its own error handling, but if something
+            # truly unexpected leaks out we still want to release the lock
+            # (handled by `async with`) and not lose the exception.
+            logger.exception(
+                f"Chat {chat_id}: unhandled exception escaped _run_orchestrator"
+            )
+
+    # Lock is released — check for queued messages
+    await _drain_queue(chat_id)
+
+
+async def _drain_queue(chat_id: int):
+    """Process the most recent queued message, discard older ones."""
+    queue = _chat_queues.get(chat_id)
+    if not queue:
+        return
+
+    # Grab everything and clear
+    pending = queue[:]
+    queue.clear()
+
+    if not pending:
+        return
+
+    # Only process the LATEST message — discard the rest
+    latest_update, latest_context, latest_message = pending[-1]
+    dropped = len(pending) - 1
+    if dropped > 0:
+        logger.info(
+            f"Chat {chat_id}: dropping {dropped} intermediate queued message(s), "
+            f"processing latest"
+        )
+        try:
+            await latest_update.message.reply_text(
+                f"Caught up \u2014 skipped {dropped} older message(s) and handling your latest one now."
+            )
+        except Exception:
+            logger.debug("Failed to send skip notification", exc_info=True)
+
+    lock = _get_chat_lock(chat_id)
+    await _locked_run(lock, chat_id, latest_update, latest_context, latest_message)
+
+
 # Dynamic status messages — Nimrod's personality: blunt, funny, gets stuff done
 STATUS_MESSAGES = [
     "\U0001f504 Firing up the brain cells... gimme a sec.",
@@ -80,7 +196,7 @@ async def claude_message_handler(update: Update, context: ContextTypes.DEFAULT_T
     chat_id = update.effective_chat.id
     logger.info(f"Message from chat_id={chat_id}: {user_message[:100]}...")
 
-    await _run_orchestrator(update, context, user_message)
+    await _enqueue_or_run(update, context, user_message)
 
 
 async def photo_message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -106,7 +222,7 @@ async def photo_message_handler(update: Update, context: ContextTypes.DEFAULT_TY
         f"Use the Read tool to view the image and analyze it."
     )
 
-    await _run_orchestrator(update, context, user_message)
+    await _enqueue_or_run(update, context, user_message)
 
 
 def _is_transcript_file(filename: str, caption: str = "") -> bool:
@@ -159,7 +275,7 @@ async def document_message_handler(update: Update, context: ContextTypes.DEFAULT
             f"Read and analyze this file."
         )
 
-    await _run_orchestrator(update, context, user_message)
+    await _enqueue_or_run(update, context, user_message)
 
 
 async def _run_orchestrator(
