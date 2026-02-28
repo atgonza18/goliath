@@ -200,6 +200,7 @@ async def _run_orchestrator(
     run_start = time.monotonic()
     run_success = True
     run_error = None
+    orch_result = None
 
     try:
         # 2 hour zombie safety net — NOT an operational timeout.
@@ -314,3 +315,21 @@ async def _run_orchestrator(
                 )
             except Exception:
                 logger.exception("Failed to write activity log")
+
+        # Fire-and-forget post-interaction reflection (async, non-blocking)
+        try:
+            from bot.memory.reflection import post_interaction_hook
+            _sub_log = getattr(orchestrator, '_subagent_log', None) or []
+            _resp = orch_result.text if orch_result else ''
+            post_interaction_hook(
+                user_message=user_message,
+                response_text=_resp,
+                agents_used=[s['agent'] for s in _sub_log],
+                duration_ms=int(total_duration * 1000),
+                errors=[s['error'] for s in _sub_log if not s['success'] and s.get('error')]
+                       + ([run_error] if run_error else []),
+                subagent_count=len(_sub_log),
+                failed_subagents=sum(1 for s in _sub_log if not s['success']),
+            )
+        except Exception:
+            logger.debug("Reflection hook failed (non-fatal)", exc_info=True)

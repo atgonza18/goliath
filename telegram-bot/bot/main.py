@@ -15,6 +15,7 @@ from bot.memory.store import MemoryStore
 from bot.memory.conversation import ConversationStore
 from bot.memory.activity_log import ActivityLogStore
 from bot.memory.token_tracker import TokenTracker
+from bot.memory.reflection import ReflectionStore, set_reflection_store
 from bot.services.message_queue import MessageQueue
 from bot.services.preferences import PreferenceStore
 from bot.services.webhook_server import start_webhook_server
@@ -58,6 +59,13 @@ async def post_init(application) -> None:
     set_cli_tracker(token_tracker)
     set_sdk_tracker(token_tracker)
     logger.info("Token tracker initialized and wired into agent runners")
+
+    # Reflection store shares the same DB connection
+    reflection = ReflectionStore(memory._db)
+    await reflection.initialize()
+    application.bot_data["reflection"] = reflection
+    set_reflection_store(reflection)
+    logger.info("Reflection store initialized (post-interaction self-scoring active)")
 
     # User preferences shares the same DB connection
     preferences = PreferenceStore(memory._db)
