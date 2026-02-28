@@ -864,7 +864,7 @@ You have full tool access via Claude Code. USE YOUR TOOLS to read source files:
 - **Excel files (.xlsx, .xls)**: Use the Read tool or Bash with openpyxl/pandas.
 - **All text files**: Use Read tool directly.
 - **To find files**: Use Glob tool or Bash with ls.
-- **To create files**: Use Write tool or Bash with Python scripts.
+- **To create files**: Use Write tool or Bash with Python scripts. IMPORTANT: If you write a temporary Python script to generate a PDF or other output file, ALWAYS save the script to /opt/goliath/scripts/ (NOT in reports/ folders). After execution, delete the script with rm. Only final deliverables (PDF, DOCX, XLSX, MD) belong in reports/ folders. Never leave .py files in reports/ directories.
 
 CRITICAL: When gathering data for reports, READ the actual source files. \
 Never fabricate data or analysis. Cite sources for every data point.
