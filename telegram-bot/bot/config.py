@@ -155,6 +155,29 @@ CONSTRAINT_EMAIL_KEYWORDS = [
     'open items', 'open issues',
 ]
 
+# ---------------------------------------------------------------------------
+# Agent Runner Retry / Resilience config
+# ---------------------------------------------------------------------------
+# Max retry attempts per agent call (includes the initial attempt).
+# e.g., 3 means: 1 initial + 2 retries.
+RETRY_MAX_ATTEMPTS = int(os.getenv("RETRY_MAX_ATTEMPTS", "3"))
+
+# Base delay in seconds for exponential backoff between retries.
+RETRY_BASE_DELAY = float(os.getenv("RETRY_BASE_DELAY", "2.0"))
+
+# Maximum delay cap in seconds (backoff won't exceed this).
+RETRY_MAX_DELAY = float(os.getenv("RETRY_MAX_DELAY", "30.0"))
+
+# Whether to add random jitter to backoff delays (recommended: True).
+RETRY_JITTER = os.getenv("RETRY_JITTER", "true").lower() in ("true", "1", "yes")
+
+# Circuit breaker: after this many consecutive failures for the same agent,
+# stop calling it for the cooldown period.
+RETRY_CIRCUIT_BREAKER_THRESHOLD = int(os.getenv("RETRY_CIRCUIT_BREAKER_THRESHOLD", "3"))
+
+# Circuit breaker cooldown in seconds (default: 5 minutes).
+RETRY_CIRCUIT_BREAKER_COOLDOWN = float(os.getenv("RETRY_CIRCUIT_BREAKER_COOLDOWN", "300.0"))
+
 
 def match_project_key(text: str) -> str | None:
     """Try to find a portfolio project name within a text string.

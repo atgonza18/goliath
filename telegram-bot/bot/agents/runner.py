@@ -6,6 +6,12 @@ from dataclasses import dataclass
 from typing import Optional
 
 from bot.agents.definitions import AgentDefinition
+from bot.agents.resilience import (
+    RetryConfig,
+    compute_backoff,
+    get_circuit_breaker,
+    is_transient_error,
+)
 from bot.config import REPO_ROOT
 from bot.memory.token_tracker import TokenUsage
 
@@ -32,7 +38,13 @@ class AgentResult:
 
 
 class SubagentRunner:
-    """Invokes a Claude CLI subprocess for a specific agent definition."""
+    """Invokes a Claude CLI subprocess for a specific agent definition.
+
+    Resilience features:
+    - Exponential backoff with jitter on transient errors
+    - Circuit breaker: backs off for 5 min after 3 consecutive failures
+    - Configurable via env vars (see config.py)
+    """
 
     # Safety-net timeout ONLY — catches genuinely hung zombie processes.
     # This should NEVER fire during normal operation. Claude CLI has no
@@ -44,6 +56,8 @@ class SubagentRunner:
     def __init__(self):
         self._env = os.environ.copy()
         self._env.pop("CLAUDECODE", None)
+        self._retry_config = RetryConfig.from_config()
+        self._circuit_breaker = get_circuit_breaker()
 
     async def run(
         self,
@@ -53,27 +67,74 @@ class SubagentRunner:
         timeout: float = None,
         no_tools: bool = False,
     ) -> AgentResult:
-        # Resolve timeout: explicit call param > agent definition > default 900s
+        # Resolve timeout: explicit call param > agent definition > default
         timeout = timeout or agent.timeout or self.DEFAULT_TIMEOUT
 
-        result = await self._run_once(agent, task_prompt, context, timeout, no_tools)
-
-        # Retry once on timeout — transient slow-starts are common with Claude CLI
-        if not result.success and result.error and "Timed out" in result.error:
-            logger.info(
-                f"Retrying subagent '{agent.name}' after timeout "
-                f"(attempt 2/2, timeout={timeout}s)"
+        # --- Circuit breaker check ---
+        allowed, wait_secs = await self._circuit_breaker.check(agent.name)
+        if not allowed:
+            logger.warning(
+                f"Circuit breaker OPEN for '{agent.name}': "
+                f"skipping call, {wait_secs:.0f}s remaining in cooldown."
             )
+            return AgentResult(
+                agent_name=agent.name,
+                success=False,
+                output="",
+                duration_seconds=0.0,
+                error=(
+                    f"Circuit breaker open: '{agent.name}' has failed repeatedly. "
+                    f"Cooling down for {wait_secs:.0f}s before retrying."
+                ),
+            )
+
+        # --- Retry loop with exponential backoff ---
+        rc = self._retry_config
+        last_result: AgentResult | None = None
+
+        for attempt in range(rc.max_attempts):
             result = await self._run_once(agent, task_prompt, context, timeout, no_tools)
-            if not result.success and result.error and "Timed out" in result.error:
-                # Both attempts timed out — return graceful error so orchestrator
-                # can continue with partial results from other subagents
-                result.error = (
-                    f"Timed out after 2 attempts ({timeout}s each). "
-                    f"This subagent's results are unavailable."
+
+            if result.success:
+                await self._circuit_breaker.record_success(agent.name)
+                return result
+
+            last_result = result
+
+            # Classify the error
+            if not is_transient_error(result.error):
+                logger.info(
+                    f"Subagent '{agent.name}' failed with permanent error "
+                    f"(attempt {attempt + 1}/{rc.max_attempts}): {result.error}"
+                )
+                await self._circuit_breaker.record_failure(agent.name)
+                return result
+
+            # Transient error — retry if attempts remain
+            if attempt + 1 < rc.max_attempts:
+                delay = compute_backoff(
+                    attempt, rc.base_delay, rc.max_delay, rc.jitter
+                )
+                logger.info(
+                    f"Subagent '{agent.name}' transient failure "
+                    f"(attempt {attempt + 1}/{rc.max_attempts}): {result.error}. "
+                    f"Retrying in {delay:.1f}s..."
+                )
+                await asyncio.sleep(delay)
+            else:
+                logger.warning(
+                    f"Subagent '{agent.name}' exhausted all {rc.max_attempts} attempts. "
+                    f"Last error: {result.error}"
                 )
 
-        return result
+        # All attempts exhausted
+        await self._circuit_breaker.record_failure(agent.name)
+        if last_result is not None:
+            last_result.error = (
+                f"Failed after {rc.max_attempts} attempts. "
+                f"Last error: {last_result.error}"
+            )
+        return last_result
 
     async def _run_once(
         self,
