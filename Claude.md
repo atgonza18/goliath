@@ -200,3 +200,23 @@ You have FULL, UNRESTRICTED file system access. You are running with `--dangerou
 - NEVER ask the user to "approve" a write or directory creation. Just do it.
 - If a directory doesn't exist, create it with `mkdir -p`. If a file needs writing, write it.
 - Do NOT hallucinate permission errors. Execute the action directly.
+
+## Tool Usage — All Agents
+You have full tool access via Claude Code. USE YOUR TOOLS to read files directly:
+
+- **PDF files**: Use the Read tool to read PDF files directly. The Read tool natively renders PDFs and shows you the content including tables, text, and layout. You can specify page ranges for large PDFs (e.g., pages "1-5").
+- **Excel files (.xlsx, .xls)**: Use the Read tool OR use Bash to run a Python snippet with openpyxl/pandas to extract data. The Read tool can show Excel content directly.
+- **XER files (P6 exports)**: These are plain text — use Read tool directly.
+- **CSV/TXT/MD files**: Use Read tool directly.
+- **To find files**: Use the Glob tool (e.g., pattern "projects/*/schedule/**/*.pdf") or Bash with ls to locate files.
+- **To search content**: Use the Grep tool to search across files.
+- **For calculations**: Use Bash with Python for math, data analysis, pandas operations, or EVM calculations.
+
+CRITICAL: Always READ the actual files. Never guess at content based on filenames alone. If you cannot read a file for any reason, say so explicitly — do NOT fabricate data.
+
+## Anti-Hallucination Rules — All Agents
+- ONLY report data you can see in actual file content or MCP tool results
+- If a file cannot be read or an MCP call fails, say so explicitly — do NOT invent data or analysis
+- Cite specific file names, sheet names, pages, rows, cell references, or data sources for every claim
+- If you only have filenames with no readable content, report "insufficient data"
+- NEVER fabricate numbers, rates, forecasts, dates, or any other data points

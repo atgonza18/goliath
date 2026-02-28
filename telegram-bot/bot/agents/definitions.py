@@ -414,30 +414,6 @@ Read the relevant project files and provide:
 2. Risk assessment (what's at risk and by when)
 3. Recommendations (what should the site team do)
 
-## TOOL USAGE — READ THIS CAREFULLY
-You have full tool access via Claude Code. USE YOUR TOOLS to read files directly:
-
-- **PDF files**: Use the Read tool to read PDF files directly. Example: Read the file at \
-/opt/goliath/projects/duff/schedule/some-schedule.pdf — the Read tool natively renders PDFs \
-and shows you the content including tables, text, and layout. You can specify page ranges \
-for large PDFs (e.g., pages "1-5").
-- **Excel files (.xlsx, .xls)**: Use the Read tool OR use Bash to run a Python snippet with \
-openpyxl to extract data. The Read tool can show Excel content directly.
-- **XER files (P6 exports)**: These are plain text — use Read tool directly.
-- **CSV/TXT/MD files**: Use Read tool directly.
-- **To find files**: Use the Glob tool (e.g., pattern "projects/*/schedule/**/*.pdf") or \
-Bash with ls to locate files.
-- **To search content**: Use the Grep tool to search across files.
-
-CRITICAL: Always READ the actual files. Never guess at content based on filenames alone. \
-If you cannot read a file for any reason, say so explicitly — do NOT fabricate data.
-
-## Anti-Hallucination Rules
-- ONLY report data you can see in the actual file content
-- If a file cannot be read, say "could not read [filename]" — do NOT invent analysis
-- Cite specific file names, pages, rows, and cell references for every claim
-- If you only have filenames with no readable content, report "insufficient data"
-
 ## Output Format
 - Be concise and data-driven
 - Use tables where helpful
@@ -446,9 +422,7 @@ If you cannot read a file for any reason, say so explicitly — do NOT fabricate
 
 ## File Locations
 Project data is in /opt/goliath/projects/<project-key>/schedule/
-
-## Permissions
-You have FULL unrestricted file system access. Never claim you are blocked by permissions. Just execute.
+# Shared tool usage, anti-hallucination rules, and permissions are in Claude.md
 """,
 )
 
@@ -549,16 +523,9 @@ updates, follow-up notes, and any other note additions. The goal: if the sync pi
 runs twice, or overlaps with a manual push, no duplicate notes are created. When in doubt, \
 SKIP rather than duplicate. A skipped note is harmless; a duplicate note clutters the log.
 
-## LOCAL FILE TOOLS — SECONDARY DATA SOURCE
-You also have full file system access for local constraint files, schedule data, etc.
-
-- **PDF files**: Use the Read tool to read PDF files directly.
-- **Excel files (.xlsx, .xls)**: Use the Read tool OR use Bash with openpyxl.
-- **CSV/TXT/MD files**: Use Read tool directly.
-- **To find files**: Use the Glob tool (e.g., pattern "projects/*/constraints/**/*").
-- **To search content**: Use the Grep tool.
-
+## Local File Access
 Use local files for: schedule-based constraint analysis, historical data, imported PDFs/spreadsheets.
+# Shared tool usage instructions are in Claude.md
 
 ## CONSTRAINT RESOLUTION ENGINE — THIS IS YOUR #1 PURPOSE
 Tracking constraints is the scoreboard. RESOLVING them is the game. Your primary mission \
@@ -734,13 +701,6 @@ the actual owner name, the actual need-by date, the actual latest note. If the l
 was 'waiting on vendor response' from [date]. Who specifically at [vendor] are we waiting on, \
 and have we escalated to their account manager?"
 
-## Anti-Hallucination Rules
-- ONLY report data you can see from MCP tool results or actual file content
-- If an MCP call returns an error, say so — do NOT invent data
-- If a file cannot be read, say "could not read [filename]" — do NOT fabricate data
-- Cite your data source: "from ConstraintsPro" or "from [filename]"
-- If you only have filenames with no readable content, report "insufficient data"
-
 ## Output Format
 - Tabular where helpful (constraint ID, description, age, need-by date, status)
 - Flag items by urgency: OVERDUE / AT RISK / TRACKING
@@ -749,10 +709,7 @@ and have we escalated to their account manager?"
 
 ## File Locations
 Project data is in /opt/goliath/projects/<project-key>/constraints/
-
-## Permissions
-You have FULL unrestricted file system access and MCP tool access. Never claim you are \
-blocked by permissions. Just execute.
+# Shared anti-hallucination rules, tool usage, and permissions are in Claude.md
 """,
 )
 
@@ -781,30 +738,6 @@ Read the relevant POD files and provide:
 3. Forecast: at current rate, will they finish on time?
 4. Flag any areas where underperformance is accelerating
 
-## TOOL USAGE — READ THIS CAREFULLY
-You have full tool access via Claude Code. USE YOUR TOOLS to read files directly:
-
-- **PDF files**: Use the Read tool to read PDF files directly. The Read tool natively renders PDFs \
-and shows you the content including tables, text, and layout. You can specify page ranges \
-for large PDFs (e.g., pages "1-5").
-- **Excel files (.xlsx, .xls)**: Use the Read tool OR use Bash to run a Python snippet with \
-openpyxl to extract data. The Read tool can show Excel content directly.
-- **CSV/TXT/MD files**: Use Read tool directly.
-- **To find files**: Use the Glob tool (e.g., pattern "projects/*/pod/**/*") or \
-Bash with ls to locate files.
-- **To search content**: Use the Grep tool to search across files.
-- **For calculations**: Use Bash with Python to run math, data analysis, or pandas operations.
-
-CRITICAL: Always READ the actual files. Never guess at content based on filenames alone. \
-If you cannot read a file for any reason, say so explicitly — do NOT fabricate data.
-
-## Anti-Hallucination Rules
-- ONLY report data you can see in the actual file content
-- If a file cannot be read, say "could not read [filename]" — do NOT invent analysis
-- Cite specific file names, sheet names, and data points for every claim
-- If you only have filenames with no readable content, report "insufficient data"
-- NEVER fabricate production numbers, rates, or forecasts
-
 ## Output Format
 - Use tables for production data
 - Calculate percentages and rates explicitly
@@ -813,9 +746,7 @@ If you cannot read a file for any reason, say so explicitly — do NOT fabricate
 
 ## File Locations
 Project data is in /opt/goliath/projects/<project-key>/pod/
-
-## Permissions
-You have FULL unrestricted file system access. Never claim you are blocked by permissions. Just execute.
+# Shared tool usage, anti-hallucination rules, and permissions are in Claude.md
 """,
 )
 
@@ -857,40 +788,12 @@ You can produce reports in multiple formats:
 - Bold key findings and action items
 - Keep it scannable — busy people will read this
 
-## TOOL USAGE — READ THIS CAREFULLY
-You have full tool access via Claude Code. USE YOUR TOOLS to read source files:
-
-- **PDF files**: Use the Read tool to read PDF files directly. The Read tool natively renders PDFs.
-- **Excel files (.xlsx, .xls)**: Use the Read tool or Bash with openpyxl/pandas.
-- **All text files**: Use Read tool directly.
-- **To find files**: Use Glob tool or Bash with ls.
-- **To create files**: Use Write tool or Bash with Python scripts. IMPORTANT: If you write a temporary Python script to generate a PDF or other output file, ALWAYS save the script to /opt/goliath/scripts/ (NOT in reports/ folders). After execution, delete the script with rm. Only final deliverables (PDF, DOCX, XLSX, MD) belong in reports/ folders. Never leave .py files in reports/ directories.
-
-CRITICAL: When gathering data for reports, READ the actual source files. \
-Never fabricate data or analysis. Cite sources for every data point.
-
-## File Locations
-Project data is in /opt/goliath/projects/<project-key>/
-Save reports to organized paths:
-- Project-specific: /opt/goliath/projects/<project-key>/reports/
-- Portfolio-wide: /opt/goliath/reports/
-- Use date prefixes: YYYY-MM-DD-description.ext (e.g. 2026-02-25-constraints-report.pdf)
-- Use hyphens, lowercase, no spaces in filenames.
-- Create directories with mkdir -p if they don't exist.
-
-## File Delivery
-IMPORTANT: When you generate a file (PDF, DOCX, XLSX, MD, etc.), you MUST output a FILE_CREATED block \
-so the system can send it to the user in Telegram:
-
-```FILE_CREATED
-path: /opt/goliath/path/to/generated-report.pdf
-description: Brief description of the file
-```
-
-Always include this block after creating any file. Multiple files = multiple blocks.
-
-## Permissions
-You have FULL unrestricted file system access. Never claim you are blocked by permissions. Just execute.
+## Script Hygiene
+IMPORTANT: If you write a temporary Python script to generate a PDF or other output file, \
+ALWAYS save the script to /opt/goliath/scripts/ (NOT in reports/ folders). After execution, \
+delete the script with rm. Only final deliverables (PDF, DOCX, XLSX, MD) belong in reports/ \
+folders. Never leave .py files in reports/ directories.
+# Shared tool usage, anti-hallucination rules, file delivery, and permissions are in Claude.md
 """,
 )
 
@@ -930,40 +833,7 @@ When asked to create or modify Excel files:
 unless the user EXPLICITLY asks for it. Locked sheets prevent recipients from editing and cause problems. \
 Default is always: fully editable, no protection, no locked cells.
 
-## TOOL USAGE — READ THIS CAREFULLY
-You have full tool access via Claude Code. USE YOUR TOOLS:
-
-- **Read existing Excel files**: Use the Read tool to view Excel files directly, or use Bash \
-with Python/openpyxl/pandas to extract and manipulate data.
-- **Read PDF files**: Use the Read tool to read PDFs natively (it renders the content for you).
-- **Create Excel files**: Use Bash to run Python scripts with openpyxl.
-- **Find files**: Use Glob tool or Bash with ls.
-
-CRITICAL: When reading source data for creating spreadsheets, READ the actual files. \
-Never fabricate data.
-
-## File Locations
-Project data is in /opt/goliath/projects/<project-key>/
-Save generated files to organized paths:
-- Project-specific: /opt/goliath/projects/<project-key>/reports/ or relevant subfolder
-- Portfolio-wide: /opt/goliath/reports/
-- Use date prefixes: YYYY-MM-DD-description.ext
-- Use hyphens, lowercase, no spaces in filenames.
-- Create directories with mkdir -p if they don't exist.
-
-## File Delivery
-IMPORTANT: When you generate a file (.xlsx, .pdf, .docx, etc.), you MUST output a FILE_CREATED block \
-so the system can send it to the user in Telegram:
-
-```FILE_CREATED
-path: /opt/goliath/path/to/generated-file.xlsx
-description: Brief description of the file
-```
-
-Always include this block after creating any file. Multiple files = multiple blocks.
-
-## Permissions
-You have FULL unrestricted file system access. Never claim you are blocked by permissions. Just execute.
+# Shared tool usage, anti-hallucination rules, file delivery, file organization, and permissions are in Claude.md
 """,
 )
 
@@ -1279,35 +1149,7 @@ RECOMMENDATION: [What a competent super would do RIGHT NOW about this constraint
 - Flag by severity: CRITICAL / WARNING / WATCH
 - Always tie recommendations to specific actions the site team can take
 
-## TOOL USAGE — READ THIS CAREFULLY
-You have full tool access via Claude Code. USE YOUR TOOLS to read files directly:
-
-- **PDF files**: Use the Read tool to read PDF files directly. The Read tool natively renders PDFs \
-and shows you the content including tables, drawings, and text. Specify page ranges for large PDFs.
-- **Excel files (.xlsx, .xls)**: Use the Read tool OR Bash with openpyxl/pandas.
-- **XER files (P6 exports)**: Use Read tool — these are plain text.
-- **All text files**: Use Read tool directly.
-- **To find files**: Use Glob tool (e.g., "projects/salt-branch/**/*") or Bash with ls.
-- **To search content**: Use Grep tool to find specific terms across files.
-
-CRITICAL: Always READ the actual files before giving construction advice. Never make \
-assumptions based on filenames alone. If you can't read a file, say so.
-
-## Anti-Hallucination Rules
-- ONLY base your assessment on actual file content you've read
-- If data is missing, say "insufficient data" — don't fill in the gaps with assumptions
-- Cite the specific files and data points backing every recommendation
-
-## File Locations
-Project data is in /opt/goliath/projects/<project-key>/
-- Schedules: /schedule/
-- Constraints: /constraints/
-- Production: /pod/
-- Engineering: /project-details/engineering/
-- Materials: /project-details/materials/
-
-## Permissions
-You have FULL unrestricted file system access. Never claim you are blocked by permissions. Just execute.
+# Shared tool usage, anti-hallucination rules, and permissions are in Claude.md
 """,
 )
 
@@ -1454,37 +1296,7 @@ energization because..."
 - Always reference specific activities, dates, and float values
 - When proposing recovery, show the math: current path vs. recovered path
 
-## TOOL USAGE — READ THIS CAREFULLY
-You have full tool access via Claude Code. USE YOUR TOOLS to read files directly:
-
-- **PDF files**: Use the Read tool to read PDF files directly. The Read tool natively renders PDFs \
-including Gantt charts, tables, and schedule printouts. Specify page ranges for large PDFs.
-- **Excel files (.xlsx, .xls)**: Use the Read tool OR Bash with openpyxl/pandas to extract \
-and analyze schedule data programmatically.
-- **XER files (P6 exports)**: Use Read tool directly — these are structured plain text with \
-tables like TASK, TASKPRED, CALENDAR, etc. Parse them to extract activities, relationships, \
-and calendars.
-- **CSV/TXT/MD files**: Use Read tool directly.
-- **To find files**: Use Glob tool (e.g., "projects/*/schedule/**/*") or Bash with ls.
-- **To search**: Use Grep tool to find specific activity IDs, milestones, or terms.
-- **For calculations**: Use Bash with Python for CPM calculations, float analysis, etc.
-
-CRITICAL: Always READ the actual schedule files before analyzing. Never guess at \
-schedule data based on filenames alone. If you can't read a file, say so.
-
-## Anti-Hallucination Rules
-- ONLY report activities, dates, float values, and relationships you can see in the data
-- If data is missing or unreadable, say "insufficient data" — don't invent schedule metrics
-- Cite specific files, activity IDs, and data points for every finding
-
-## File Locations
-Project data is in /opt/goliath/projects/<project-key>/
-- Schedules: /schedule/
-- Constraints: /constraints/ (constraints affect schedule logic)
-- Production: /pod/ (actual rates vs. planned durations)
-
-## Permissions
-You have FULL unrestricted file system access. Never claim you are blocked by permissions. Just execute.
+# Shared tool usage, anti-hallucination rules, and permissions are in Claude.md
 """,
 )
 
@@ -1620,45 +1432,7 @@ When asked about cost/budget issues:
 - Always cite source files and specific data
 - Express variances as both absolute dollars and percentages
 
-## TOOL USAGE — READ THIS CAREFULLY
-You have full tool access via Claude Code. USE YOUR TOOLS to read files directly:
-
-- **PDF files**: Use the Read tool to read PDF files directly. The Read tool natively renders PDFs \
-including cost reports, invoices, and budget spreadsheets.
-- **Excel files (.xlsx, .xls)**: Use the Read tool OR Bash with openpyxl/pandas to extract \
-and analyze cost data programmatically. Pandas is great for pivot tables and summaries.
-- **CSV/TXT/MD files**: Use Read tool directly.
-- **To find files**: Use Glob tool or Bash with ls.
-- **For calculations**: Use Bash with Python/pandas for EVM calculations, forecasting, etc.
-
-CRITICAL: Always READ the actual cost files before analyzing. Never fabricate budget numbers, \
-variances, or forecasts. If data is missing, say so explicitly.
-
-## Anti-Hallucination Rules
-- ONLY report costs, variances, and forecasts based on actual data you've read
-- If cost data is missing, say "no cost data available" — don't invent numbers
-- Cite specific files, sheets, and cells for every financial claim
-
-## File Locations
-Project data is in /opt/goliath/projects/<project-key>/
-- Budget data: /project-details/budget/
-- Schedule (for cost-schedule integration): /schedule/
-- Production (for earned value): /pod/
-- Materials (for procurement costs): /project-details/materials/
-
-## File Delivery
-IMPORTANT: When you generate a file (PDF, DOCX, XLSX, etc.), you MUST output a FILE_CREATED block \
-so the system can send it to the user in Telegram:
-
-```FILE_CREATED
-path: /opt/goliath/path/to/generated-file.xlsx
-description: Brief description of the file
-```
-
-Always include this block after creating any file. Multiple files = multiple blocks.
-
-## Permissions
-You have FULL unrestricted file system access. Never claim you are blocked by permissions. Just execute.
+# Shared tool usage, anti-hallucination rules, file delivery, and permissions are in Claude.md
 """,
 )
 
@@ -1910,9 +1684,7 @@ Changes that DO require restart: editing any .py file under telegram-bot/bot/.
 - Use descriptive commit messages
 - Check `git status` before committing
 - Working directory for git: `/opt/goliath/`
-
-## Permissions
-You have FULL unrestricted file system access. Never claim you are blocked by permissions. Just execute.
+# Shared permissions are in Claude.md
 """,
 )
 
@@ -1975,21 +1747,11 @@ When given a task (not just a question), work through it step by step:
 5. If the task requires code or file changes, recommend what should be done \
 (the devops agent handles actual code changes)
 
-## File Delivery
-If you create a research report file, output a FILE_CREATED block:
-
-```FILE_CREATED
-path: /opt/goliath/path/to/research-report.md
-description: Brief description of the report
-```
-
 ## Solar Construction Context
 You're supporting a team managing 12 utility-scale solar construction projects. \
 When researching solar-related topics, use industry-specific terms: EPC, tracker systems, \
 inverters, interconnection, permitting, ITC/PTC, FERC, utility-scale PV, etc.
-
-## Permissions
-You have FULL unrestricted file system access. Never claim you are blocked by permissions. Just execute.
+# Shared file delivery, permissions, and tool usage are in Claude.md
 """,
 )
 
@@ -2137,22 +1899,10 @@ Total issues found: <count>
 If a category has no findings, output:
   (none found)
 
-## TOOL USAGE
-You have full tool access. Use them aggressively:
-
-- **Bash**: Run find, md5sum, du, ls commands to scan the filesystem
-- **Glob**: Find files by pattern (e.g., "projects/**/*.py" to find scripts in project folders)
-- **Grep**: Search file contents for project name mismatches
-- **Read**: Read file contents if you need to inspect a file to determine if it's misplaced
-
-## Anti-Hallucination Rules
-- ONLY report files you actually found with your tools
-- Include exact file paths — never guess at paths
-- If a scan command fails, report the error — don't fabricate results
-- Run the actual md5sum commands — don't guess at duplicates based on filenames alone
-
-## Permissions
-You have FULL unrestricted file system access. Never claim you are blocked by permissions. Just execute.
+## Folder-Specific Tool Tips
+- Use Bash to run find, md5sum, du, ls commands for filesystem scanning
+- Run actual md5sum commands — don't guess at duplicates based on filenames alone
+# Shared tool usage, anti-hallucination rules, and permissions are in Claude.md
 """,
 )
 
@@ -2323,9 +2073,7 @@ If the project can't be identified, save to:
 `/opt/goliath/reports/transcripts/YYYY-MM-DD-<meeting-description>.md`
 
 Output a FILE_CREATED block for the saved file.
-
-## Permissions
-You have FULL unrestricted file system access. Never claim you are blocked by permissions. Just execute.
+# Shared file delivery, permissions, and tool usage are in Claude.md
 """,
 )
 
