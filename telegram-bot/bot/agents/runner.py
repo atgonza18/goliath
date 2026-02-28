@@ -7,8 +7,19 @@ from typing import Optional
 
 from bot.agents.definitions import AgentDefinition
 from bot.config import REPO_ROOT
+from bot.memory.token_tracker import TokenUsage
 
 logger = logging.getLogger(__name__)
+
+# Module-level token tracker instance, set by main.py at startup.
+# When None, token logging is silently skipped.
+_token_tracker = None
+
+
+def set_token_tracker(tracker) -> None:
+    """Called once at bot startup to enable token tracking."""
+    global _token_tracker
+    _token_tracker = tracker
 
 
 @dataclass
@@ -125,6 +136,14 @@ class SubagentRunner:
             logger.info(
                 f"Subagent '{agent.name}' completed in {elapsed:.1f}s ({len(result)} chars)"
             )
+
+            # --- Token tracking (CLI: duration only, no token counts) ---
+            await self._log_cli_usage(
+                agent_name=agent.name,
+                elapsed_ms=int(elapsed * 1000),
+                task_prompt=task_prompt,
+            )
+
             return AgentResult(
                 agent_name=agent.name,
                 success=True,
@@ -171,3 +190,31 @@ class SubagentRunner:
                 duration_seconds=elapsed,
                 error=str(e)[:500],
             )
+
+    @staticmethod
+    async def _log_cli_usage(
+        agent_name: str,
+        elapsed_ms: int,
+        task_prompt: str = "",
+    ) -> None:
+        """Log a CLI call. Token counts are unavailable in text output mode.
+
+        Still valuable: tracks call frequency, duration, and agent name so
+        we can identify which agents to migrate to the SDK for full tracking.
+        """
+        if _token_tracker is None:
+            return
+        try:
+            usage = TokenUsage(
+                agent_name=agent_name,
+                duration_ms=elapsed_ms,
+                task_summary=task_prompt[:200] if task_prompt else None,
+                backend="cli",
+            )
+            await _token_tracker.log_usage(usage)
+            logger.debug(
+                f"Token usage logged for '{agent_name}' (CLI, no token counts, "
+                f"{elapsed_ms}ms)"
+            )
+        except Exception:
+            logger.debug(f"Failed to log token usage for '{agent_name}'", exc_info=True)

@@ -1,5 +1,6 @@
 import asyncio
 import logging
+from pathlib import Path
 
 from telegram.ext import ApplicationBuilder, ContextTypes
 
@@ -7,12 +8,13 @@ from bot.config import (
     TELEGRAM_BOT_TOKEN, MEMORY_DB_PATH,
     WEBHOOK_PORT, WEBHOOK_AUTH_TOKEN, REPORT_CHAT_ID,
     GMAIL_ADDRESS, GMAIL_APP_PASSWORD,
-    RECALL_API_KEY,
+    RECALL_API_KEY, REPO_ROOT,
 )
 from bot.handlers import register_all_handlers
 from bot.memory.store import MemoryStore
 from bot.memory.conversation import ConversationStore
 from bot.memory.activity_log import ActivityLogStore
+from bot.memory.token_tracker import TokenTracker
 from bot.services.message_queue import MessageQueue
 from bot.services.preferences import PreferenceStore
 from bot.services.webhook_server import start_webhook_server
@@ -21,6 +23,7 @@ from bot.services.email_service import EmailService
 from bot.services.recall_service import RecallService
 from bot.scheduler import create_scheduler
 from bot.utils.logging_config import setup_logging
+from bot.utils.formatting import chunk_message
 
 logger = logging.getLogger(__name__)
 
@@ -43,6 +46,18 @@ async def post_init(application) -> None:
     activity_log = ActivityLogStore(memory._db)
     await activity_log.initialize()
     application.bot_data["activity_log"] = activity_log
+
+    # Token tracker shares the same DB connection
+    token_tracker = TokenTracker(memory._db)
+    await token_tracker.initialize()
+    application.bot_data["token_tracker"] = token_tracker
+
+    # Wire token tracker into both runner backends
+    from bot.agents.runner import set_token_tracker as set_cli_tracker
+    from bot.agents.runner_sdk import set_token_tracker as set_sdk_tracker
+    set_cli_tracker(token_tracker)
+    set_sdk_tracker(token_tracker)
+    logger.info("Token tracker initialized and wired into agent runners")
 
     # User preferences shares the same DB connection
     preferences = PreferenceStore(memory._db)
@@ -118,19 +133,151 @@ async def post_init(application) -> None:
     _background_tasks.append(task)
     logger.info("Internal async scheduler started")
 
-    # Send startup notification
+    # Send startup notification and process any pending startup tasks
     if REPORT_CHAT_ID:
         try:
             chat_id = int(REPORT_CHAT_ID)
+
+            # Check for pending transcripts to process
+            pending_transcripts = _find_pending_transcripts()
+            pending_note = ""
+            if pending_transcripts:
+                names = ", ".join(p.name for p in pending_transcripts)
+                pending_note = (
+                    f"\n\n<b>🔄 Processing pending transcript(s):</b> {names}\n"
+                    "Full pipeline: analysis → constraint extraction → ConstraintsPro sync. "
+                    "Results incoming shortly."
+                )
+
             await application.bot.send_message(
                 chat_id=chat_id,
                 text="<b>GOLIATH is online.</b>\n"
                      "Bot restarted and all systems operational.\n\n"
-                     f"<i>Scheduler active with {len(scheduler.list_tasks())} tasks.</i>",
+                     f"<i>Scheduler active with {len(scheduler.list_tasks())} tasks.</i>"
+                     f"{pending_note}",
                 parse_mode="HTML",
             )
+
+            # Fire off transcript processing as a background task
+            if pending_transcripts:
+                task = asyncio.create_task(
+                    _process_pending_transcripts(
+                        application.bot, memory, chat_id, pending_transcripts
+                    )
+                )
+                _background_tasks.append(task)
+
         except Exception as e:
             logger.warning(f"Failed to send startup notification: {e}")
+
+
+def _find_pending_transcripts() -> list[Path]:
+    """Scan all project transcript folders for unprocessed transcripts.
+
+    A transcript is "pending" if it exists and has no corresponding
+    .processed marker file next to it. Only returns transcripts from
+    the last 2 days to avoid reprocessing ancient files.
+    """
+    from datetime import datetime, timedelta
+    from zoneinfo import ZoneInfo
+    CT = ZoneInfo("America/Chicago")
+
+    pending = []
+    cutoff = datetime.now(CT).strftime("%Y-%m-%d")
+    # Also check yesterday's date
+    yesterday = (datetime.now(CT) - timedelta(days=1)).strftime("%Y-%m-%d")
+
+    projects_dir = REPO_ROOT / "projects"
+    if not projects_dir.exists():
+        return pending
+
+    for project_dir in projects_dir.iterdir():
+        if not project_dir.is_dir():
+            continue
+        transcripts_dir = project_dir / "transcripts"
+        if not transcripts_dir.exists():
+            continue
+        for transcript in transcripts_dir.glob("*.txt"):
+            # Skip hidden/marker files
+            if transcript.name.startswith("."):
+                continue
+            # Only process recent transcripts (today or yesterday)
+            if not (transcript.name.startswith(cutoff) or transcript.name.startswith(yesterday)):
+                continue
+            # Check for processed marker
+            marker = transcript.parent / f".{transcript.stem}.processed"
+            if not marker.exists():
+                pending.append(transcript)
+
+    return pending
+
+
+async def _process_pending_transcripts(
+    bot, memory: MemoryStore, chat_id: int, transcripts: list[Path]
+) -> None:
+    """Process unprocessed transcripts through the full orchestrator pipeline.
+
+    Runs after startup with a short delay to let everything initialize.
+    Each transcript is processed sequentially to avoid overwhelming the system.
+    """
+    await asyncio.sleep(15)  # Let bot fully initialize
+
+    for transcript_path in transcripts:
+        project_key = transcript_path.parent.parent.name  # projects/<key>/transcripts/<file>
+        logger.info(f"Startup task: processing transcript {transcript_path.name} for {project_key}")
+
+        try:
+            # Import here to avoid circular imports
+            from bot.agents.orchestrator import NimrodOrchestrator
+
+            orchestrator = NimrodOrchestrator(memory=memory)
+            user_message = (
+                f"Process the {project_key} meeting transcript that was captured. "
+                f"The transcript file is at: {transcript_path}\n\n"
+                f"[TRANSCRIPT UPLOAD DETECTED: {transcript_path.name} — saved to: {transcript_path}]\n"
+                f"This is a meeting/call transcript. Route to transcript_processor subagent for full analysis.\n"
+                f"Extract: meeting summary, speakers, project identification, constraints discussed, "
+                f"action items (WHO/WHAT/WHEN), key decisions, risks, and follow-ups.\n"
+                f"Save action items and decisions to memory. File the processed summary to the project's "
+                f"transcripts/ folder."
+            )
+
+            result = await orchestrator.handle_message(user_message)
+
+            if result.text:
+                for chunk in chunk_message(result.text, max_len=4000):
+                    try:
+                        await bot.send_message(chat_id=chat_id, text=chunk, parse_mode="HTML")
+                    except Exception:
+                        await bot.send_message(chat_id=chat_id, text=chunk)
+
+                # Send any generated files
+                for fp in result.file_paths:
+                    file_path = Path(fp)
+                    if file_path.is_file():
+                        try:
+                            with open(file_path, "rb") as f:
+                                await bot.send_document(
+                                    chat_id=chat_id, document=f, filename=file_path.name
+                                )
+                        except Exception:
+                            logger.exception(f"Failed to send file: {file_path}")
+
+            # Mark as processed so we don't redo on next restart
+            marker = transcript_path.parent / f".{transcript_path.stem}.processed"
+            marker.touch()
+            logger.info(f"Transcript processed and marked: {marker}")
+
+        except Exception as e:
+            logger.exception(f"Failed to process transcript {transcript_path.name}")
+            try:
+                await bot.send_message(
+                    chat_id=chat_id,
+                    text=f"<b>⚠️ Failed to process {transcript_path.name}:</b> {str(e)[:300]}",
+                    parse_mode="HTML",
+                )
+            except Exception:
+                pass
 
 
 async def _cleanup_conversations(context: ContextTypes.DEFAULT_TYPE) -> None:

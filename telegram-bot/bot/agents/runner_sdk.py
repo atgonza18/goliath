@@ -32,8 +32,19 @@ from claude_agent_sdk import (
 from bot.agents.definitions import AgentDefinition
 from bot.agents.runner import AgentResult  # Reuse the exact same dataclass
 from bot.config import REPO_ROOT
+from bot.memory.token_tracker import TokenUsage
 
 logger = logging.getLogger(__name__)
+
+# Module-level token tracker instance, set by main.py at startup.
+# When None, token logging is silently skipped (never blocks agent work).
+_token_tracker = None
+
+
+def set_token_tracker(tracker) -> None:
+    """Called once at bot startup to enable token tracking."""
+    global _token_tracker
+    _token_tracker = tracker
 
 
 class SubagentRunnerSDK:
@@ -120,14 +131,17 @@ class SubagentRunnerSDK:
 
         try:
             result_text = ""
+            observed_model = None
 
             async def _execute():
-                nonlocal result_text
+                nonlocal result_text, observed_model
                 final_result = None
                 texts: list[str] = []
 
                 async for message in query(prompt=full_prompt, options=options):
                     if isinstance(message, AssistantMessage):
+                        if observed_model is None and message.model:
+                            observed_model = message.model
                         for block in message.content:
                             if isinstance(block, TextBlock):
                                 texts.append(block.text)
@@ -145,6 +159,15 @@ class SubagentRunnerSDK:
 
             final = await asyncio.wait_for(_execute(), timeout=timeout)
             elapsed = time.monotonic() - start
+
+            # --- Token tracking (fire-and-forget, never blocks) ---
+            if final is not None:
+                await self._log_token_usage(
+                    agent_name=agent.name,
+                    result_message=final,
+                    model=observed_model,
+                    task_prompt=task_prompt,
+                )
 
             # Check for SDK-reported errors
             if final and final.is_error:
@@ -227,3 +250,29 @@ class SubagentRunnerSDK:
                 duration_seconds=elapsed,
                 error=str(e)[:500],
             )
+
+    @staticmethod
+    async def _log_token_usage(
+        agent_name: str,
+        result_message,
+        model: str = None,
+        task_prompt: str = "",
+    ) -> None:
+        """Log token usage from a ResultMessage. Never raises."""
+        if _token_tracker is None:
+            return
+        try:
+            usage = TokenUsage.from_sdk_result(
+                agent_name=agent_name,
+                result_message=result_message,
+                model=model,
+                task_summary=task_prompt[:200] if task_prompt else None,
+            )
+            await _token_tracker.log_usage(usage)
+            logger.debug(
+                f"Token usage logged for '{agent_name}': "
+                f"{usage.input_tokens}in/{usage.output_tokens}out "
+                f"(${usage.cost_usd or 0:.4f})"
+            )
+        except Exception:
+            logger.debug(f"Failed to log token usage for '{agent_name}'", exc_info=True)
