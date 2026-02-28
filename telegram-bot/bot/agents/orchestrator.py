@@ -9,7 +9,21 @@ from typing import Optional
 
 from bot.agents.definitions import NIMROD, CONSTRAINTS_MANAGER
 from bot.agents.registry import AgentRegistry
-from bot.agents.runner import SubagentRunner, AgentResult
+from bot.agents.runner import SubagentRunner as CLIRunner, AgentResult
+
+
+def _get_runner():
+    """Get the configured agent runner backend.
+
+    Returns SubagentRunnerSDK when AGENT_RUNNER_BACKEND=sdk,
+    otherwise returns the legacy CLI-based SubagentRunner.
+    Lazy-imports to avoid breaking if the SDK package is absent.
+    """
+    from bot.config import AGENT_RUNNER_BACKEND
+    if AGENT_RUNNER_BACKEND == "sdk":
+        from bot.agents.runner_sdk import SubagentRunnerSDK
+        return SubagentRunnerSDK()
+    return CLIRunner()
 from bot.memory.store import MemoryStore
 
 # Pending constraint sync proposals are saved here for approval
@@ -61,7 +75,7 @@ class NimrodOrchestrator:
     def __init__(self, memory: MemoryStore):
         self.memory = memory
         self.registry = AgentRegistry()
-        self.runner = SubagentRunner()
+        self.runner = _get_runner()
         # Activity log instrumentation (read by orchestration handler)
         self._pass1_duration: Optional[float] = None
         self._pass2_duration: Optional[float] = None

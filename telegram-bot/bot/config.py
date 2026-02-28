@@ -15,6 +15,10 @@ if not TELEGRAM_BOT_TOKEN or TELEGRAM_BOT_TOKEN == "your-token-here":
         "Edit .env in the repo root and paste your BotFather token."
     )
 
+# Agent runner backend: "sdk" uses Claude Agent SDK (multi-step, full tools)
+#                       "cli" uses claude --print (single-shot, legacy)
+AGENT_RUNNER_BACKEND = os.getenv("AGENT_RUNNER_BACKEND", "cli")
+
 # Optional security: whitelist of allowed chat IDs
 _raw_ids = os.getenv("ALLOWED_CHAT_IDS", "")
 ALLOWED_CHAT_IDS: set[int] | None = (
