@@ -178,6 +178,32 @@ RETRY_CIRCUIT_BREAKER_THRESHOLD = int(os.getenv("RETRY_CIRCUIT_BREAKER_THRESHOLD
 # Circuit breaker cooldown in seconds (default: 5 minutes).
 RETRY_CIRCUIT_BREAKER_COOLDOWN = float(os.getenv("RETRY_CIRCUIT_BREAKER_COOLDOWN", "300.0"))
 
+# ---------------------------------------------------------------------------
+# Experience Replay config (self-evolving lessons from past interactions)
+# ---------------------------------------------------------------------------
+# Master switch — set to False to disable lesson extraction entirely.
+EXPERIENCE_REPLAY_ENABLED = os.getenv("EXPERIENCE_REPLAY_ENABLED", "true").lower() in ("true", "1", "yes")
+
+# Minimum number of low-scoring reflections with the same pattern before
+# a lesson is generated. Lower = more sensitive, higher = fewer false positives.
+EXPERIENCE_REPLAY_MIN_REFLECTIONS = int(os.getenv("EXPERIENCE_REPLAY_MIN_REFLECTIONS", "2"))
+
+# Maximum lessons stored in the lessons_learned table. Oldest low-confidence
+# lessons are pruned when this cap is exceeded.
+EXPERIENCE_REPLAY_MAX_LESSONS = int(os.getenv("EXPERIENCE_REPLAY_MAX_LESSONS", "50"))
+
+# ---------------------------------------------------------------------------
+# Prompt Self-Review config (V4 — scheduled heuristic audit of agent prompts)
+# ---------------------------------------------------------------------------
+# Master switch — set to False to disable prompt self-review entirely.
+PROMPT_REVIEW_ENABLED = os.getenv("PROMPT_REVIEW_ENABLED", "true").lower() in ("true", "1", "yes")
+
+# Prompts longer than this (in characters) trigger a "warning" finding.
+PROMPT_REVIEW_MAX_LENGTH_WARNING = int(os.getenv("PROMPT_REVIEW_MAX_LENGTH_WARNING", "5000"))
+
+# Agent definition files not modified in this many days trigger a staleness "info".
+PROMPT_REVIEW_STALENESS_DAYS = int(os.getenv("PROMPT_REVIEW_STALENESS_DAYS", "30"))
+
 
 def match_project_key(text: str) -> str | None:
     """Try to find a portfolio project name within a text string.
