@@ -4,6 +4,7 @@ from bot.handlers.basic import start_handler, help_handler, status_handler, proj
 from bot.handlers.files import files_handler, read_handler
 from bot.handlers.admin import memory_handler, agents_handler, history_handler
 from bot.handlers.logs import logs_handler
+from bot.handlers.tokens import tokens_handler
 from bot.handlers.preferences import voice_handler
 from bot.handlers.orchestration import (
     claude_message_handler,
@@ -40,6 +41,7 @@ def register_all_handlers(app: Application) -> None:
     app.add_handler(CommandHandler("agents", agents_handler, filters=user_filter))
     app.add_handler(CommandHandler("history", history_handler, filters=user_filter))
     app.add_handler(CommandHandler("logs", logs_handler, filters=user_filter))
+    app.add_handler(CommandHandler("tokens", tokens_handler, filters=user_filter))
     app.add_handler(CommandHandler("voice", voice_handler, filters=user_filter))
 
     # Meeting bot commands (Recall.ai integration)

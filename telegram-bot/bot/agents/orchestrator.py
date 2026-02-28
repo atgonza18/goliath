@@ -3,7 +3,7 @@ import json
 import logging
 import re
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Optional
 
@@ -59,6 +59,7 @@ class OrchestrationResult:
     file_paths: list[str]
     restart_required: bool = False
     restart_reason: str = ""
+    token_summary: Optional[dict] = None
 
 
 class NimrodOrchestrator:
@@ -72,14 +73,22 @@ class NimrodOrchestrator:
     Memory is injected into prompts and saved from MEMORY_SAVE blocks.
     """
 
-    def __init__(self, memory: MemoryStore):
+    def __init__(self, memory: MemoryStore, token_tracker=None):
         self.memory = memory
         self.registry = AgentRegistry()
         self.runner = _get_runner()
+        self._token_tracker = token_tracker
         # Activity log instrumentation (read by orchestration handler)
         self._pass1_duration: Optional[float] = None
         self._pass2_duration: Optional[float] = None
         self._subagent_log: Optional[list[dict]] = None
+        # Token aggregation across the full orchestration run
+        self._run_tokens: dict = {
+            "total_input": 0,
+            "total_output": 0,
+            "total_cost": 0.0,
+            "agents": [],
+        }
 
     async def handle_message(self, user_message: str, conversation_history: str = "") -> OrchestrationResult:
         all_file_paths: list[str] = []
@@ -104,6 +113,7 @@ class NimrodOrchestrator:
                 no_tools=False,
             )
         self._pass1_duration = time.monotonic() - p1_start
+        await self._track_agent_tokens(NIMROD.name)
 
         if not nimrod_result.success:
             return OrchestrationResult(
@@ -128,11 +138,19 @@ class NimrodOrchestrator:
         # If no subagent requests, return Nimrod's direct response
         if not subagent_requests:
             req, reason = self._parse_restart_required(nimrod_text)
+            token_summary = self._build_token_summary()
+            if token_summary:
+                logger.info(
+                    f"Orchestration token usage (direct): "
+                    f"{token_summary['total_tokens']} tokens "
+                    f"(${token_summary['total_cost_usd']:.4f})"
+                )
             return OrchestrationResult(
                 text=clean_response,
                 file_paths=all_file_paths,
                 restart_required=req,
                 restart_reason=reason,
+                token_summary=token_summary,
             )
 
         # --- DISPATCH SUBAGENTS ---
@@ -142,6 +160,10 @@ class NimrodOrchestrator:
         )
 
         results = await self._run_subagents(subagent_requests, user_message)
+
+        # Track token usage for each dispatched subagent
+        for r in results:
+            await self._track_agent_tokens(r.agent_name)
 
         # Record subagent results for activity log
         self._subagent_log = [
@@ -205,6 +227,7 @@ class NimrodOrchestrator:
                 no_tools=False,
             )
         self._pass2_duration = time.monotonic() - p2_start
+        await self._track_agent_tokens(NIMROD.name)
 
         if not synthesis_result.success:
             # Fall back to raw subagent results (use HTML, not Markdown)
@@ -244,6 +267,10 @@ class NimrodOrchestrator:
 
             followup_results = await self._run_subagents(followup_requests, user_message)
 
+            # Track token usage for follow-up subagents
+            for r in followup_results:
+                await self._track_agent_tokens(r.agent_name)
+
             # Record follow-up subagent results in activity log
             if self._subagent_log is not None:
                 self._subagent_log.extend([
@@ -276,6 +303,7 @@ class NimrodOrchestrator:
                     task_prompt=final_prompt,
                     no_tools=False,
                 )
+            await self._track_agent_tokens(NIMROD.name)
 
             if final_result.success:
                 synthesis_text = final_result.output
@@ -328,11 +356,26 @@ class NimrodOrchestrator:
 
         final_text = self._strip_structured_blocks(synthesis_text) + sync_summary_text
 
+        # Build token summary for this orchestration run
+        token_summary = self._build_token_summary()
+        if token_summary:
+            agent_parts = ", ".join(
+                f"{a['name']}={a['input_tokens']+a['output_tokens']}tok"
+                for a in token_summary["agents"]
+            )
+            logger.info(
+                f"Orchestration token usage: "
+                f"{token_summary['total_tokens']} tokens "
+                f"(${token_summary['total_cost_usd']:.4f}) "
+                f"[{agent_parts}]"
+            )
+
         return OrchestrationResult(
             text=final_text,
             file_paths=unique_files,
             restart_required=restart_required,
             restart_reason=restart_reason,
+            token_summary=token_summary,
         )
 
     async def _build_memory_context(self, user_message: str) -> str:
@@ -514,6 +557,49 @@ class NimrodOrchestrator:
                 final.append(result)
 
         return final
+
+    async def _track_agent_tokens(self, agent_name: str) -> None:
+        """Query the most recent token record for an agent and add to run totals.
+
+        Called after each runner.run() completes. Uses token_tracker.get_by_agent()
+        to fetch the latest record. Never raises — token tracking failures are
+        silently logged and ignored.
+        """
+        if self._token_tracker is None:
+            return
+        try:
+            records = await self._token_tracker.get_by_agent(agent_name, limit=1)
+            if not records:
+                return
+            rec = records[0]
+            self._run_tokens["total_input"] += rec.get("input_tokens", 0) or 0
+            self._run_tokens["total_output"] += rec.get("output_tokens", 0) or 0
+            self._run_tokens["total_cost"] += rec.get("cost_usd", 0.0) or 0.0
+            self._run_tokens["agents"].append({
+                "name": agent_name,
+                "input_tokens": rec.get("input_tokens", 0) or 0,
+                "output_tokens": rec.get("output_tokens", 0) or 0,
+                "cost_usd": rec.get("cost_usd", 0.0) or 0.0,
+                "duration_ms": rec.get("duration_ms", 0) or 0,
+            })
+        except Exception:
+            logger.debug(f"Failed to track tokens for '{agent_name}'", exc_info=True)
+
+    def _build_token_summary(self) -> Optional[dict]:
+        """Build a token summary dict for the orchestration run.
+
+        Returns None if no tokens were tracked.
+        """
+        tokens = self._run_tokens
+        if tokens["total_input"] == 0 and tokens["total_output"] == 0:
+            return None
+        return {
+            "total_input": tokens["total_input"],
+            "total_output": tokens["total_output"],
+            "total_tokens": tokens["total_input"] + tokens["total_output"],
+            "total_cost_usd": round(tokens["total_cost"], 4),
+            "agents": tokens["agents"],
+        }
 
     async def _process_memory_saves(self, saves: list[MemorySaveRequest]) -> None:
         for save in saves:

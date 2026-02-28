@@ -169,6 +169,7 @@ async def _run_orchestrator(
     memory = context.bot_data.get("memory")
     conversation = context.bot_data.get("conversation")
     activity_log = context.bot_data.get("activity_log")
+    token_tracker = context.bot_data.get("token_tracker")
     preferences = context.bot_data.get("preferences")
     chat_id = update.effective_chat.id
 
@@ -185,7 +186,7 @@ async def _run_orchestrator(
     if conversation:
         conv_history = await conversation.format_for_prompt(chat_id)
 
-    orchestrator = NimrodOrchestrator(memory=memory)
+    orchestrator = NimrodOrchestrator(memory=memory, token_tracker=token_tracker)
 
     working_msg = await update.message.reply_text(
         random.choice(STATUS_MESSAGES)
@@ -299,10 +300,25 @@ async def _run_orchestrator(
         except asyncio.CancelledError:
             pass
 
-        # Log the activity
+        # Log the activity (with token summary appended to subagent results)
         total_duration = time.monotonic() - run_start
         if activity_log:
             try:
+                subagent_log = getattr(orchestrator, '_subagent_log', None)
+                # Append token summary to the activity log if available
+                token_summary = (
+                    orch_result.token_summary if orch_result else None
+                )
+                if token_summary and subagent_log is not None:
+                    subagent_log.append({
+                        "agent": "_token_summary",
+                        "success": True,
+                        "duration": 0,
+                        "total_input": token_summary["total_input"],
+                        "total_output": token_summary["total_output"],
+                        "total_tokens": token_summary["total_tokens"],
+                        "total_cost_usd": token_summary["total_cost_usd"],
+                    })
                 await activity_log.log_run(
                     chat_id=chat_id,
                     query=user_message,
@@ -311,7 +327,7 @@ async def _run_orchestrator(
                     error=run_error,
                     nimrod_pass1_duration=getattr(orchestrator, '_pass1_duration', None),
                     nimrod_pass2_duration=getattr(orchestrator, '_pass2_duration', None),
-                    subagent_results=getattr(orchestrator, '_subagent_log', None),
+                    subagent_results=subagent_log,
                 )
             except Exception:
                 logger.exception("Failed to write activity log")
