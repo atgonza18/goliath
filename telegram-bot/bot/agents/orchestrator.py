@@ -373,6 +373,8 @@ class NimrodOrchestrator:
             if actions:
                 action_lines = [f"- [id:{a.id}] [{a.created_at[:10]}] {a.summary}" for a in actions[:15]]
                 parts.append(f"OPEN ACTION ITEMS ({len(actions)} total):\n" + "\n".join(action_lines))
+            elif hasattr(actions, "success") and not actions.success:
+                parts.append("OPEN ACTION ITEMS: unavailable (memory error)")
         except Exception:
             logger.exception("Failed to fetch action items for prompt context")
 

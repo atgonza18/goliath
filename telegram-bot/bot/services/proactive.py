@@ -9,6 +9,7 @@ import logging
 import os
 import time
 from datetime import time as dt_time, timezone, timedelta
+from zoneinfo import ZoneInfo
 
 from telegram.ext import ContextTypes
 
@@ -18,9 +19,8 @@ from bot.utils.formatting import chunk_message
 
 logger = logging.getLogger(__name__)
 
-# US Central Time: UTC-6 (CST) / UTC-5 (CDT)
-# Using UTC-6 as default; adjust if daylight saving matters
-CT = timezone(timedelta(hours=-6))
+# US Central Time — uses ZoneInfo for automatic DST handling
+CT = ZoneInfo("America/Chicago")
 
 MORNING_TIME = dt_time(hour=6, minute=0, tzinfo=CT)   # 6 AM CT
 EVENING_TIME = dt_time(hour=18, minute=0, tzinfo=CT)   # 6 PM CT
@@ -95,6 +95,8 @@ async def run_proactive_session(context: ContextTypes.DEFAULT_TYPE, session_type
         if actions:
             action_lines = [f"- [{a.created_at[:10]}] {a.summary}" for a in actions[:10]]
             memory_parts.append(f"OPEN ACTION ITEMS:\n" + "\n".join(action_lines))
+        elif hasattr(actions, "success") and not actions.success:
+            memory_parts.append("OPEN ACTION ITEMS: unavailable (memory error)")
 
         memory_context = "\n\n".join(memory_parts) if memory_parts else "(No memories yet.)"
 

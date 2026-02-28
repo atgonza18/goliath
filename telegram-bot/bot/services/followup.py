@@ -17,6 +17,9 @@ from datetime import datetime, timedelta
 from html import escape
 from pathlib import Path
 from typing import Optional
+from zoneinfo import ZoneInfo
+
+CT = ZoneInfo("America/Chicago")
 
 import aiosqlite
 
@@ -134,6 +137,9 @@ class FollowUpQueue:
         action_items = await memory.get_action_items(resolved=False)
         await memory.close()
 
+        if hasattr(action_items, "success") and not action_items.success:
+            logger.warning(f"Action items scan degraded: {action_items.error}")
+
         results = []
         for item in action_items:
             # Skip if we already have a pending follow-up for this
@@ -149,7 +155,7 @@ class FollowUpQueue:
                 created = datetime.fromisoformat(item.created_at[:19])
                 follow_up_date = (created + timedelta(days=2)).strftime("%Y-%m-%d")
             except (ValueError, TypeError):
-                follow_up_date = (datetime.utcnow() + timedelta(days=2)).strftime("%Y-%m-%d")
+                follow_up_date = (datetime.now(CT) + timedelta(days=2)).strftime("%Y-%m-%d")
 
             results.append({
                 "type": "action_item",
@@ -168,8 +174,8 @@ class FollowUpQueue:
         from bot.agents.definitions import CONSTRAINTS_MANAGER
         from bot.agents.runner import SubagentRunner
 
-        horizon_date = (datetime.utcnow() + timedelta(hours=FOLLOWUP_HORIZON_HOURS)).strftime("%Y-%m-%d")
-        today = datetime.utcnow().strftime("%Y-%m-%d")
+        horizon_date = (datetime.now(CT) + timedelta(hours=FOLLOWUP_HORIZON_HOURS)).strftime("%Y-%m-%d")
+        today = datetime.now(CT).strftime("%Y-%m-%d")
 
         prompt = (
             f"Pull all OPEN constraints from ConstraintsPro that have a need-by date "
@@ -286,7 +292,7 @@ class FollowUpQueue:
 
     async def check_due_follow_ups(self) -> list[dict]:
         """Find items where follow_up_date <= today and status is 'pending'."""
-        today = datetime.utcnow().strftime("%Y-%m-%d")
+        today = datetime.now(CT).strftime("%Y-%m-%d")
         cursor = await self._db.execute(
             "SELECT * FROM follow_ups WHERE follow_up_date <= ? AND status = 'pending'",
             (today,),
@@ -305,12 +311,12 @@ class FollowUpQueue:
 
         committed_date = item.get("committed_date", "")
         follow_up_date = item.get("follow_up_date", "")
-        today = datetime.utcnow().strftime("%Y-%m-%d")
+        today = datetime.now(CT).strftime("%Y-%m-%d")
 
         # Calculate days since commitment
         try:
             committed_dt = datetime.strptime(committed_date, "%Y-%m-%d")
-            days_since = (datetime.utcnow() - committed_dt).days
+            days_since = (datetime.now(CT) - committed_dt).days
         except (ValueError, TypeError):
             days_since = "?"
 
@@ -366,7 +372,7 @@ class FollowUpQueue:
         follow_up_date = item.get("follow_up_date", "?")
         committed_date = item.get("committed_date", "?")
 
-        today = datetime.utcnow().strftime("%Y-%m-%d")
+        today = datetime.now(CT).strftime("%Y-%m-%d")
         overdue_tag = " <b>[OVERDUE]</b>" if follow_up_date < today else ""
 
         # Truncate draft for display
@@ -434,7 +440,7 @@ class FollowUpQueue:
         Used by the morning report and trend analysis to insert a
         'Follow-Up Queue' section.
         """
-        today = datetime.utcnow().strftime("%Y-%m-%d")
+        today = datetime.now(CT).strftime("%Y-%m-%d")
 
         # Overdue items
         cursor = await self._db.execute(

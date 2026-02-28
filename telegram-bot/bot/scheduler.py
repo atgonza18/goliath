@@ -1287,6 +1287,8 @@ async def _run_proactive_task(scheduler: "Scheduler", session_type: str) -> None
         if actions:
             action_lines = [f"- [{a.created_at[:10]}] {a.summary}" for a in actions[:10]]
             memory_parts.append(f"OPEN ACTION ITEMS:\n" + "\n".join(action_lines))
+        elif hasattr(actions, "success") and not actions.success:
+            memory_parts.append("OPEN ACTION ITEMS: unavailable (memory error)")
 
         memory_context = "\n\n".join(memory_parts) if memory_parts else "(No memories yet.)"
 
@@ -1565,6 +1567,64 @@ def _get_chat_id() -> Optional[int]:
     return None
 
 
+# ------------------------------------------------------------------
+# One-time weekend to-do list (Saturday Feb 28, 2026 at 6 AM CT)
+# ------------------------------------------------------------------
+
+WEEKEND_TODO_MESSAGE = """\
+<b>\U0001f6e0\ufe0f Weekend System To-Do List \u2014 Saturday Feb 28</b>
+
+<b>GOLIATH SYSTEM IMPROVEMENTS:</b>
+
+1. <b>Build OAuth callback endpoint for Recall.ai</b> \u2014 Calendar auto-join is connected in the Recall.ai dashboard but NOT through our API user. Need a small OAuth flow on the webhook server so meetings auto-record without manual /join commands. This is the last piece for full automation.
+
+2. <b>Test transcript \u2192 ConstraintsPro auto-pipeline</b> \u2014 Pipeline is built and committed but hasn\u2019t been tested end-to-end through the normal webhook flow. Monday\u2019s first call will be the real test. Review the pipeline code for any edge cases.
+
+3. <b>Clean up stale open action items</b> \u2014 34 open items in memory, ~8-10 are already completed (bot restart, Recall.ai commit, Scioto/Delta Bobcat syncs, Blackford report). Need to resolve completed items so the morning report to-do list stays clean and accurate.
+
+4. <b>Fix PID file management</b> \u2014 start.sh isn\u2019t writing the correct PID on restart (showed 88569 when actual was 210396). Minor but annoying for health checks.
+
+<b>MONDAY PREP \u2014 PROJECT ITEMS TO TRACK:</b>
+
+\u2022 <b>Delta Bobcat:</b> James Kelly owes Shoals material reconciliation (Mon/Tue 3/2-3/3). Pile caps Kyan expedite still no response (~4 weeks). Ary gathering substation/JFE details. $5M tariff escalation to Mike Flynn tracking.
+
+\u2022 <b>Scioto Ridge:</b> Luis emailing Gomez at Stantec re: DMC connectors (HIGH priority). Substation secondary power RFI blocked \u2014 RWE owes studies to Ohio Mid (~2 month delay). DC electrical starting Mon 3/2.
+
+\u2022 <b>Blackford:</b> Probing questions report was generated \u2014 check if the meeting happened and if follow-up emails were sent.
+
+<i>Today is Friday Feb 27, 2026. Happy weekend boss. \U0001f3af</i>\
+"""
+
+
+async def task_weekend_todo(scheduler: "Scheduler") -> None:
+    """One-time weekend to-do list — fires at 6 AM CT on Saturday Feb 28, 2026.
+
+    On any other day, this is a no-op. After successful delivery, the task
+    disables itself so it never fires again.
+    """
+    now_ct = datetime.now(CT)
+
+    # Only fire on Saturday Feb 28, 2026
+    if now_ct.date() != datetime(2026, 2, 28).date():
+        return
+
+    chat_id = _get_chat_id()
+    if not chat_id or not scheduler.bot:
+        logger.warning("Weekend todo: no chat_id or bot available")
+        return
+
+    logger.info("Sending weekend to-do list...")
+    await _send_telegram(scheduler.bot, chat_id, WEEKEND_TODO_MESSAGE)
+    logger.info("Weekend to-do list delivered successfully")
+
+    # Disable this task so it never fires again
+    for task in scheduler._tasks:
+        if task.name == "weekend_todo":
+            task.enabled = False
+            logger.info("Weekend todo task disabled (one-time delivery complete)")
+            break
+
+
 # ======================================================================
 # Setup: register all default tasks and return a configured Scheduler
 # ======================================================================
@@ -1672,5 +1732,14 @@ def create_scheduler(bot=None) -> Scheduler:
             callback=task_follow_up_scan,
             description=f"Follow-up scan at {time_label} CT — check due commitments and approaching deadlines",
         )
+
+    # One-time weekend to-do list: Saturday Feb 28, 2026 at 6 AM CT
+    sched.add_task(
+        name="weekend_todo",
+        hour=6,
+        minute=0,
+        callback=task_weekend_todo,
+        description="One-time weekend to-do list — Saturday Feb 28, 2026 at 6 AM CT",
+    )
 
     return sched

@@ -36,6 +36,8 @@ async def memory_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             result = "\n".join(
                 f"- [{a.created_at[:10]}] {a.summary}" for a in items
             )
+        elif hasattr(items, "success") and not items.success:
+            result = f"Action items unavailable: {items.error}"
         else:
             result = "No open action items."
     else:
