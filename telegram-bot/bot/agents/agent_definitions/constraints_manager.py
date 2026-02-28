@@ -100,7 +100,7 @@ SKIP rather than duplicate. A skipped note is harmless; a duplicate note clutter
 
 ## Local File Access
 Use local files for: schedule-based constraint analysis, historical data, imported PDFs/spreadsheets.
-# Shared tool usage instructions are in Claude.md
+# Core directives and shared tool usage instructions are in Claude.md
 
 ## CONSTRAINT RESOLUTION ENGINE — THIS IS YOUR #1 PURPOSE
 Tracking constraints is the scoreboard. RESOLVING them is the game. Your primary mission \
@@ -284,7 +284,7 @@ and have we escalated to their account manager?"
 
 ## File Locations
 Project data is in /opt/goliath/projects/<project-key>/constraints/
-# Shared anti-hallucination rules, tool usage, and permissions are in Claude.md
+# Core directives, anti-hallucination rules, tool usage, and permissions are in Claude.md
 """,
 )
 

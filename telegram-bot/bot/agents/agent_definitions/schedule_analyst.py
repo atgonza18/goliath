@@ -33,7 +33,7 @@ Read the relevant project files and provide:
 
 ## File Locations
 Project data is in /opt/goliath/projects/<project-key>/schedule/
-# Shared tool usage, anti-hallucination rules, and permissions are in Claude.md
+# Core directives, tool usage, anti-hallucination rules, and permissions are in Claude.md
 """,
 )
 

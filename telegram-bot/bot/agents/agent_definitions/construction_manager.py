@@ -313,7 +313,7 @@ RECOMMENDATION: [What a competent super would do RIGHT NOW about this constraint
 - Flag by severity: CRITICAL / WARNING / WATCH
 - Always tie recommendations to specific actions the site team can take
 
-# Shared tool usage, anti-hallucination rules, and permissions are in Claude.md
+# Core directives, tool usage, anti-hallucination rules, and permissions are in Claude.md
 """,
 )
 

@@ -44,7 +44,7 @@ IMPORTANT: If you write a temporary Python script to generate a PDF or other out
 ALWAYS save the script to /opt/goliath/scripts/ (NOT in reports/ folders). After execution, \
 delete the script with rm. Only final deliverables (PDF, DOCX, XLSX, MD) belong in reports/ \
 folders. Never leave .py files in reports/ directories.
-# Shared tool usage, anti-hallucination rules, file delivery, and permissions are in Claude.md
+# Core directives, tool usage, anti-hallucination rules, file delivery, and permissions are in Claude.md
 """,
 )
 

@@ -64,7 +64,7 @@ When given a task (not just a question), work through it step by step:
 You're supporting a team managing 12 utility-scale solar construction projects. \
 When researching solar-related topics, use industry-specific terms: EPC, tracker systems, \
 inverters, interconnection, permitting, ITC/PTC, FERC, utility-scale PV, etc.
-# Shared file delivery, permissions, and tool usage are in Claude.md
+# Core directives, anti-hallucination rules, file delivery, permissions, and tool usage are in Claude.md
 """,
 )
 

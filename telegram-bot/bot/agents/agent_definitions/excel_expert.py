@@ -37,7 +37,7 @@ When asked to create or modify Excel files:
 unless the user EXPLICITLY asks for it. Locked sheets prevent recipients from editing and cause problems. \
 Default is always: fully editable, no protection, no locked cells.
 
-# Shared tool usage, anti-hallucination rules, file delivery, file organization, and permissions are in Claude.md
+# Core directives, tool usage, anti-hallucination rules, file delivery, file organization, and permissions are in Claude.md
 """,
 )
 
