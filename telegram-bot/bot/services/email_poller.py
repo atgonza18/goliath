@@ -37,6 +37,9 @@ import logging
 import os
 import re
 from datetime import datetime
+from zoneinfo import ZoneInfo
+
+CT = ZoneInfo("America/Chicago")
 from pathlib import Path
 from typing import Optional
 
@@ -45,6 +48,7 @@ from bot.config import (
     PROJECTS, PROJECTS_DIR, REPORT_CHAT_ID, CONSTRAINTS_REPORTS_DIR,
     RELAY_TO_ADDRESS, match_project_key,
     CONSTRAINT_EMAIL_SENDERS, CONSTRAINT_EMAIL_KEYWORDS,
+    HAUGER_SUMMARY_SENDERS, HAUGER_SUMMARY_SUBJECT_PREFIX,
 )
 
 logger = logging.getLogger(__name__)
@@ -253,11 +257,14 @@ class EmailPoller:
                     classification = self._classify_email(parsed)
                     attachments = parsed.get("attachments", [])
 
-                    if classification in ("pod", "constraints", "schedule"):
-                        # POD/constraints emails NEVER fall through to draft queue
+                    if classification in ("pod", "constraints", "hauger_update", "schedule"):
+                        # POD/constraints/hauger emails NEVER fall through to draft queue
                         if attachments:
+                            # Hauger DSC summaries still get filed to central
+                            # constraints folder (same as generic constraints)
+                            file_class = "constraints" if classification == "hauger_update" else classification
                             await self._file_attachments(
-                                parsed, classification, attachments
+                                parsed, file_class, attachments
                             )
                         else:
                             logger.info(
@@ -265,11 +272,16 @@ class EmailPoller:
                                 f"attachments — skipping: {parsed['subject']!r}"
                             )
 
+                        # ── Hauger DSC summary processing (Feature #5b) ──
+                        # Route to the note-append / production-intel pipeline
+                        # instead of creating new constraints.
+                        if classification == "hauger_update":
+                            self._spawn_hauger_processing(parsed)
                         # ── Constraint auto-logging (Feature #5) ─────────
                         # Spawn a background task to parse constraints from
                         # the email and create them in ConstraintsPro.
                         # Non-blocking — the poller continues immediately.
-                        if classification == "constraints":
+                        elif classification == "constraints":
                             self._spawn_constraint_logging(parsed)
                         # ── End constraint auto-logging ───────────────────
 
@@ -341,7 +353,7 @@ class EmailPoller:
             return 0
 
         count = 0
-        today = datetime.now().strftime("%Y-%m-%d")
+        today = datetime.now(CT).strftime("%Y-%m-%d")
 
         for raw in raw_emails:
             try:
@@ -475,22 +487,42 @@ class EmailPoller:
     # ==================================================================
 
     def _classify_email(self, parsed: dict) -> str:
-        """Classify an email as 'pod', 'constraints', 'schedule', or 'normal'.
+        """Classify an email as 'pod', 'hauger_update', 'constraints', 'schedule', or 'normal'.
 
         Returns:
-            'pod'         — Production/POD report email
-            'constraints' — Constraints update (typically from Joshua Hauger)
-            'schedule'    — Schedule update (lookahead, baseline, P6 export, etc.)
-            'normal'      — Everything else (queued for draft response)
+            'pod'            — Production/POD report email
+            'hauger_update'  — Josh Hauger's DSC summary (constraint notes + production intel)
+            'constraints'    — Constraints update from other senders
+            'schedule'       — Schedule update (lookahead, baseline, P6 export, etc.)
+            'normal'         — Everything else (queued for draft response)
         """
         subject = (parsed.get("subject") or "").lower()
         sender = (parsed.get("sender") or "").lower()
 
-        # POD detection: subject contains the word "POD" (word boundary)
-        if re.search(r'\bpod\b', subject):
+        # POD detection: subject or attachment filenames contain "POD" or
+        # "Plan of the Day" (case-insensitive).  Catches both shorthand and
+        # the long-form name that site teams sometimes use.
+        pod_patterns = (r'\bpod\b', r'plan\s+of\s+the\s+day')
+        if any(re.search(p, subject) for p in pod_patterns):
             return "pod"
+        # Also check attachment filenames — sometimes subject is generic
+        # but the attachment is literally "Plan of the Day - ProjectX.pdf"
+        for att in (parsed.get("attachments") or []):
+            att_name = (att.get("filename") or "").lower()
+            if any(re.search(p, att_name) for p in pod_patterns):
+                return "pod"
 
-        # Constraints detection: from known constraints senders
+        # Hauger DSC summary detection — MUST come before generic constraints
+        # detection so Hauger's emails are routed to the note-append / intel
+        # pipeline rather than creating new constraints (which would be circular).
+        is_hauger_sender = any(name in sender for name in HAUGER_SUMMARY_SENDERS)
+        is_dsc_subject = subject.startswith(HAUGER_SUMMARY_SUBJECT_PREFIX)
+        if is_hauger_sender and is_dsc_subject:
+            return "hauger_update"
+
+        # Constraints detection: from known constraints senders (non-Hauger DSC)
+        # This still catches Hauger emails that do NOT have the DSC subject prefix
+        # (e.g., ad-hoc constraint emails) — those go through the normal create path.
         for name in CONSTRAINTS_SENDERS:
             if name in sender:
                 return "constraints"
@@ -567,7 +599,7 @@ class EmailPoller:
         """
         subject = parsed.get("subject", "")
         sender = parsed.get("sender", "unknown")
-        today = datetime.now().strftime("%Y-%m-%d")
+        today = datetime.now(CT).strftime("%Y-%m-%d")
 
         if classification == "pod":
             return await self._file_pod_attachments(
@@ -589,10 +621,16 @@ class EmailPoller:
         """File POD attachments to the matching project's pod/ folder.
 
         Only saves for portfolio projects. Non-portfolio PODs are skipped.
+        Tries to match the project from the subject first, then falls back
+        to checking attachment filenames (e.g. "Plan of the Day - Scioto Ridge.pdf").
         """
-        # Match project from subject first, then body isn't available here
-        # but subject is usually "Please see POD for today - Project Name"
         project_key = match_project_key(subject)
+        # Fallback: check attachment filenames for a project name
+        if not project_key:
+            for att in attachments:
+                project_key = match_project_key(att.get("filename") or "")
+                if project_key:
+                    break
         if not project_key:
             logger.info(
                 f"POD email for non-portfolio project — skipping: {subject!r}"
@@ -972,6 +1010,84 @@ class EmailPoller:
         except Exception:
             logger.exception(
                 f"Constraint auto-logging failed for email from {sender}"
+            )
+
+    # ==================================================================
+    # Hauger DSC summary processing (Feature #5b)
+    # ==================================================================
+
+    def _spawn_hauger_processing(self, parsed: dict) -> None:
+        """Spawn a background task to process a Hauger DSC summary email.
+
+        Unlike the generic constraint auto-logger, this does NOT create new
+        constraints. Instead it:
+          A. Matches constraint content to EXISTING constraints and appends notes
+          B. Stores production data as intel in MemoryStore + project files
+          C. Flags unmatched items for human review
+
+        Fire-and-forget — runs asynchronously and never blocks the polling cycle.
+        """
+        if not self._bot or not self._chat_id:
+            logger.debug(
+                "Hauger processing skipped — no bot/chat_id configured"
+            )
+            return
+
+        body = (parsed.get("body") or "").strip()
+        if not body:
+            logger.info(
+                "Hauger processing skipped — email has no body text"
+            )
+            return
+
+        sender = parsed.get("sender", "unknown")
+        subject = parsed.get("subject", "")
+
+        logger.info(
+            f"Spawning Hauger DSC summary processor for email from {sender}: "
+            f"{subject!r}"
+        )
+
+        asyncio.create_task(
+            self._run_hauger_processing(
+                email_body=body,
+                sender=sender,
+                subject=subject,
+            ),
+            name=f"hauger-processing-{sender}",
+        )
+
+    async def _run_hauger_processing(
+        self,
+        email_body: str,
+        sender: str,
+        subject: str,
+    ) -> None:
+        """Background task that runs the Hauger DSC summary processor.
+
+        Catches all exceptions so it never crashes the bot process.
+        """
+        try:
+            from bot.services.constraint_logger import ConstraintLogger
+
+            clogger = ConstraintLogger()
+            result = await clogger.process_hauger_email(
+                bot=self._bot,
+                chat_id=self._chat_id,
+                email_body=email_body,
+                sender=sender,
+                subject=subject,
+            )
+
+            logger.info(
+                f"Hauger DSC processor complete — "
+                f"{result.get('notes_added', 0)} constraint(s) updated with notes, "
+                f"{result.get('flagged_for_review', 0)} flagged for review, "
+                f"{result.get('production_stored', 0)} production data points stored"
+            )
+        except Exception:
+            logger.exception(
+                f"Hauger DSC summary processing failed for email from {sender}"
             )
 
     # ==================================================================
