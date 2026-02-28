@@ -336,13 +336,21 @@ class NimrodOrchestrator:
         )
 
     async def _build_memory_context(self, user_message: str) -> str:
-        """Build memory context block for prompt injection."""
+        """Build memory context block for prompt injection.
+
+        Fully wrapped in error handling — memory failures must never crash the
+        orchestrator. Returns a sensible default string if everything fails.
+        """
         parts = []
 
         # Recent memories
-        recent = await self.memory.format_for_prompt(limit=10)
-        if recent and recent != "(No relevant memories found.)":
-            parts.append(f"RECENT MEMORIES:\n{recent}")
+        try:
+            recent = await self.memory.format_for_prompt(limit=10)
+            if recent and recent not in ("(No relevant memories found.)", "(Memory unavailable.)"):
+                parts.append(f"RECENT MEMORIES:\n{recent}")
+        except Exception:
+            logger.exception("Failed to fetch recent memories for prompt context")
+            recent = None
 
         # Search-matched memories based on user message
         try:
@@ -351,19 +359,22 @@ class NimrodOrchestrator:
             )
             if (
                 searched
-                and searched != "(No relevant memories found.)"
+                and searched not in ("(No relevant memories found.)", "(Memory unavailable.)")
                 and searched != recent
             ):
                 parts.append(f"RELEVANT MEMORIES (search-matched):\n{searched}")
         except Exception:
             # FTS match can fail on certain query strings; non-critical
-            pass
+            logger.debug("FTS search failed during memory context build", exc_info=True)
 
         # Open action items (include IDs so Nimrod can resolve them)
-        actions = await self.memory.get_action_items(resolved=False)
-        if actions:
-            action_lines = [f"- [id:{a.id}] [{a.created_at[:10]}] {a.summary}" for a in actions[:15]]
-            parts.append(f"OPEN ACTION ITEMS ({len(actions)} total):\n" + "\n".join(action_lines))
+        try:
+            actions = await self.memory.get_action_items(resolved=False)
+            if actions:
+                action_lines = [f"- [id:{a.id}] [{a.created_at[:10]}] {a.summary}" for a in actions[:15]]
+                parts.append(f"OPEN ACTION ITEMS ({len(actions)} total):\n" + "\n".join(action_lines))
+        except Exception:
+            logger.exception("Failed to fetch action items for prompt context")
 
         if not parts:
             return "PERSISTENT MEMORY:\n(No memories yet. This is the beginning.)"
