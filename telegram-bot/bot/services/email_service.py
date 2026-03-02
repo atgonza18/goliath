@@ -138,7 +138,16 @@ class EmailService:
             logger.error("Email service not configured — GMAIL_ADDRESS or GMAIL_APP_PASSWORD missing")
             return False
 
+        # Auto-convert plain text to well-formatted HTML if the body doesn't
+        # already contain real HTML structure tags.  This prevents the
+        # "wall of text" problem where newlines and numbered lists get lost.
+        if not re.search(r'<(p|div|table|ul|ol)\b', body):
+            body = _format_email_html(body)
+
         tagged_subject = f"[SEND: {to}] {subject}"
+        if cc:
+            # Add CC tag so Power Automate relay can parse and add CC recipients
+            tagged_subject = f"[SEND: {to}] [CC: {cc}] {subject}"
 
         # Route through PA relay: send to user's MasTec Outlook, not directly to recipient.
         # PA picks it up, parses [SEND: recipient], sends from user's work email, deletes relay.
@@ -172,7 +181,8 @@ class EmailService:
                 None, lambda: self._smtp_send(msg, recipients)
             )
             if success:
-                logger.info(f"Email sent to {to} — subject: {tagged_subject}")
+                cc_info = f" cc={cc}" if cc else ""
+                logger.info(f"Email sent to {to}{cc_info} — subject: {tagged_subject}")
             return success
         except Exception:
             logger.exception(f"Failed to send email to {to}")
@@ -252,10 +262,14 @@ class EmailService:
         if not re.search(r'<(p|div|table|ul|ol)\b', response_body):
             response_body = _format_email_html(response_body)
 
+        # Extract CC from queue item (may be None if not set)
+        cc = item.get("cc") or None
+
         success = await self.send_email(
             to=recipient,
             subject=subject,
             body=response_body,
+            cc=cc,
         )
 
         if success:

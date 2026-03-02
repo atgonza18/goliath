@@ -90,36 +90,37 @@ PROJECT_SUBFOLDERS = [
 CONSTRAINTS_REPORTS_DIR = REPO_ROOT / "dsc-constraints-production-reports"
 
 # ---------------------------------------------------------------------------
-# Escalation Engine config
+# Proactive Follow-Up Engine config (replaces old Escalation Engine)
 # ---------------------------------------------------------------------------
-# SQLite DB for tracking escalation state (separate from memory.db)
-ESCALATION_DB_PATH = DATA_DIR / "escalation.db"
+# SQLite DB for tracking follow-up state (separate from memory.db)
+PROACTIVE_FOLLOWUP_DB_PATH = DATA_DIR / "proactive_followup.db"
 
-# Cooldown between escalation levels (days). After sending a Level N email,
-# wait this many days before escalating to Level N+1.
-ESCALATION_COOLDOWN_DAYS = int(os.getenv("ESCALATION_COOLDOWN_DAYS", "5"))
+# Cooldown between follow-up tiers (days). After sending a Tier N follow-up,
+# wait this many days before advancing to Tier N+1.
+PROACTIVE_FOLLOWUP_COOLDOWN_DAYS = int(os.getenv("PROACTIVE_FOLLOWUP_COOLDOWN_DAYS", "5"))
 
-# Maximum escalation level (1=Helpful, 2=Firm, 3=Leadership CC)
-ESCALATION_MAX_LEVEL = 3
+# Maximum follow-up tier (1=Helpful, 2=Firmer with alternatives, 3=Loop in leadership)
+PROACTIVE_FOLLOWUP_MAX_TIER = 3
 
-# Escalation scan times (CT timezone, 24-hour format)
-ESCALATION_SCAN_TIMES = [
-    (9, 0),    # 9:00 AM CT
-    (13, 0),   # 1:00 PM CT
-    (17, 0),   # 5:00 PM CT
-]
+# Daily report generation time (CT timezone, 24-hour format)
+# Generates ONE consolidated PDF report per day instead of individual Telegram messages
+PROACTIVE_FOLLOWUP_REPORT_TIME = (7, 0)   # 7:00 AM CT — after morning report
 
-# For MEDIUM-priority constraints: only escalate if need-by date is within
-# this many days from today.
+# Legacy escalation config — kept for backward compatibility during migration
+# These are now aliases for the new config names
+ESCALATION_DB_PATH = PROACTIVE_FOLLOWUP_DB_PATH
+ESCALATION_SCAN_TIMES = [(7, 0)]  # Single daily report time
+ESCALATION_COOLDOWN_DAYS = PROACTIVE_FOLLOWUP_COOLDOWN_DAYS
+ESCALATION_MAX_LEVEL = PROACTIVE_FOLLOWUP_MAX_TIER
 ESCALATION_MEDIUM_HORIZON_DAYS = int(os.getenv("ESCALATION_MEDIUM_HORIZON_DAYS", "7"))
 
 # ---------------------------------------------------------------------------
 # Follow-Up Queue config
 # ---------------------------------------------------------------------------
-# SQLite DB for follow-up queue state (separate from memory.db and escalation.db)
+# SQLite DB for follow-up queue state (commitments from meetings, separate from memory.db)
 FOLLOWUP_DB_PATH = DATA_DIR / "followup.db"
 
-# Follow-up scan times (CT timezone, 24-hour format) — staggered from escalation
+# Follow-up scan times (CT timezone, 24-hour format) — for commitment follow-ups
 FOLLOWUP_SCAN_TIMES = [
     (10, 0),   # 10:00 AM CT
     (16, 0),   # 4:00 PM CT
@@ -127,15 +128,6 @@ FOLLOWUP_SCAN_TIMES = [
 
 # Constraints approaching need-by date within this many hours trigger a reminder
 FOLLOWUP_HORIZON_HOURS = int(os.getenv("FOLLOWUP_HORIZON_HOURS", "48"))
-
-# ---------------------------------------------------------------------------
-# Constraint Heartbeat config
-# ---------------------------------------------------------------------------
-# Snapshot storage directory
-HEARTBEAT_SNAPSHOT_DIR = REPO_ROOT / "data" / "constraint_snapshots"
-
-# Heartbeat interval in seconds (default: 3600 = 1 hour)
-HEARTBEAT_INTERVAL_SECONDS = int(os.getenv("HEARTBEAT_INTERVAL_SECONDS", "3600"))
 
 # ---------------------------------------------------------------------------
 # Constraint Auto-Logger config (Email -> ConstraintsPro bridge)
@@ -154,6 +146,22 @@ CONSTRAINT_EMAIL_KEYWORDS = [
     'blocker', 'blockers',
     'open items', 'open issues',
 ]
+
+# ---------------------------------------------------------------------------
+# Hauger DSC Summary config (special handling for Josh Hauger's weekly emails)
+# ---------------------------------------------------------------------------
+# Josh Hauger sends weekly DSC summary emails that contain BOTH constraint
+# status updates AND production data. These should NOT create new constraints
+# in ConstraintsPro (that would be circular — the data comes FROM ConstraintsPro).
+# Instead: constraint content -> append as notes on existing constraints;
+#          production content -> store as intel in MemoryStore + project files.
+#
+# Sender patterns (case-insensitive partial match on email address).
+HAUGER_SUMMARY_SENDERS = ['hauger', 'hogger']
+
+# Subject pattern that identifies Hauger's DSC summary emails specifically.
+# These have a distinctive "DSC - " prefix with production & constraints data.
+HAUGER_SUMMARY_SUBJECT_PREFIX = 'dsc - '
 
 # ---------------------------------------------------------------------------
 # Agent Runner Retry / Resilience config

@@ -18,6 +18,7 @@ CREATE TABLE IF NOT EXISTS message_queue (
     recipient TEXT,
     subject TEXT,
     body TEXT,
+    cc TEXT,
     channel TEXT,
     is_dm INTEGER DEFAULT 0,
     external_message_id TEXT,
@@ -31,6 +32,11 @@ CREATE TABLE IF NOT EXISTS message_queue (
 );
 """
 
+# Migration: add cc column to existing databases that lack it
+QUEUE_MIGRATIONS = [
+    "ALTER TABLE message_queue ADD COLUMN cc TEXT;",
+]
+
 
 class MessageQueue:
     """Async SQLite queue for inbound/outbound email and Teams messages."""
@@ -40,6 +46,12 @@ class MessageQueue:
 
     async def initialize(self) -> None:
         await self._db.executescript(QUEUE_SCHEMA)
+        # Run migrations for existing databases (e.g., add cc column)
+        for migration in QUEUE_MIGRATIONS:
+            try:
+                await self._db.execute(migration)
+            except Exception:
+                pass  # Column already exists — safe to ignore
         await self._db.commit()
         logger.info("Message queue table initialized")
 
@@ -50,6 +62,7 @@ class MessageQueue:
         recipient: str = None,
         subject: str = None,
         body: str = None,
+        cc: str = None,
         channel: str = None,
         is_dm: bool = False,
         external_message_id: str = None,
@@ -90,9 +103,9 @@ class MessageQueue:
 
         cursor = await self._db.execute(
             "INSERT INTO message_queue "
-            "(source, direction, sender, recipient, subject, body, channel, is_dm, external_message_id) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
-            (source, direction, sender, recipient, subject, body, channel, int(is_dm), external_message_id),
+            "(source, direction, sender, recipient, subject, body, cc, channel, is_dm, external_message_id) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (source, direction, sender, recipient, subject, body, cc, channel, int(is_dm), external_message_id),
         )
         await self._db.commit()
         row_id = cursor.lastrowid
@@ -128,17 +141,32 @@ class MessageQueue:
         )
         await self._db.commit()
 
-    async def approve(self, queue_id: int, response_text: str = None) -> None:
+    async def approve(self, queue_id: int, response_text: str = None, cc: str = None) -> None:
         item = await self.get_by_id(queue_id)
         if not item:
             return
         final_text = response_text or item["draft_response"]
+        if cc:
+            await self._db.execute(
+                "UPDATE message_queue SET approved_response = ?, cc = ?, status = 'approved' WHERE id = ?",
+                (final_text, cc, queue_id),
+            )
+        else:
+            await self._db.execute(
+                "UPDATE message_queue SET approved_response = ?, status = 'approved' WHERE id = ?",
+                (final_text, queue_id),
+            )
+        await self._db.commit()
+        logger.info(f"Queue item {queue_id} approved (cc={cc})")
+
+    async def update_cc(self, queue_id: int, cc: str) -> None:
+        """Update CC recipients for a queue item."""
         await self._db.execute(
-            "UPDATE message_queue SET approved_response = ?, status = 'approved' WHERE id = ?",
-            (final_text, queue_id),
+            "UPDATE message_queue SET cc = ? WHERE id = ?",
+            (cc, queue_id),
         )
         await self._db.commit()
-        logger.info(f"Queue item {queue_id} approved")
+        logger.info(f"Queue item {queue_id} CC updated to: {cc}")
 
     async def reject(self, queue_id: int) -> None:
         await self._db.execute(

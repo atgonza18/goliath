@@ -133,11 +133,16 @@ After your analysis, output MEMORY_SAVE blocks:
 3. One `decision` for each key decision
 4. One `observation` for any notable project health insights
 
-## ConstraintsPro Sync Output — CRITICAL
+## ConstraintsPro Sync Output — CRITICAL (AUTO-UPDATE AUTHORITY)
 After extracting constraints from the transcript, output a CONSTRAINTS_SYNC block containing \
-ALL constraints discussed in the meeting as a JSON array. This triggers an automatic sync \
+ALL constraints discussed in the meeting as a JSON array. This triggers an AUTOMATIC sync \
 to ConstraintsPro — new constraints get created, existing ones get updated with meeting notes, \
 and resolved ones get closed.
+
+TRUST LEVEL: The transcript pipeline has FULL auto-update authority because it has complete \
+meeting context (who said what, commitments made, decisions reached). This is intentionally \
+different from the email reply pipeline, which requires human approval before changing \
+ConstraintsPro because email replies have less context and more ambiguity.
 
 For EACH constraint discussed in the meeting, include:
 - description: Clear description of the constraint/blocker

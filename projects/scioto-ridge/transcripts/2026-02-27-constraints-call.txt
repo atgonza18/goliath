@@ -1,0 +1,496 @@
+SCIOTO RIDGE CONSTRAINTS CALL
+Date: February 27, 2026 | 2:30 PM - 3:00 PM CST
+Recorded by: Aaron Gonzalez (Recall.ai)
+============================================================
+
+[00:10] Sahil Patil: But now we at least got an APM and a few CMS in here, so we're good.
+
+[00:16] Aaron Gonzalez: Yep. No, that works for me. Before we get started, who's got a good safety share for us today?
+
+[00:25] Sahil Patil: I think Bird has one and I'm sure there's a lot of people here today. Yeah, I actually do. So I was just in the CM&GF mechanical monthly meeting and I'm just gonna use the same one I was using for them. So first week here at Seaoto and the office, you know, split up in the field. So to get to the fields you have to get out onto the main county road. There's a lot of traffic coming from, you know, between the two towns here. So just making sure that we're, we're watching how we drive, watching how we're getting out of these driveways. We got a lot of traffic coming back and forth. So we don't want to, we don't want to cause any bad relations with the, with the people here in town, you know, and knowing no bad look. So make sure we're not pulling out in front of people and watching our speeds and try to avoid as much track out as possible.
+
+[01:11] Aaron Gonzalez: Yeah, good point, Bird.
+
+[01:13] Sahil Patil: We
+
+[01:13] Aaron Gonzalez: also, I mean sometimes local people, I don't know how close you guys are to like houses or neighborhoods, but sometimes people have dogs and I on projects where they run the dogs over and it becomes a huge problem. So yeah, that, that falls into like whenever we're anywhere, we're guests and we are wearing the mostic badge, so to speak. I know it sounds corny, but yeah, it reflects on us. Right. All right, first, let's hit the high priority constraints here. We have DC electrical, two month delay. Is that still the case? I mean, I'm reading the notes here. I got some QI stuff and some
+
+[02:02] Sahil Patil: pile
+
+[02:03] Aaron Gonzalez: testing, but what's the real constraint here?
+
+[02:08] Sahil Patil: DC install will start Monday. The second. We did have some pile issues that was kind of holding up our biggest things. We didn't want to full DC without having inverter conduits or LBD conduits ready to go.
+
+[02:30] Aaron Gonzalez: Right. And
+
+[02:31] Sahil Patil: we could. So now that pile issue seems to be good. Figured itself out. We'll start DC next week.
+
+[02:40] Aaron Gonzalez: Awesome. You guys have all the equipment you guys need to get this rolling?
+
+[02:46] Sahil Patil: Yeah, we got second real carrier. We got missing a couple parts on it, but we won't need that second real carrier for a couple weeks till we reach up manpower. 10
+
+[02:57] Aaron Gonzalez: 4. Okay. Any other thing holding DC electrical from starting other than that? Inverter piles. How much running room you guys have
+
+[03:09] Sahil Patil: for sure. I mean, the entire F blocks open ready to go in front of us as far as power testing goes.
+
+[03:19] Aaron Gonzalez: Yeah. Yeah, that's what I was like, the blocks where we have pile testing done and we have conduit, whatever the case may be. You said the whole F circuit?
+
+[03:30] Sahil Patil: Yes, sir.
+
+[03:31] Aaron Gonzalez: Okay,
+
+[03:31] Sahil Patil: awesome.
+
+[03:37] Aaron Gonzalez: So would we say, and I don't know if somebody's able to answer this question,
+
+[03:42] Sahil Patil: is
+
+[03:43] Aaron Gonzalez: there how much of a delay? I know we're starting, but that's not a two month delay anymore, is it?
+
+[03:51] Sahil Patil: No, it's not too much. I mean, it may be delayed two months from when it was supposed to start.
+
+[03:57] Aaron Gonzalez: Yeah, yeah, that's fine. I mean, that's not fine, but like that. We were aware of that. But like there's no additional delay to that, right? Like,
+
+[04:05] Sahil Patil: no, hopefully not.
+
+[04:07] Aaron Gonzalez: Okay,
+
+[04:10] Sahil Patil: so
+
+[04:10] Aaron Gonzalez: you think we're good to. To remove this one or you want to drop it down a low just to track like equipment needs as we start? Any issues like that,
+
+[04:18] Sahil Patil: I would leave it alone because the weather don't look good. Next. Yeah, no, we're fixing to get into the. The spring weather up here, so we're gonna be a slow go, but we will start showing progress on Monday.
+
+[04:34] Aaron Gonzalez: Yeah.
+
+[04:34] Sahil Patil: Okay. Do
+
+[04:37] Aaron Gonzalez: we know, and this is just another question I wanted to bring up is since we are getting into the rainy, the wet season,
+
+[04:44] Sahil Patil: do
+
+[04:45] Aaron Gonzalez: we have any like, do we have it clear what the FME requirements are and are we going to track that with like a rain gauge or anything like that?
+
+[04:55] Sahil Patil: Yeah, so all that's being tracked. We're actually currently in an FME situation for December and January that they're going through right now. So we're definitely familiar with it and keeping track.
+
+[05:09] Aaron Gonzalez: Awesome. Okay. Okay. So we restarted pv grading on the 25th of February. I
+
+[05:24] Sahil Patil: know
+
+[05:24] Aaron Gonzalez: we're going to get more rain, so that's going to affect it
+
+[05:26] Sahil Patil: quite
+
+[05:27] Aaron Gonzalez: a bit, right?
+
+[05:29] Sahil Patil: It probably will, but it's going fantastic right now. We've been moving dirt since Tuesday and we've gained a little bit of more momentum every day. But yes, next week looks terrible.
+
+[05:42] Aaron Gonzalez: Yeah. Yeah. Hopefully it doesn't hit us too hard. Right. I mean, I would hate for Mother Nature to ruin your guys's momentum. As far as PV grading, what blocks are we good on with grading? I know you guys do it by zones probably, but what blocks are covered in those zones? All
+
+[06:00] Sahil Patil: of ELF block has been done and turned over. We've done these. The SOP 235 turnover on it. I haven't done it on D5 and D6, but that information has been turned in also, I guess. Where have you heard that message? Yeah, I mean we. The pop plan is good to go far as that. That surface goes. Furn, I guess was going to look at that as well, but we should be good. So I'm good to go and fill that out and turn that over.
+
+[06:26] Aaron Gonzalez: Okay.
+
+[06:27] Sahil Patil: So you
+
+[06:27] Aaron Gonzalez: guys got your
+
+[06:28] Sahil Patil: file
+
+[06:28] Aaron Gonzalez: plot plan based on those graded surface files. You guys have that already for F circuit
+
+[06:37] Sahil Patil: we're working on. He just got back. D5 and D6. Okay,
+
+[06:42] Aaron Gonzalez: get
+
+[06:42] Sahil Patil: that form. I will get that form filled out today or tomorrow and get that turned over to PS104.
+
+[06:48] Aaron Gonzalez: So it looks like F circuit's ready to go for piles then. Right? I mean nothing's
+
+[06:52] Sahil Patil: going. They've been driving piles for. For a few days.
+
+[06:57] Aaron Gonzalez: Okay. All right. Pending D circ some of the initial D circuit files, we should be opening up the D circuit as well. So you guys are sitting good on this. What's your
+
+[07:10] Sahil Patil: next. Go
+
+[07:11] Aaron Gonzalez: ahead.
+
+[07:12] Sahil Patil: We're currently in D1 through 4 at the moment. The cut and feel should be done by tomorrow afternoon. We'll have a little bit of. A little bit of cut to take out after cutting fields done for the vegetative burner marriage. And I expect that by Tuesday. So I expect all of D1 through 4 to be done by Tuesday.
+
+[07:31] Aaron Gonzalez: Okay, cool. D1, D4 grading will be done hopefully by Tuesday.
+
+[07:39] Sahil Patil: Yep. And
+
+[07:41] Aaron Gonzalez: then immediately after that, we're going to be. Our survey team's ready to just shoot that over to Ferdinand. Right. Well,
+
+[07:48] Sahil Patil: he's already done his part. We're going to get the topo from Miller Brothers. Correct, Chad, and then add that together. Is that right? Probably do another roll on top of another one again. Okay. It's just a small area so it won't take long. We should take one corner. No, somebody one through four. Yeah. Oh, okay. Yeah. All we got that north east corner to do where they cut at. Didn't need any cutting.
+
+[08:16] Aaron Gonzalez: Okay. Yeah.
+
+[08:18] Sahil Patil: Only
+
+[08:19] Aaron Gonzalez: reason I'm bringing that up is
+
+[08:20] Sahil Patil: some of
+
+[08:20] Aaron Gonzalez: these projects sometimes lag on
+
+[08:22] Sahil Patil: sending
+
+[08:22] Aaron Gonzalez: the surface
+
+[08:23] Sahil Patil: files
+
+[08:23] Aaron Gonzalez: required for the ppp
+
+[08:27] Sahil Patil: and
+
+[08:27] Aaron Gonzalez: sometimes the engineers take a while to
+
+[08:28] Sahil Patil: send that
+
+[08:29] Aaron Gonzalez: back. So
+
+[08:31] Sahil Patil: we got a five day lead time here is what Reor told us.
+
+[08:35] Aaron Gonzalez: Okay, so let's get into like a theoretical here. Let's say we're done on Tuesday. Wednesday we send the files, engineering needs. We should be getting that Wednesday latest. Right. The next week
+
+[08:48] Sahil Patil: yeah. Yeah. I'm planning a couple different routes. This first few blocks I want to do like that. But I do have lotar scheduled for 24th, so as much as we can get done before 24th, hopefully we can start actually getting lidar instead of rolling topos. Yeah,
+
+[09:03] Aaron Gonzalez: that'd be ideal.
+
+[09:05] Sahil Patil: Okay,
+
+[09:06] Aaron Gonzalez: so LIDAR is scheduled for what date?
+
+[09:09] Sahil Patil: March 24. But
+
+[09:11] Aaron Gonzalez: in
+
+[09:11] Sahil Patil: the interim, anything that we need to get past, I'm gonna do Ron Topo.
+
+[09:16] Aaron Gonzalez: Perfect. Okay, so as far as pv, like quote unquote delays on grading, I think we're. I mean, how do you guys feel? Comfortable. You guys feel comfortable leaving it as high or has it dropped? I know we have rain coming in,
+
+[09:35] Sahil Patil: but it sounds
+
+[09:35] Aaron Gonzalez: like you guys are confident.
+
+[09:37] Sahil Patil: Yeah, I would drop it down. Just drop it down. One because of the weather next week. Just so we can. Yeah,
+
+[09:44] Aaron Gonzalez: just.
+
+[09:44] Sahil Patil: Mon's fine.
+
+[09:47] Aaron Gonzalez: Awesome. The
+
+[09:48] Sahil Patil: weather's not going in our direction. It's definitely going away from us. It's getting worse and worse by the days. Good cushion on P.S. right now anyway. Yeah, we do.
+
+[09:58] Aaron Gonzalez: Yeah. Okay. Okay. MV trenching. I know, boring. Started on the 25th. Are we looking. Did we start envy trenching?
+
+[10:16] Sahil Patil: No, MV trench is supposed to start. Is it the 9th? The 9th, yeah. Yeah. We're aiming to do a pre activity for Monday.
+
+[10:25] Aaron Gonzalez: Okay, good luck on that one.
+
+[10:28] Sahil Patil: Three
+
+[10:28] Aaron Gonzalez: activities can
+
+[10:29] Sahil Patil: be
+
+[10:29] Aaron Gonzalez: tough sometimes.
+
+[10:30] Sahil Patil: Oh, yeah.
+
+[10:32] Aaron Gonzalez: Reactivity on Monday. Okay, other than the pre activity, is mass grading still holding you guys back or anything else holding you guys back? I
+
+[10:49] Sahil Patil: asked. Grading won't be an issue if the weather will hold off. So we're going to jump in C block as soon as they're done with D and clear that little spot out for them. And I don't know, I feel like we're gonna be able to stay ahead. It's gonna be close.
+
+[11:01] Aaron Gonzalez: Okay, Awesome. We talked about the FME a little bit. I'm assuming it's still kind of
+
+[11:16] Sahil Patil: in
+
+[11:16] Aaron Gonzalez: the upper echo.
+
+[11:20] Sahil Patil: Believe that's case breaker. Yeah. Got the change ordered 99.99. Done. We're gonna write up the for it now, but.
+
+[11:35] Aaron Gonzalez: Okay. When do you expect to get that change order in?
+
+[11:42] Sahil Patil: We're having an internal review of it. I believe next Wednesday. That's either Wednesday or Thursday, whatever day they schedule those four. Now for the over the 100k.
+
+[11:56] Aaron Gonzalez: Okay. That's the change order amount. 100k.
+
+[11:59] Sahil Patil: No, it's 1.1 and some change.
+
+[12:02] Aaron Gonzalez: Okay. All right.
+
+[12:07] Sahil Patil: I'm sure you're gonna put it back when we probably. We'll probably get like six out of it, but. Oh
+
+[12:11] Aaron Gonzalez: yeah,
+
+[12:12] Sahil Patil: our original cost is like right around 550. So
+
+[12:16] Aaron Gonzalez: you shot high just so you can land safely? Pretty much,
+
+[12:21] Sahil Patil: yeah. Well, our. Our contractual arrays were stupid, huh? Okay.
+
+[12:28] Aaron Gonzalez: All right. So we're pretty much almost resolved on this, right? Just. We're gonna have to wait till next week to officially close this.
+
+[12:36] Sahil Patil: Yeah.
+
+[12:36] Aaron Gonzalez: Okay.
+
+[12:49] Sahil Patil: This
+
+[12:49] Aaron Gonzalez: one kind of crosses a little bit with what we already talked about. Was Santek holding things back? Have they already reviewed stantech? Sorry. I
+
+[12:59] Sahil Patil: think the turnover is going pretty good for reviewing the. Yeah, they've been going pretty. Pretty smooth with what we've given them. So they can probably don't have any issues currently that I can
+
+[13:10] Aaron Gonzalez: think of.
+
+[13:11] Sahil Patil: No.
+
+[13:13] Aaron Gonzalez: And if it resurfaces, we. We start another one, but it's up to you guys.
+
+[13:18] Sahil Patil: Yeah, I think that's probably a good route to go for the five day lead time. Is that per block or if we give them a certified information? Yeah, any. Anything that I submit. Okay.
+
+[13:30] Aaron Gonzalez: Okay. Let me add that note here though, just in case. Five day turnaround. So the reason
+
+[13:37] Sahil Patil: I'm asking is because at the rate we're going right now, we're doing a block every two days for distro. And once we get four and more machines in production, we're gonna be doing a block every three days. Two and a half, three days. That's the only reason I'm asking that. That's. Yeah. Assuming we don't have any weather next week, distro. Distro will be out of work by next Thursday. So, I mean, put in that perspective, it just. It doesn't sound very good. Just wanted to bring that up. Yeah,
+
+[14:08] Aaron Gonzalez: I'm gonna keep this one on then. Given what was just context. We just got there. So as far as
+
+[14:16] Sahil Patil: the. The grading activities. Holding that up. So I can't do turbos. No, grading's done. So. Yeah,
+
+[14:22] Aaron Gonzalez: we can't. We can't distro the grading. The ground's not ready. Right. So. Okay, let's talk about PD10 machines. You guys have enough?
+
+[14:33] Sahil Patil: We have plenty of machines. We actually are going to be looking at downsizing once we get. Once we get more rolling. So today with four PD10s we got. We're training for 250 to 300 today. So at that rate, I only need four or five more to production and we have 11 or 12. So we're going to get rid of a machine or two. Only have one or two extra on standby, get rid of the Hercules, and then these guys are only going to get faster and faster. Like right now, these guys are only 50 and 60 a day, even with the drive times. Once they get used to it, they'll start dropping 100 plus. So knock
+
+[15:13] Aaron Gonzalez: on wood, right? Hopefully it stays like that. But if I were to tell you how other projects are doing as far as numbers give it. I mean granted they have challenges, right. With refusals and stuff, but you guys are doing well. I mean with four machines hitting 250, that's, that's good. Are we seeing any like refusals or challenging conditions? Like subgrade conditions?
+
+[15:32] Sahil Patil: So no refusals, but we are. The drive times are pretty rough right now. Like just for today, we're looking at two machines averaging 3 minutes and 50 seconds, another machine averaging 4 minutes and 20 seconds, and another one averaging over 5 minutes. So that's just a lot of, that's a lot of drive time for pile. And then it's really not good for the machines either. So excess camera wear etc. So might.
+
+[16:01] Aaron Gonzalez: Might be worth having a few spare machines.
+
+[16:03] Sahil Patil: Right. Or spare
+
+[16:05] Aaron Gonzalez: parts. Right. Just in case with those high drive times, in case the
+
+[16:09] Sahil Patil: machine
+
+[16:09] Aaron Gonzalez: goes
+
+[16:09] Sahil Patil: next week. Once I go back to Delta this next Monday and I come back, I'll have my trailer and onyx on the way. I got plenty of everything, so that'll help a lot too.
+
+[16:19] Aaron Gonzalez: Okay, any connectivity issues to the GPSs? Are we running Carlson?
+
+[16:25] Sahil Patil: Yeah, we have Carlson everything. Carloson's Kids and Kitty 10. And we, we'll have an issue every like 30 minutes. Maybe someone will get lost SL for May 5, 10 seconds. But it's been nothing major to really cause any concerns. Just body. I do have a repeater where you feel like we need it. Okay, I got you. I, I'll, I'll, I'll communicate with you with that.
+
+[16:45] Aaron Gonzalez: Awesome. That's good. You guys have a repeater. Okay, do we know schedule wise how many we like according to our latest schedule or whatever you guys are running on. Are you guys running on the baseline off of the baseline schedule or.
+
+[16:58] Sahil Patil: No, we're run up to our new P6 current.
+
+[17:02] Aaron Gonzalez: Okay. Are we
+
+[17:03] Sahil Patil: even
+
+[17:04] Aaron Gonzalez: certain? Okay. Okay. I need to get on the email distro list for the latest schedules. But are we,
+
+[17:13] Sahil Patil: are
+
+[17:13] Aaron Gonzalez: we training in the right direction as far as install quantities needed?
+
+[17:18] Sahil Patil: We are going up for sure. I think we started at 8 and then 50 and then 70 and then now we're almost 250. So we're going the right way. I think the schedule calls for like 250. I mean 568 in a decimal a day to meet the schedule we have now. But I'm fairly confident with these guys learning quick and speeding up that much that. Yeah, we're. We're gonna get a manpower count and. But we already have some wrecks put in. Get some more wrecks put in. I think we're gonna need a couple more guys. I got two guys on permit and Delta, so I'm just waiting to see when they can get released. So when I can go with guys over here, that'd be some real good experience to help get other guys running and drop some good numbers too, so.
+
+[18:04] Aaron Gonzalez: Yeah, yeah,
+
+[18:05] Sahil Patil: absolutely.
+
+[18:07] Aaron Gonzalez: But you know,
+
+[18:09] Sahil Patil: we
+
+[18:09] Aaron Gonzalez: have enough
+
+[18:10] Sahil Patil: workers
+
+[18:10] Aaron Gonzalez: and enough operators for the up and coming machines that are going to be delivered. Any constraint there? Okay, we
+
+[18:17] Sahil Patil: don't have any more machines getting delivered, it's just supplying the machines are on the job. We have two machines that are down with harness issues which hopefully we'll have some here, here next week to look at. And then we have a couple machines that need some parts so we have enough people for the machine to be upper operational and by the time the next machines get fixed, we should hopefully have people the same week. So
+
+[18:41] Aaron Gonzalez: yeah, forgive me if I missed this, but up and running. Once we're, you know, running full force, how many machines will be running?
+
+[18:49] Sahil Patil: I'd like to run eight or nine.
+
+[18:51] Aaron Gonzalez: Okay. Okay. Yeah, sounds good. If, if issues do arise, just let me know with what the numbers you're putting up right now. With four machines, like I'm assuming two more weeks, we could be hitting, I mean max, right? Conservatively, we could be hitting that 550 goal. I think that's what it said. We feel confident.
+
+[19:12] Sahil Patil: Yeah, we're shooting currently machine to get to the point of dropping 100 each and even with the long drive times, they can still hit 100. So it's just getting these guys used to it. I mean this is only the third day guiding pile in. The first two days are pretty rough so. So we get, we really need to get that momentum going. It's going to take a little time. So.
+
+[19:28] Aaron Gonzalez: Okay, looking at terabase, just so I'm aware, what's your sequence right now? Where are you guys at?
+
+[19:38] Sahil Patil: Far bottom left corner.
+
+[19:42] Aaron Gonzalez: Okay, these blocks right here?
+
+[19:44] Sahil Patil: Yeah, that one right there. PCs. 19. Okay,
+
+[19:49] Aaron Gonzalez: then you're moving to
+
+[19:49] Sahil Patil: 20. Yeah. So
+
+[19:52] Aaron Gonzalez: it'll be 1920 then, then 8 or then 17 and then 18. I
+
+[19:58] Sahil Patil: think we're going 18 and 17, right Ryan? 19, 20, 18, 17. Or is it 17 18. Is that the way we're going? It'll be okay. 19, 18, 20, 17. Yeah. Okay.
+
+[20:23] Aaron Gonzalez: Like that. Okay. Like a zigzag. Nice little Z. Okay.
+
+[20:27] Sahil Patil: Wasn't meant to be that way, but meant to kind of be anyway. That's all it's going to be. This is for pile insta. Yeah. Are we not doing. Yeah, right now we're going 19, 20, 18, 17 because those only blocks we can get piles brought to. So we have to go 20 because we can't get piles brought to what now? It's exactly the other way. I mean you do what we gotta do. We don't have piles, so. All right, it'd be nice if somebody lets me know that these plans are changing when they change, so. I appreciate that. Well, that was the way we were gonna be going with it, so anyway. There's piles out in one block that's almost complete. The other one is where we were told to start for 17. That's the only other place that has piles. So you can stop production or we can. I mean, you gotta. Whatever makes sense. Right? We're gonna try and get what we can out tomorrow, but one day of running room, like, let's be realistic. It's not looking like it's gonna happen. No, it definitely isn't. So, I mean, I don't care whichever way you guys want to go, but there's. Yeah, we'll figure a path to travel up that's effective for the team.
+
+[21:44] Aaron Gonzalez: Okay. All right. Once you guys are done here. I know I asked a lot of questions, but the more context I have, the better. We're planning to move where. Where is grading happening again? It's
+
+[21:58] Sahil Patil: gonna be in those. Those blocks registered by themselves. Those two small ones at the bottom. Those are done. We're waiting on. Waiting on Stan Tag or. We got that back here. Chad, you said you want me to turn that over? Stanhack's already
+
+[22:13] Cody Martens: said it.
+
+[22:13] Sahil Patil: They're good to go. Our internal front end has to look at it to make sure, and then we can. Okay. So once it gives it. What do you think that'll be? I sent an email this morning. I hadn't heard anything. It's probably next week. We've got a few days anyway, so we should have. Yeah, I was saying earlier next week we should have that. And then we're going up to the top right there.
+
+[22:36] Aaron Gonzalez: Yeah,
+
+[22:37] Sahil Patil: that's right. That's. That's where we are currently grading right now.
+
+[22:41] Aaron Gonzalez: Awesome. You guys are sitting good. I mean, correct me if I'm wrong, but it looks like you guys have a good grip on things right now.
+
+[22:49] Sahil Patil: We do, as long as we don't speed on. We can't afford to slow down, though. We got to keep going. If we slow down anything, it's going to
+
+[22:55] Aaron Gonzalez: cause a
+
+[22:56] Sahil Patil: bottleneck effect. Hopefully we can. We can push through this weather. Next week is going to be a big, big determining factor how it goes. So the good thing about it is it's not freezing, so we can deal with mud better than we can frozen and falling. So I think.
+
+[23:14] Aaron Gonzalez: Yeah, absolutely. Okay. All right. We were working on an optimized logistics plan. We. Are we having issues with access into certain areas?
+
+[23:30] Sahil Patil: Yep, that's the biggest issue. I mean, I have three trucks. One's in the shop ready to be picked up, and so I'll have four trucks able to run just getting out there has been what's holding us up because
+
+[23:42] Aaron Gonzalez: of the ground conditions or
+
+[23:43] Sahil Patil: the
+
+[23:44] Aaron Gonzalez: roads that are not built or
+
+[23:46] Sahil Patil: they're laying matted roads and then they're doing temp lay downs with Matt. So once they're able. We were able to get into one small area today. We can't get. They should have the lay down yard done tomorrow morning.
+
+[24:03] Aaron Gonzalez: Yeah,
+
+[24:04] Sahil Patil: I was out there at 3. It didn't look like it was going to be done. No. So, yeah, so now I need to focus on piles and cable since there's nothing really out there. But
+
+[24:15] Aaron Gonzalez: what do you need
+
+[24:16] Sahil Patil: to
+
+[24:17] Aaron Gonzalez: get you moving more other than ground conditions improving?
+
+[24:21] Sahil Patil: That's. That's it?
+
+[24:23] Aaron Gonzalez: Just ground conditions. Okay.
+
+[24:25] Sahil Patil: Yeah. I have the drivers, the trucks. I mean, we're able. We just need to be able to get out there.
+
+[24:31] Aaron Gonzalez: Yeah. Next week is going to be tough for you, for sure.
+
+[24:41] Sahil Patil: Three inches of rain next week is on the forecast, so.
+
+[24:46] Aaron Gonzalez: Okay. The. The matting should help some.
+
+[24:52] Sahil Patil: Yeah. Yes. Yeah. As long as it's not lightning or being, you know, crazy weather. We'll put mats down. No matter what you're trying to get ahead, we got a little bottleneck effect going on in, you know, we've been trying to put it with everybody. So once we get help done, we can go ahead and do D6, D5 with nobody else there. So that's gonna help us out to speed that up, too. 10,
+
+[25:13] Aaron Gonzalez: four. Okay. Yeah. If things get worse,
+
+[25:18] Sahil Patil: we'll bump
+
+[25:19] Aaron Gonzalez: this up to high and closely monitor it. Did you get the BOM from Stantec,
+
+[25:31] Sahil Patil: Lewis? We're currently working on identifying more important items because they don't want to do the whole thing. So that's in progress. We've contacted our subcontractor, and they're working on a list for us. 10,
+
+[25:49] Aaron Gonzalez: 4. Okay. Hey,
+
+[25:52] Cody Martens: Luis, on that,
+
+[25:54] Sahil Patil: I think
+
+[25:54] Cody Martens: there was one or two main items that we knew had the longest lead times. Have we responded with those two items to get them going?
+
+[26:03] Sahil Patil: I'll get. It's. It's the DMC connector fittings. I'm. I'm gonna get with Manny and see which one it is.
+
+[26:13] Aaron Gonzalez: Luis, are you
+
+[26:14] Cody Martens: taking point
+
+[26:15] Aaron Gonzalez: on this one, or is it Riker?
+
+[26:18] Sahil Patil: Luis.
+
+[26:19] Aaron Gonzalez: Okay,
+
+[26:21] Cody Martens: Luis, I would just.
+
+[26:22] Tyler Wilcox: Just hearing what that is. Yeah. See, is. That is a. That is a pain in the ass to get those to a job site. I had the same thing on my last one, so that I would definitely prioritize getting those ordered.
+
+[26:34] Cody Martens: Just
+
+[26:36] Sahil Patil: what
+
+[26:36] Aaron Gonzalez: is. Tyler, what is it?
+
+[26:39] Tyler Wilcox: It's. They're DMC connections. They're basically the. The. My understanding is they're like the termination points or paddles or. It's. Yeah, it's part of the. Is
+
+[26:50] Aaron Gonzalez: it the lugs.
+
+[26:52] Sahil Patil: It's for the ground. It's for the ground. That's all the concern. Oh,
+
+[26:56] Aaron Gonzalez: so they're groundless.
+
+[26:59] Cody Martens: So, Luis, just send Gomez an email stating the DMC connectors are our main point, our main issue off the bat. And we need them to get working on them now while we finalize our list.
+
+[27:14] Sahil Patil: M4. I'll just say the whole grounding, that's really the big thing. So all the grounding material, I
+
+[27:22] Aaron Gonzalez: bumped it up to high, so we can really nail this one down.
+
+[27:27] Sahil Patil: Yeah. I'll send the email after this call, and I'll tell you how it goes on the next call.
+
+[27:32] Aaron Gonzalez: Okay. Did we get an answer on an RFI to use secondary power at the substation?
+
+[27:39] Sahil Patil: The big thing here, their client is going through some stuff with the utility company that contractually the client has to give to them. That email was sent to us. I didn't really get to read too much into it, but their RWE is old. Ohio Med Utility is owed studies from rwe, so that's
+
+[28:09] Aaron Gonzalez: considering the
+
+[28:10] Sahil Patil: search.
+
+[28:11] Aaron Gonzalez: So the client has to get some studies over to
+
+[28:13] Sahil Patil: the
+
+[28:14] Aaron Gonzalez: utility company?
+
+[28:16] Sahil Patil: That is correct.
+
+[28:18] Aaron Gonzalez: Okay.
+
+[28:19] Sahil Patil: Until
+
+[28:19] Aaron Gonzalez: those studies are contractually delivered, we can't get an answer on secondary power.
+
+[28:25] Sahil Patil: Yeah. So we're looking at, like, two months there. Once I find out, I have to get clarification on the email. But once I find out what it is. It was studies, though, that they said that was owed. Once I get clarification exactly what that meant, I'll update this next week as well.
+
+[28:52] Aaron Gonzalez: Okay. Tyler, you got any questions? Oh, he hopped off another call. All right, for the sake of time on these low priority constraints, is there anyone that we want to bring up or have updates for?
+
+[29:21] Sahil Patil: No, I don't believe so. Okay.
+
+[29:23] Aaron Gonzalez: You
+
+[29:24] Cody Martens: can get rid of the DC electrical. Two months delayed.
+
+[29:31] Aaron Gonzalez: Awesome. Okay. All right, I think we're sitting good, guys. We knocked off a couple constraints, and you guys have a good grip on your sequence, but let's, you know, keep our fingers crossed for the rain. It's not too bad next week. If anything arises, just shoot me a message. Luis or anybody on the team, and I'll be glad to help.
+
+[29:56] Sahil Patil: Good. We appreciate it. Appreciate
+
+[29:58] Aaron Gonzalez: the time, guys. Have a good one.
+
+[30:01] Sahil Patil: You too, Gonzalez.

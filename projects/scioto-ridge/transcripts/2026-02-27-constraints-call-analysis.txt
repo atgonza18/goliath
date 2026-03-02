@@ -1,0 +1,348 @@
+SCIOTO RIDGE -- CONSTRAINTS CALL ANALYSIS
+Date: February 27, 2026 | 2:30 PM - 3:00 PM CST
+Analyst: Goliath AI System
+============================================================
+
+============================================================
+1. MEETING SUMMARY
+============================================================
+
+The Scioto Ridge constraints call on February 27, 2026 covered the current status of multiple
+workstreams including DC electrical installation, PV grading, pile driving, MV trenching,
+logistics/access, BOM procurement, and substation secondary power. The overall tone was
+cautiously optimistic -- the site team has made meaningful progress over the past week with
+PV grading restarting on February 25, pile driving underway for three days with four PD10
+machines averaging 250-300 piles per day, and DC electrical installation confirmed to begin
+Monday, March 2. Several constraints were downgraded or closed during the call.
+
+The dominant theme was weather risk. The forecast calls for three inches of rain the following
+week, which threatens to stall momentum across grading, pile driving, and logistics. The team
+is already in a Force Majeure Event (FME) situation for December and January and is tracking
+weather closely. Ground conditions are also creating access challenges for material delivery
+trucks, with matted roads and temporary laydown yards not yet complete. Despite this, the
+site team expressed confidence in their sequence and trajectory, noting they have adequate
+machines, operators, and a clear block-by-block plan.
+
+Two items emerged as escalated concerns: (1) the grounding material BOM -- specifically DMC
+connector fittings -- which have long lead times and need to be ordered immediately even
+before the full BOM is finalized, and (2) the substation secondary power RFI, which is blocked
+by a contractual dispute between the client (RWE) and Ohio Mid utility over owed studies,
+with an estimated two-month resolution timeline. Aaron bumped the BOM constraint to HIGH
+priority during the call given the procurement urgency.
+
+============================================================
+2. SPEAKERS & ROLES
+============================================================
+
+AARON GONZALEZ (DSC / Dallas Support Center)
+- Role: Portfolio-level oversight / constraints call facilitator
+- Function: Ran the meeting agenda, asked probing questions on each constraint, updated
+  constraint tracker live during the call, escalated/de-escalated priority levels, pushed
+  for specific dates and commitments. Acts as the DSC liaison ensuring the site team has
+  what it needs and flagging risks upward.
+
+SAHIL PATIL (Site Team -- likely APM or Site Superintendent, referred to as "Bird")
+- Role: Primary site representative / field operations lead
+- Function: Provided the majority of status updates across all workstreams. Has detailed
+  knowledge of grading progress, pile driving rates, machine counts, crew status, and
+  sequencing. Delivered the safety share. Appears to be the on-the-ground operational
+  leader for Scioto Ridge.
+
+CODY MARTENS (Site Team -- likely PM or Senior PM)
+- Role: Project management / oversight
+- Function: Spoke less frequently but made targeted interventions on high-impact items.
+  Directed Luis (referenced but not a named speaker) to send the DMC connector email to
+  Gomez. Suggested closing the DC electrical constraint. Appears to have authority over
+  procurement decisions and subcontractor coordination.
+
+TYLER WILCOX (Site Team -- likely transferred from another project)
+- Role: Subject matter advisor / experienced hand
+- Function: Provided a brief but critical warning about DMC connector fittings based on
+  his experience on a prior project -- flagged them as very difficult to get to a job site
+  and urged prioritization. Left the call early for another meeting.
+
+OTHER REFERENCED PERSONNEL (not on call as named speakers):
+- Luis: Taking point on the BOM/procurement effort. Was directed to email Gomez about
+  DMC connectors immediately after the call.
+- Riker: Was asked about but confirmed NOT the point person on BOM (Luis is).
+- Chad: Referenced in discussion about survey/topo data and Stantec turnover.
+- Ryan: Referenced briefly regarding pile sequence confirmation.
+- Ferdinand (Fern): Engineering contact for pile plot plans / graded surface files.
+- Manny: Contact Luis needs to check with on specific DMC connector fitting specs.
+- Miller Brothers: Survey subcontractor providing topo data.
+- Gomez: Stantec contact for BOM / grounding material procurement.
+
+============================================================
+3. CONSTRAINTS DISCUSSED
+============================================================
+
+CONSTRAINT #1: DC Electrical Installation -- Two-Month Delay
+- Description: DC electrical install was delayed approximately two months from original
+  schedule due to pile issues that held up inverter conduits and LBD conduits.
+- Owner: Site team (Sahil/Bird)
+- Status: RESOLVED / CLOSING -- DC install confirmed to start Monday, March 2. Pile issues
+  have been resolved. Entire F block is open and ready. Equipment is on site (second reel
+  carrier present, missing minor parts not needed for 2+ weeks).
+- Committed: Start DC install Monday, March 2. [02:08-02:37]
+- Decision: Cody recommended removing this constraint entirely [29:28]. Aaron agreed to
+  close it.
+- Priority: Was HIGH --> CLOSED during call
+
+CONSTRAINT #2: PV Grading Restart and Progress
+- Description: PV grading had been paused and restarted on February 25. Weather threatens
+  continued progress. Surface files and PPP (Pile Plot Plan) turnovers need to stay ahead
+  of pile driving.
+- Owner: Site team (Sahil/Bird + Chad for survey coordination)
+- Status: IN PROGRESS -- All of E/F block grading complete and turned over. D5/D6 data
+  submitted but SOP 235 turnover form not yet completed. D1-D4 cut and fill expected done
+  by Friday afternoon; full completion including vegetative burner work expected Tuesday.
+  Currently grading in D1-D4.
+- Committed: D1-D4 grading done by Tuesday, March 3 [07:12-07:31]. Sahil to fill out
+  SOP 235 turnover form for D5/D6 "today or tomorrow" [06:42-06:48]. LIDAR scheduled for
+  March 24; interim blocks will use rolled topos [09:06-09:16].
+- Priority: Was HIGH --> Dropped to MEDIUM during call [09:37-09:44]
+
+CONSTRAINT #3: Stantec Engineering Turnaround (5-Day Lead Time)
+- Description: Stantec (engineering firm) has a 5-day turnaround on pile plot plan reviews
+  after receiving graded surface files. At current grading pace (one block every 2-3 days),
+  the 5-day turnaround could create a bottleneck where grading outpaces engineering review.
+- Owner: Stantec (external) / site team to manage submissions
+- Status: ACTIVE CONCERN -- No current issues with Stantec reviews, but Sahil flagged that
+  at the rate they are grading (a block every 2-2.5 days with 4 machines, accelerating to
+  every 2.5-3 days with more machines), the 5-day turnaround could cause distribution to
+  run out of work by next Thursday if weather cooperates. [13:30-14:08]
+- Committed: Aaron noted the concern and kept it on the tracker. [14:08]
+- Priority: MEDIUM (potential bottleneck)
+
+CONSTRAINT #4: FME (Force Majeure Event) -- Weather / Erosion
+- Description: Site is currently in an FME situation for December and January weather events.
+  A change order of ~$1.1M has been prepared (actual cost ~$550K, submitted high for
+  negotiation buffer). Spring weather approaching with 3 inches of rain forecast next week.
+- Owner: Site team (change order in internal review)
+- Status: Change order 99.99% done. Internal review scheduled for next Wednesday or Thursday
+  (the review board for items over $100K). [11:35-11:56]
+- Committed: Internal review next Wed/Thu. Expect to receive ~$600K of the $1.1M ask. [12:07]
+- Priority: MEDIUM (financial resolution pending, weather ongoing)
+
+CONSTRAINT #5: MV Trenching Start
+- Description: MV (Medium Voltage) trenching needs to begin. Boring started February 25.
+- Owner: Site team
+- Status: MV trench start targeted for March 9. Pre-activity meeting planned for Monday,
+  March 2. Mass grading is the prerequisite -- team plans to jump into C block as soon as
+  D block grading is done. [10:16-10:49]
+- Committed: Pre-activity meeting Monday. MV trench start March 9. [10:16-10:30]
+- Priority: MEDIUM
+
+CONSTRAINT #6: Logistics / Site Access
+- Description: Material delivery trucks cannot reliably access field areas due to ground
+  conditions. Matted roads being laid, temporary laydown yards under construction.
+- Owner: Site team
+- Status: ACTIVE -- Three trucks available (one in shop, will have four). Laydown yard
+  expected done tomorrow morning (Feb 28). Access is the #1 limiting factor for logistics.
+  Three inches of rain forecast next week will make it worse. [23:30-24:52]
+- Committed: Focus on piles and cable delivery given current access limitations. Continue
+  laying mats regardless of weather (as long as no lightning). [24:04-24:52]
+- Priority: MEDIUM (will bump to HIGH if weather worsens) [25:13-25:19]
+
+CONSTRAINT #7: BOM from Stantec -- Grounding Material / DMC Connectors
+- Description: The Bill of Materials from Stantec has not been fully delivered. Stantec does
+  not want to produce the entire BOM at once, so the team is identifying priority items.
+  DMC connector fittings (grounding components) have been flagged as the longest lead-time
+  item. Tyler confirmed from prior project experience these are very hard to source.
+- Owner: Luis (point person), coordinating with subcontractor and Manny for specs, Gomez
+  at Stantec
+- Status: IN PROGRESS -- Subcontractor working on a priority list. DMC connectors identified
+  as critical long-lead item but NOT yet ordered. [25:31-27:27]
+- Committed: Luis to send email to Gomez after the call requesting DMC connectors / all
+  grounding material be prioritized immediately. Luis to report back on next call. [27:14-27:32]
+- Priority: Bumped to HIGH during call [27:22-27:27]
+
+CONSTRAINT #8: Substation Secondary Power RFI
+- Description: An RFI was submitted to use secondary power at the substation. The answer is
+  blocked because the client (RWE) owes studies to Ohio Mid utility company per their
+  contract, and the utility will not respond until those studies are delivered.
+- Owner: Client (RWE) -- out of site team's direct control
+- Status: BLOCKED -- Estimated two-month timeline for resolution. Sahil needs to read the
+  full email and get clarification on exactly what studies are owed. [27:32-28:52]
+- Committed: Sahil to get clarification on the email and update next call. [28:25-28:52]
+- Priority: HIGH (two-month potential delay on substation power, outside team's control)
+
+============================================================
+4. ACTION ITEMS
+============================================================
+
+1. [SAHIL/BIRD] Start DC electrical installation Monday, March 2
+   - Timestamp: [02:08-02:37]
+   - Due: Monday, March 2, 2026
+
+2. [SAHIL/BIRD] Complete SOP 235 turnover form for D5/D6 grading
+   - Timestamp: [06:42-06:48]
+   - Due: Today (Feb 27) or tomorrow (Feb 28)
+
+3. [SAHIL/BIRD] Complete D1-D4 grading (cut and fill done Friday, full completion Tuesday)
+   - Timestamp: [07:12-07:31]
+   - Due: Tuesday, March 3, 2026
+
+4. [SAHIL/BIRD + CHAD] Send D1-D4 graded surface files to engineering Wednesday after
+   grading completion (5-day turnaround expected)
+   - Timestamp: [08:35-08:48]
+   - Due: Wednesday, March 4, 2026
+
+5. [SITE TEAM] Conduct MV trenching pre-activity meeting
+   - Timestamp: [10:16-10:30]
+   - Due: Monday, March 2, 2026
+
+6. [SITE TEAM] Submit FME change order (~$1.1M) through internal review
+   - Timestamp: [11:35-11:56]
+   - Due: Wednesday or Thursday, March 4-5, 2026
+
+7. [LUIS] Send email to Gomez (Stantec) requesting DMC connector fittings / all grounding
+   material be prioritized for immediate procurement
+   - Timestamp: [26:50-27:27]
+   - Due: Immediately after call (Feb 27, 2026)
+
+8. [LUIS] Coordinate with Manny to confirm exact DMC connector fitting specifications
+   - Timestamp: [26:03-26:13]
+   - Due: ASAP (before or concurrent with Gomez email)
+
+9. [LUIS] Report back on BOM/grounding material procurement status at next constraints call
+   - Timestamp: [27:27-27:32]
+   - Due: Next constraints call
+
+10. [SAHIL/BIRD] Read and get clarification on the RWE/Ohio Mid utility email regarding
+    owed studies blocking substation secondary power
+    - Timestamp: [28:25-28:52]
+    - Due: Next constraints call (update to be provided)
+
+11. [SAHIL/BIRD] Communicate with Aaron about GPS repeater needs if connectivity issues worsen
+    - Timestamp: [16:25-16:45]
+    - Due: As needed / ongoing
+
+12. [AARON] Get added to the email distribution list for latest P6 schedules
+    - Timestamp: [17:02-17:13]
+    - Due: ASAP (self-assigned)
+
+13. [SAHIL/BIRD] Return from Delta with trailer and Onyx parts/spares next week
+    - Timestamp: [16:05-16:19]
+    - Due: Next Monday (March 2) departure to Delta, return with supplies
+
+============================================================
+5. KEY DECISIONS
+============================================================
+
+1. DC ELECTRICAL CONSTRAINT CLOSED: Cody recommended and Aaron agreed to remove the
+   "DC Electrical Two-Month Delay" constraint from the tracker entirely since DC install
+   is starting Monday. [29:28-29:31]
+
+2. PV GRADING DOWNGRADED TO MEDIUM: Team agreed to drop PV grading from HIGH to MEDIUM
+   priority given good progress, though weather remains a concern. [09:37-09:47]
+
+3. BOM/GROUNDING BUMPED TO HIGH: Aaron escalated the BOM/grounding material constraint to
+   HIGH priority based on the long lead time risk for DMC connectors. [27:22-27:27]
+
+4. PILE SEQUENCE CONFIRMED: Pile installation sequence will be blocks 19 -> 20 -> 18 -> 17
+   (modified from original plan due to pile delivery accessibility). [19:38-21:44]
+
+5. INTERIM TOPO APPROACH: Until LIDAR arrives March 24, the team will use rolled topos from
+   Miller Brothers for each block as needed, rather than waiting. [09:06-09:16]
+
+6. STANTEC TURNAROUND KEPT ON TRACKER: Despite no current issues, Aaron decided to keep
+   the Stantec 5-day turnaround as a tracked constraint given the pace risk. [14:08]
+
+============================================================
+6. RISKS & FLAGS
+============================================================
+
+1. WEATHER -- CRITICAL RISK: Three inches of rain forecast for the week of March 2. This
+   threatens ALL workstreams simultaneously: grading, pile driving, logistics/access, and
+   MV trenching. The team is already in FME for Dec/Jan weather. Spring season in Ohio will
+   bring persistent wet conditions. If next week's weather is as bad as forecast, expect
+   significant schedule impact across the board.
+
+2. LOGISTICS BOTTLENECK: The site team cannot reliably deliver materials (piles, cable) to
+   the field due to ground conditions and incomplete road/laydown infrastructure. This is
+   already affecting pile sequencing (had to change from planned sequence because piles
+   can't be delivered to certain blocks). This could cascade into production stoppages.
+
+3. PILE SEQUENCE COMMUNICATION BREAKDOWN: During the pile sequence discussion [20:27-21:44],
+   there was clear frustration from a team member about sequence changes not being
+   communicated: "It'd be nice if somebody lets me know that these plans are changing when
+   they change." This indicates an internal communication gap on the site team that could
+   cause coordination problems.
+
+4. DMC CONNECTOR LEAD TIME: Tyler's warning from personal experience that DMC connectors
+   are "a pain in the ass to get to a job site" combined with the fact they have NOT been
+   ordered yet is concerning. If grounding material procurement drags, it could block
+   electrical work downstream.
+
+5. SUBSTATION SECONDARY POWER -- TWO-MONTH BLOCK: This is entirely outside the team's
+   control (client/utility contractual issue). A two-month delay on secondary power could
+   have significant downstream implications for energization and commissioning schedules.
+   The team does not even have full clarity on what is needed to resolve it.
+
+6. STANTEC 5-DAY TURNAROUND vs. GRADING PACE: If grading continues at the current rate
+   (a block every 2-3 days) and Stantec needs 5 days per submission, there will be a gap
+   where distribution crews run out of approved work. Sahil explicitly flagged that "distro
+   will be out of work by next Thursday" if weather holds. This is a real near-term risk.
+
+7. HIGH PILE DRIVE TIMES: Machines are averaging 3:50 to 5+ minutes per pile drive, which
+   is described as "rough" and "not good for the machines." This accelerates wear on PD10
+   machines and could lead to more machines going down. Two machines are already down with
+   harness issues.
+
+8. MANPOWER DEPENDENCY ON DELTA: Sahil mentioned two experienced operators on permit at the
+   Delta project, waiting for release. The ramp-up plan to 8-9 machines depends partly on
+   getting these experienced operators transferred. If Delta delays their release, Scioto
+   Ridge's production ramp slows.
+
+9. FME CHANGE ORDER NEGOTIATION: The team submitted $1.1M but expects to receive ~$600K
+   against ~$550K actual cost. This is tight -- if the approved amount comes in lower than
+   expected, or if additional FME events occur (likely given forecast), cost exposure grows.
+
+============================================================
+7. FOLLOW-UP ITEMS FOR TRACKING
+============================================================
+
+1. TRACK: Did DC electrical actually start Monday, March 2? Confirm crew, equipment, and
+   F block progress by mid-week.
+
+2. TRACK: D1-D4 grading completion -- was it done by Tuesday, March 3? Were surface files
+   sent to engineering Wednesday?
+
+3. TRACK: Did Luis send the DMC connector/grounding email to Gomez on Feb 27? What was the
+   response? What is the lead time estimate?
+
+4. TRACK: FME change order internal review -- did it happen Wed/Thu (March 4-5)? What was
+   the outcome/approved amount?
+
+5. TRACK: MV trenching pre-activity meeting Monday, March 2 -- did it happen? Any issues
+   identified? On track for March 9 start?
+
+6. TRACK: Weather impact week of March 2-6 -- how much production was lost? Did the 3 inches
+   of rain materialize? What is the cumulative FME impact?
+
+7. TRACK: Substation secondary power -- did Sahil get clarification on the RWE/Ohio Mid
+   utility study situation? Is two months still the expected timeline?
+
+8. TRACK: Stantec turnaround -- is the 5-day SLA being met? Is distribution running out of
+   approved work?
+
+9. TRACK: Laydown yard completion -- was it done by morning of Feb 28? Did it improve
+   logistics access?
+
+10. TRACK: Machine health -- status of the two PD10s down with harness issues. Did parts
+    arrive? Are they back in service?
+
+11. TRACK: Sahil's return from Delta with trailer and Onyx supplies -- did he get what he
+    needed? Are spare parts on site?
+
+12. TRACK: Pile driving production ramp -- are daily numbers trending toward 568/day target?
+    How many machines are running?
+
+13. TRACK: Aaron added to P6 schedule email distribution.
+
+14. TRACK: SOP 235 turnover form for D5/D6 -- was it completed and submitted?
+
+============================================================
+END OF ANALYSIS
+============================================================

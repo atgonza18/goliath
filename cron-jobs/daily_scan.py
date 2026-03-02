@@ -13,6 +13,9 @@ import subprocess
 import sys
 from datetime import datetime
 from pathlib import Path
+from zoneinfo import ZoneInfo
+
+CT = ZoneInfo("America/Chicago")
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 PROJECTS_DIR = REPO_ROOT / "projects"
@@ -181,11 +184,25 @@ def collect_project_data() -> str:
 
 
 def run_claude_scan(project_data: str) -> str:
-    """Send collected data to Claude CLI for analysis and report generation."""
-    today_str = datetime.now().strftime('%B %d, %Y')
+    """Send collected data to Claude CLI for analysis and report generation.
+
+    Writes the project data to a temp file to avoid OS ARG_MAX limits,
+    then passes a short prompt telling Claude to read that file.
+    """
+    import tempfile
+
+    today_str = datetime.now(CT).strftime('%B %d, %Y')
+
+    # Write project data to temp file — avoids ARG_MAX "Argument list too long" error
+    data_file = Path(tempfile.mktemp(prefix="goliath_scan_", suffix=".md"))
+    data_file.write_text(project_data)
+    print(f"Wrote {len(project_data)} chars of project data to {data_file}")
+
     prompt = f"""You are the GOLIATH DSC Operations Agent running a scheduled end-of-day scan.
 
-Below is the current state of POD, Schedule, and Constraints data across all 12 projects.
+Read the project data from: {data_file}
+
+That file contains the current state of POD, Schedule, and Constraints data across all 12 projects.
 Data has been extracted from PDF, Excel, XER, and text files where possible.
 
 ## CRITICAL RULES — READ THESE FIRST
@@ -235,32 +252,37 @@ For projects WITHOUT data: "What format are your reports in? Can you provide CSV
 ## Data Coverage Summary
 List how many projects had readable data vs. how many had only filenames.
 This helps track our data ingestion progress.
-
----
-
-PROJECT DATA:
-{project_data}
 """
 
     env = os.environ.copy()
     env.pop("CLAUDECODE", None)
+    env.pop("CLAUDE_AGENT_SDK_VERSION", None)
+    env.pop("CLAUDE_CODE_ENTRYPOINT", None)
 
     cmd = [
         "claude",
         "--print",
         "--dangerously-skip-permissions",
+        "--strict-mcp-config",
         "--output-format", "text",
         prompt,
     ]
 
-    result = subprocess.run(
-        cmd,
-        capture_output=True,
-        text=True,
-        timeout=600,
-        cwd=str(REPO_ROOT),
-        env=env,
-    )
+    try:
+        result = subprocess.run(
+            cmd,
+            capture_output=True,
+            text=True,
+            timeout=600,
+            cwd=str(REPO_ROOT),
+            env=env,
+        )
+    finally:
+        # Clean up temp file
+        try:
+            data_file.unlink()
+        except OSError:
+            pass
 
     if result.returncode != 0:
         return f"# Scan Failed\n\n```\n{result.stderr[:2000]}\n```"
@@ -271,10 +293,10 @@ PROJECT DATA:
 def main():
     REPORTS_DIR.mkdir(parents=True, exist_ok=True)
 
-    today = datetime.now().strftime("%Y-%m-%d")
+    today = datetime.now(CT).strftime("%Y-%m-%d")
     report_path = REPORTS_DIR / f"{today}_daily_scan.md"
 
-    print(f"[{datetime.now().isoformat()}] Starting daily scan...")
+    print(f"[{datetime.now(CT).isoformat()}] Starting daily scan...")
 
     # Collect data from all projects (with PDF/Excel extraction)
     print("Collecting project data (extracting from PDFs, Excel, XER, text files)...")

@@ -3,6 +3,7 @@ Async Background Scheduler — runs cron-style tasks inside the bot's event loop
 
 Replaces system crontab with a lightweight asyncio-based scheduler that:
   - Runs tasks at specific times in America/Chicago timezone
+  - Supports day-of-week filtering (e.g. Mon-Fri only, Sunday only)
   - Survives individual task failures without crashing
   - Provides a registry of scheduled tasks for introspection
   - Prevents double-firing via in-flight guards and eager last_run stamping
@@ -15,21 +16,38 @@ Race-condition prevention (the three-layer defense):
   3. Proactive dedup: proactive sessions have their own date-based dedup dict
      as an extra safety net (one run per session type per calendar day).
 
-Scheduled tasks:
-  - 12:05 AM CT — Create daily constraints folder
-  - 5:00 AM CT  — Morning report (Bible verse + todo list + scan + trends to Telegram)
-  - 6:00 AM CT  — Morning proactive thinking session
-  - 10:00 AM CT — Follow-up queue scan (commitments + approaching deadlines)
-  - 4:00 PM CT  — Follow-up queue scan (commitments + approaching deadlines)
-  - 6:00 PM CT  — Evening proactive thinking session
-  - 7:00 PM CT  — Folder cleanup scan
-  - 11:00 PM CT — Daily scan (run Claude analysis of all 12 projects)
-  - Every 45s  — Poll Gmail IMAP for inbound [INBOX:] tagged emails
+Day-of-week schedule:
+  Monday–Friday (workdays):
+    - 12:05 AM CT — Create daily constraints folder (daily — runs every day)
+    - 5:00 AM CT  — Morning report (Bible verse + todo list + scan + trends)
+    - 6:00 AM CT  — Morning proactive thinking session
+    - 5:00 PM CT  — Daily Proactive Follow-Up PDF report (end-of-day, what to chase tomorrow)
+    - 6:00 PM CT  — Evening proactive thinking session
+    - 7:00 PM CT  — Folder cleanup scan
+    - 11:00 PM CT — Daily scan (runs every day)
+    [DISABLED] Follow-up queue scans (10 AM, 4 PM) — replaced by consolidated PDF
+  Saturday: Day off — only infrastructure tasks (email poll, etc.)
+  Sunday:   Shifted schedule — reports/sessions fire at 4 PM CT
+            (respects church in the morning, preps for Monday evening)
+    - 4:00 PM CT  — Morning report (Sunday edition)
+    - 4:00 PM CT  — Morning proactive thinking session (Sunday edition)
+    - 4:15 PM CT  — Daily Proactive Follow-Up PDF report (Sunday edition)
+    - 6:00 PM CT  — Evening proactive thinking session (Sunday — same time)
+    - 7:00 PM CT  — Folder cleanup scan (Sunday — same time)
+    [DISABLED] Follow-up queue scan (5 PM Sunday) — replaced by consolidated PDF
+
+  Always-on tasks (every day, including Saturday):
+    - Every 45s   — Poll Gmail IMAP for inbound [INBOX:] tagged emails
+    - 12:05 AM CT — Create daily constraints folder
+    - 11:00 PM CT — Daily scan (run Claude analysis of all 12 projects)
 """
 
 import asyncio
+import json
 import logging
 import os
+import re
+import sqlite3
 import subprocess
 import sys
 import time
@@ -41,14 +59,19 @@ from zoneinfo import ZoneInfo
 
 from bot.config import (
     REPO_ROOT, REPORT_CHAT_ID, TELEGRAM_BOT_TOKEN, PROJECTS,
-    ESCALATION_DB_PATH, ESCALATION_SCAN_TIMES,
-    HEARTBEAT_INTERVAL_SECONDS,
+    PROACTIVE_FOLLOWUP_DB_PATH,
+    ESCALATION_DB_PATH, ESCALATION_SCAN_TIMES,   # backward compat aliases
     FOLLOWUP_DB_PATH, FOLLOWUP_SCAN_TIMES,
+    MEMORY_DB_PATH,
 )
 
 logger = logging.getLogger(__name__)
 
 CT = ZoneInfo("America/Chicago")
+
+# Day-of-week sets (weekday(): 0=Monday, 1=Tuesday, ..., 6=Sunday)
+MON_FRI = {0, 1, 2, 3, 4}   # Monday through Friday — normal workday schedule
+SUN_ONLY = {6}               # Sunday only — shifted schedule (4 PM CT start)
 
 # Paths
 CRON_JOBS_DIR = REPO_ROOT / "cron-jobs"
@@ -67,6 +90,9 @@ class ScheduledTask:
         callback:    Async callable — receives the Scheduler instance.
         interval_seconds: If set (> 0), task fires repeatedly at this interval
                      instead of at a fixed daily time. hour/minute are ignored.
+        days_of_week: Optional set of weekday numbers (0=Mon ... 6=Sun) on which
+                     this task is allowed to fire. None means every day.
+                     Only applies to daily (non-interval) tasks.
         last_run:    Timestamp of the most recent *start* of this task
                      (set eagerly, before callback runs, to prevent re-trigger).
         last_status: "ok" | "error" | None — outcome of the most recent run.
@@ -79,6 +105,7 @@ class ScheduledTask:
     callback: Callable[..., Awaitable[None]]
     description: str = ""
     interval_seconds: int = 0  # 0 = daily task, >0 = repeating interval
+    days_of_week: Optional[set[int]] = None  # None = every day; {0,1,2,3,4} = Mon-Fri
     last_run: Optional[datetime] = None
     last_status: Optional[str] = None   # "ok", "error"
     last_error: Optional[str] = None
@@ -117,18 +144,29 @@ class Scheduler:
         minute: int,
         callback: Callable[..., Awaitable[None]],
         description: str = "",
+        days_of_week: Optional[set[int]] = None,
     ) -> None:
-        """Register a new daily task."""
+        """Register a new daily task.
+
+        Args:
+            days_of_week: Optional set of weekday numbers (0=Mon .. 6=Sun).
+                          If None, the task fires every day.
+        """
         task = ScheduledTask(
             name=name,
             hour=hour,
             minute=minute,
             callback=callback,
             description=description,
+            days_of_week=days_of_week,
         )
         self._tasks.append(task)
+        days_label = ""
+        if days_of_week is not None:
+            day_names = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
+            days_label = f" [{', '.join(day_names[d] for d in sorted(days_of_week))}]"
         logger.info(
-            f"Scheduler: registered '{name}' at {hour:02d}:{minute:02d} CT — {description}"
+            f"Scheduler: registered '{name}' at {hour:02d}:{minute:02d} CT{days_label} — {description}"
         )
 
     def add_interval_task(
@@ -154,15 +192,20 @@ class Scheduler:
 
     def list_tasks(self) -> list[dict]:
         """Return a list of all scheduled tasks with their status."""
+        day_names = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
         result = []
         for t in self._tasks:
             if t.interval_seconds > 0:
                 time_str = f"every {t.interval_seconds}s"
             else:
                 time_str = f"{t.hour:02d}:{t.minute:02d}"
+            days_str = None
+            if t.days_of_week is not None:
+                days_str = ", ".join(day_names[d] for d in sorted(t.days_of_week))
             result.append({
                 "name": t.name,
                 "time_ct": time_str,
+                "days": days_str,
                 "description": t.description,
                 "enabled": t.enabled,
                 "in_flight": t.name in self._in_flight,
@@ -194,6 +237,9 @@ class Scheduler:
                 time_str = f"every {mins}m" if mins >= 1 else f"every {t.interval_seconds}s"
             else:
                 time_str = f"{t.hour:02d}:{t.minute:02d} CT"
+                if t.days_of_week is not None:
+                    day_names = ["M", "Tu", "W", "Th", "F", "Sa", "Su"]
+                    time_str += f" ({','.join(day_names[d] for d in sorted(t.days_of_week))})"
             last = ""
             if t.last_run:
                 last = f" | last: {t.last_run.strftime('%m/%d %I:%M %p')} [{t.last_status or 'running'}]"
@@ -333,6 +379,22 @@ class Scheduler:
                 if (now_ct - last_run_ct).total_seconds() < 120:
                     # Started less than 2 minutes ago — skip to tomorrow
                     target = target_today + timedelta(days=1)
+
+            # GUARD 3: Day-of-week filter. If the task has a days_of_week
+            # restriction, advance the target to the next allowed day.
+            if task.days_of_week is not None:
+                for _advance in range(7):
+                    if target.weekday() in task.days_of_week:
+                        break
+                    target += timedelta(days=1)
+                    # Reset to the task's scheduled time on the new day
+                    target = target.replace(
+                        hour=task.hour, minute=task.minute, second=0, microsecond=0
+                    )
+                else:
+                    # No valid day found within 7 days — should never happen
+                    # but skip this task to be safe
+                    continue
 
             seconds = (target - now_ct).total_seconds()
 
@@ -782,6 +844,873 @@ def _build_project_health_summary() -> str:
     return "\n".join(lines)
 
 
+# ------------------------------------------------------------------
+# Morning Report — structured data gathering (for PDF / Excel / MD)
+# ------------------------------------------------------------------
+
+def _gather_open_action_items() -> list[dict]:
+    """Query memory DB for all open (unresolved) action items.
+
+    Returns list of dicts with keys: id, created_at, project_key, summary, detail.
+    """
+    if not MEMORY_DB_PATH.exists():
+        return []
+    try:
+        conn = sqlite3.connect(str(MEMORY_DB_PATH))
+        conn.row_factory = sqlite3.Row
+        cursor = conn.execute(
+            "SELECT id, created_at, project_key, summary, detail "
+            "FROM memories WHERE category = 'action_item' AND resolved = 0 "
+            "ORDER BY created_at DESC"
+        )
+        rows = [dict(row) for row in cursor.fetchall()]
+        conn.close()
+        return rows
+    except Exception as e:
+        logger.warning(f"Could not query memory DB for action items: {e}")
+        return []
+
+
+def _gather_project_health() -> list[dict]:
+    """Build project health data as a list of dicts for PDF/Excel consumption.
+
+    Returns list of dicts with keys: slug, name, pod, schedule, constraints,
+    constraints_open, schedule_status, key_risk.
+    """
+    projects_dir = REPO_ROOT / "projects"
+    results = []
+
+    for slug, info in PROJECTS.items():
+        project_path = projects_dir / slug
+        name = info["name"]
+        row = {
+            "slug": slug,
+            "name": name,
+            "pod": 0,
+            "schedule": 0,
+            "constraints": 0,
+            "constraints_open": 0,
+            "schedule_status": "On Track",
+            "key_risk": "None identified",
+        }
+
+        if project_path.exists():
+            for folder in ["pod", "schedule", "constraints"]:
+                folder_path = project_path / folder
+                if folder_path.exists():
+                    files = [
+                        f for f in folder_path.rglob("*")
+                        if f.is_file() and f.name != ".gitkeep"
+                    ]
+                    row[folder] = len(files)
+
+            # Infer schedule status from constraint count
+            open_count = row["constraints_open"] or row["constraints"]
+            if open_count > 10:
+                row["schedule_status"] = "At Risk"
+                row["key_risk"] = f"{open_count} open constraints"
+            elif open_count > 5:
+                row["schedule_status"] = "Monitor"
+                row["key_risk"] = f"{open_count} open constraints"
+
+        results.append(row)
+
+    return results
+
+
+def _gather_constraint_movement() -> dict:
+    """Get constraint movement data.
+
+    NOTE: Constraint snapshot functionality has been removed. Constraint data
+    is now accessed live via the Convex API / MCP server. This function returns
+    an empty structure for backward compatibility with report formatting.
+
+    Returns dict with keys: new, resolved, status_changed, priority_changed,
+    total_current, per_project (aggregated counts by project).
+    """
+    return {
+        "new": [],
+        "resolved": [],
+        "status_changed": [],
+        "priority_changed": [],
+        "total_current": 0,
+        "per_project": {},
+    }
+
+
+def _gather_followup_items() -> dict:
+    """Query the follow-up DB for overdue and due-today items.
+
+    Returns dict with keys: overdue (list of dicts), due_today (list of dicts).
+    """
+    result = {"overdue": [], "due_today": []}
+
+    if not FOLLOWUP_DB_PATH.exists():
+        return result
+
+    try:
+        conn = sqlite3.connect(str(FOLLOWUP_DB_PATH))
+        conn.row_factory = sqlite3.Row
+        today = datetime.now(CT).strftime("%Y-%m-%d")
+
+        cursor = conn.execute(
+            "SELECT * FROM follow_ups WHERE follow_up_date < ? AND status = 'pending' "
+            "ORDER BY follow_up_date ASC",
+            (today,),
+        )
+        result["overdue"] = [dict(row) for row in cursor.fetchall()]
+
+        cursor = conn.execute(
+            "SELECT * FROM follow_ups WHERE follow_up_date = ? AND status = 'pending' "
+            "ORDER BY created_at ASC",
+            (today,),
+        )
+        result["due_today"] = [dict(row) for row in cursor.fetchall()]
+
+        conn.close()
+    except Exception as e:
+        logger.warning(f"Could not query follow-up DB: {e}")
+
+    return result
+
+
+# ------------------------------------------------------------------
+# Morning Report — PDF generation (ReportLab)
+# ------------------------------------------------------------------
+
+def _generate_morning_pdf(
+    output_path: Path,
+    date_str: str,
+    verse: dict,
+    action_items: list[dict],
+    project_health: list[dict],
+    constraint_movement: dict,
+    followup_items: dict,
+    scan_content: Optional[str],
+) -> bool:
+    """Generate a professional morning report PDF using ReportLab.
+
+    Returns True on success, False on failure.
+    """
+    try:
+        from reportlab.lib import colors
+        from reportlab.lib.enums import TA_LEFT, TA_CENTER, TA_RIGHT
+        from reportlab.lib.pagesizes import letter
+        from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
+        from reportlab.lib.units import inch
+        from reportlab.platypus import (
+            BaseDocTemplate, Frame, HRFlowable,
+            NextPageTemplate, PageBreak, PageTemplate,
+            Paragraph, Spacer, Table, TableStyle,
+        )
+    except ImportError:
+        logger.error("reportlab not installed — cannot generate morning report PDF")
+        return False
+
+    # --- Brand colors (DSC blue #003366 as primary accent) ---
+    DSC_BLUE = colors.HexColor("#003366")
+    NAVY = colors.HexColor("#003366")
+    ACCENT_BLUE = colors.HexColor("#336699")
+    LIGHT_BLUE = colors.HexColor("#E8F0FE")
+    RED = colors.HexColor("#CC0000")
+    AMBER = colors.HexColor("#CC8800")
+    GREEN = colors.HexColor("#228B22")
+    WHITE = colors.white
+    BLACK = colors.black
+    LIGHT_GREY = colors.HexColor("#F5F5F5")
+    MID_GREY = colors.HexColor("#E0E0E0")
+    DARK_GREY = colors.HexColor("#666666")
+    TABLE_HEADER_BG = DSC_BLUE
+    TABLE_ALT_ROW = colors.HexColor("#F2F6FA")
+
+    _base_styles = getSampleStyleSheet()
+
+    def _s(name, **kw):
+        return ParagraphStyle(name, parent=_base_styles["Normal"], **kw)
+
+    # Styles
+    S_H1 = _s("MRH1", fontName="Helvetica-Bold", fontSize=14,
+               textColor=NAVY, leading=20, spaceBefore=14, spaceAfter=6)
+    S_H2 = _s("MRH2", fontName="Helvetica-Bold", fontSize=11,
+               textColor=NAVY, leading=16, spaceBefore=10, spaceAfter=4)
+    S_BODY = _s("MRBody", fontName="Helvetica", fontSize=9,
+                textColor=BLACK, leading=12, spaceAfter=3)
+    S_BODY_BOLD = _s("MRBodyBold", fontName="Helvetica-Bold", fontSize=9,
+                     textColor=BLACK, leading=12, spaceAfter=3)
+    S_SMALL = _s("MRSmall", fontName="Helvetica", fontSize=7.5,
+                 textColor=DARK_GREY, leading=10)
+    S_VERSE = _s("MRVerse", fontName="Helvetica-Oblique", fontSize=9.5,
+                 textColor=colors.HexColor("#333333"), leading=13,
+                 leftIndent=12, rightIndent=12, spaceBefore=4, spaceAfter=4,
+                 backColor=colors.HexColor("#FFF8E8"),
+                 borderWidth=0.5, borderColor=colors.HexColor("#E8D8A0"),
+                 borderPadding=8)
+    S_TH = _s("MRTH", fontName="Helvetica-Bold", fontSize=8,
+              textColor=WHITE, leading=10)
+    S_TC = _s("MRTC", fontName="Helvetica", fontSize=8,
+              textColor=BLACK, leading=10)
+    S_ACTION = _s("MRAction", fontName="Helvetica", fontSize=8.5,
+                  textColor=BLACK, leading=11, leftIndent=8, spaceAfter=2)
+
+    w, h = letter
+    now = datetime.now(CT)
+    formatted_date = now.strftime("%B %d, %Y")
+
+    # --- Page templates ---
+    def _first_page(canvas, doc):
+        canvas.saveState()
+        # Tall header band
+        header_h = 90
+        canvas.setFillColor(DSC_BLUE)
+        canvas.rect(0, h - header_h, w, header_h, stroke=0, fill=1)
+        # Accent line under header
+        canvas.setFillColor(ACCENT_BLUE)
+        canvas.rect(0, h - header_h, w, 3, stroke=0, fill=1)
+        # Title
+        canvas.setFillColor(WHITE)
+        canvas.setFont("Helvetica-Bold", 22)
+        canvas.drawString(0.75 * inch, h - 40, "GOLIATH Morning Report")
+        canvas.setFont("Helvetica", 11)
+        canvas.setFillColor(colors.HexColor("#B0C4DE"))
+        canvas.drawString(0.75 * inch, h - 58, formatted_date)
+        # Summary stats
+        n_items = len(action_items)
+        n_projects = len(project_health)
+        n_changes = (len(constraint_movement.get("new", []))
+                     + len(constraint_movement.get("resolved", [])))
+        canvas.setFont("Helvetica", 9)
+        canvas.setFillColor(colors.HexColor("#8FAFD0"))
+        canvas.drawString(
+            0.75 * inch, h - 74,
+            f"{n_items} action items  |  {n_projects} projects  |  "
+            f"{n_changes} constraint changes (24h)",
+        )
+        # Footer
+        canvas.setStrokeColor(MID_GREY)
+        canvas.setLineWidth(0.5)
+        canvas.line(0.75 * inch, 0.5 * inch, w - 0.75 * inch, 0.5 * inch)
+        canvas.setFillColor(DARK_GREY)
+        canvas.setFont("Helvetica", 6.5)
+        canvas.drawString(0.75 * inch, 0.35 * inch,
+                          "Generated by GOLIATH Scheduler")
+        canvas.drawRightString(w - 0.75 * inch, 0.35 * inch, f"Page {doc.page}")
+        canvas.restoreState()
+
+    def _later_pages(canvas, doc):
+        canvas.saveState()
+        # Thin header bar
+        canvas.setFillColor(DSC_BLUE)
+        canvas.rect(0, h - 45, w, 45, stroke=0, fill=1)
+        canvas.setFillColor(WHITE)
+        canvas.setFont("Helvetica-Bold", 10)
+        canvas.drawString(0.75 * inch, h - 30, "GOLIATH Morning Report")
+        canvas.setFont("Helvetica", 8)
+        canvas.setFillColor(colors.HexColor("#B0C4DE"))
+        canvas.drawRightString(w - 0.75 * inch, h - 30, formatted_date)
+        # Footer
+        canvas.setStrokeColor(MID_GREY)
+        canvas.setLineWidth(0.5)
+        canvas.line(0.75 * inch, 0.5 * inch, w - 0.75 * inch, 0.5 * inch)
+        canvas.setFillColor(DARK_GREY)
+        canvas.setFont("Helvetica", 6.5)
+        canvas.drawString(0.75 * inch, 0.35 * inch,
+                          "Generated by GOLIATH Scheduler")
+        canvas.drawRightString(w - 0.75 * inch, 0.35 * inch, f"Page {doc.page}")
+        canvas.restoreState()
+
+    first_frame = Frame(0.75 * inch, 0.65 * inch,
+                        w - 1.5 * inch, h - 1.65 * inch, id="first")
+    later_frame = Frame(0.75 * inch, 0.65 * inch,
+                        w - 1.5 * inch, h - 1.25 * inch, id="later")
+
+    first_tmpl = PageTemplate(id="First", frames=[first_frame], onPage=_first_page)
+    later_tmpl = PageTemplate(id="Later", frames=[later_frame], onPage=_later_pages)
+
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    doc = BaseDocTemplate(
+        str(output_path),
+        pagesize=letter,
+        title=f"GOLIATH Morning Report — {formatted_date}",
+        author="GOLIATH System",
+    )
+    doc.addPageTemplates([first_tmpl, later_tmpl])
+
+    elements = []
+
+    def _esc(text):
+        """Escape HTML entities for ReportLab Paragraph."""
+        if not text:
+            return ""
+        return str(text).replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+
+    # ---- Section 1: Gospel Verse ----
+    elements.append(Paragraph("TODAY'S GOSPEL WORD", S_H1))
+    elements.append(HRFlowable(width="100%", thickness=0.5, color=MID_GREY,
+                               spaceBefore=2, spaceAfter=6))
+    verse_text = _esc(verse.get("text", ""))
+    verse_ref = _esc(verse.get("ref", ""))
+    verse_thought = _esc(verse.get("thought", ""))
+    elements.append(Paragraph(f'<i>"{verse_text}"</i><br/>— {verse_ref}', S_VERSE))
+    if verse_thought:
+        elements.append(Paragraph(f'<i>{verse_thought}</i>', S_SMALL))
+    elements.append(Spacer(1, 8))
+
+    # ---- Section 2: Open Action Items ----
+    elements.append(Paragraph(
+        f'OPEN ACTION ITEMS ({len(action_items)} pending)', S_H1))
+    elements.append(HRFlowable(width="100%", thickness=0.5, color=MID_GREY,
+                               spaceBefore=2, spaceAfter=6))
+
+    if action_items:
+        # Group by project
+        by_project = {}
+        for item in action_items:
+            key = item.get("project_key") or "general"
+            by_project.setdefault(key, []).append(item)
+
+        # General items first
+        general = by_project.pop("general", [])
+        if general:
+            elements.append(Paragraph("General / System", S_H2))
+            for item in general:
+                date = item["created_at"][:10]
+                summary = _esc(item.get("summary", ""))
+                elements.append(Paragraph(
+                    f'<b>[{date}]</b> {summary}', S_ACTION))
+
+        # Project items
+        for proj_key in sorted(by_project.keys()):
+            proj_name = PROJECTS.get(proj_key, {}).get("name", proj_key)
+            elements.append(Paragraph(_esc(proj_name), S_H2))
+            for item in by_project[proj_key]:
+                date = item["created_at"][:10]
+                summary = _esc(item.get("summary", ""))
+                elements.append(Paragraph(
+                    f'<b>[{date}]</b> {summary}', S_ACTION))
+    else:
+        elements.append(Paragraph(
+            '<i>No open action items. Everything is resolved.</i>', S_BODY))
+
+    elements.append(Spacer(1, 8))
+
+    # ---- Section 3: Project Health Summary ----
+    elements.append(Paragraph(
+        f'PORTFOLIO HEALTH SUMMARY ({len(project_health)} projects)', S_H1))
+    elements.append(HRFlowable(width="100%", thickness=0.5, color=MID_GREY,
+                               spaceBefore=2, spaceAfter=6))
+
+    health_header = [
+        Paragraph("<b>Project</b>", S_TH),
+        Paragraph("<b>POD</b>", S_TH),
+        Paragraph("<b>Schedule</b>", S_TH),
+        Paragraph("<b>Constraints</b>", S_TH),
+        Paragraph("<b>Open</b>", S_TH),
+        Paragraph("<b>Status</b>", S_TH),
+        Paragraph("<b>Key Risk</b>", S_TH),
+    ]
+    health_data = [health_header]
+
+    for p in project_health:
+        status = p.get("schedule_status", "On Track")
+        if status == "At Risk":
+            status_color = "#CC0000"
+        elif status == "Monitor":
+            status_color = "#CC8800"
+        else:
+            status_color = "#228B22"
+
+        health_data.append([
+            Paragraph(_esc(p["name"]), S_TC),
+            Paragraph(str(p.get("pod", 0)), S_TC),
+            Paragraph(str(p.get("schedule", 0)), S_TC),
+            Paragraph(str(p.get("constraints", 0)), S_TC),
+            Paragraph(str(p.get("constraints_open", 0)), S_TC),
+            Paragraph(f'<font color="{status_color}"><b>{_esc(status)}</b></font>', S_TC),
+            Paragraph(_esc(p.get("key_risk", "None")[:60]), S_TC),
+        ])
+
+    col_widths = [1.3 * inch, 0.5 * inch, 0.65 * inch, 0.75 * inch,
+                  0.5 * inch, 0.7 * inch, 2.1 * inch]
+    health_table = Table(health_data, colWidths=col_widths, repeatRows=1)
+    health_style = TableStyle([
+        ("BACKGROUND", (0, 0), (-1, 0), TABLE_HEADER_BG),
+        ("TEXTCOLOR", (0, 0), (-1, 0), WHITE),
+        ("GRID", (0, 0), (-1, -1), 0.5, MID_GREY),
+        ("ALIGN", (1, 0), (4, -1), "CENTER"),
+        ("TOPPADDING", (0, 0), (-1, -1), 3),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 3),
+        ("ROWBACKGROUNDS", (0, 1), (-1, -1), [WHITE, TABLE_ALT_ROW]),
+    ])
+    health_table.setStyle(health_style)
+    elements.append(health_table)
+    elements.append(Spacer(1, 10))
+
+    elements.append(NextPageTemplate("Later"))
+
+    # ---- Section 4: Constraint Movement (24h) ----
+    elements.append(Paragraph("CONSTRAINT MOVEMENT (24h)", S_H1))
+    elements.append(HRFlowable(width="100%", thickness=0.5, color=MID_GREY,
+                               spaceBefore=2, spaceAfter=6))
+
+    total_c = constraint_movement.get("total_current", 0)
+    elements.append(Paragraph(
+        f'<i>{total_c} total constraints tracked</i>', S_SMALL))
+
+    new_items = constraint_movement.get("new", [])
+    resolved_items = constraint_movement.get("resolved", [])
+    status_items = constraint_movement.get("status_changed", [])
+    priority_items = constraint_movement.get("priority_changed", [])
+    total_changes = len(new_items) + len(resolved_items) + len(status_items) + len(priority_items)
+
+    if total_changes == 0:
+        elements.append(Paragraph(
+            '<i>No constraint changes in the last 24 hours.</i>', S_BODY))
+    else:
+        elements.append(Paragraph(
+            f'<b>{total_changes} change(s) detected:</b>', S_BODY_BOLD))
+
+        if new_items:
+            elements.append(Paragraph(
+                f'<font color="#228B22"><b>New Constraints ({len(new_items)})</b></font>', S_H2))
+            for item in new_items[:10]:
+                elements.append(Paragraph(
+                    f'<b>[{_esc(item.get("priority", "?"))}]</b> '
+                    f'{_esc(item.get("project", "?"))}: {_esc(item.get("description", "?"))}',
+                    S_ACTION))
+
+        if resolved_items:
+            elements.append(Paragraph(
+                f'<font color="#336699"><b>Resolved ({len(resolved_items)})</b></font>', S_H2))
+            for item in resolved_items[:10]:
+                elements.append(Paragraph(
+                    f'{_esc(item.get("project", "?"))}: {_esc(item.get("description", "?"))}',
+                    S_ACTION))
+
+        if status_items:
+            elements.append(Paragraph(
+                f'<b>Status Changed ({len(status_items)})</b>', S_H2))
+            for item in status_items[:10]:
+                elements.append(Paragraph(
+                    f'{_esc(item.get("project", "?"))}: '
+                    f'{_esc(item.get("old_status", "?"))} -> {_esc(item.get("new_status", "?"))} '
+                    f'-- {_esc(item.get("description", "?"))}',
+                    S_ACTION))
+
+        if priority_items:
+            elements.append(Paragraph(
+                f'<b>Priority Changed ({len(priority_items)})</b>', S_H2))
+            for item in priority_items[:10]:
+                elements.append(Paragraph(
+                    f'{_esc(item.get("project", "?"))}: '
+                    f'{_esc(item.get("old_priority", "?"))} -> {_esc(item.get("new_priority", "?"))} '
+                    f'({_esc(item.get("direction", "changed"))}) -- '
+                    f'{_esc(item.get("description", "?"))}',
+                    S_ACTION))
+
+    elements.append(Spacer(1, 10))
+
+    # ---- Section 5: Follow-Up Queue ----
+    elements.append(Paragraph("FOLLOW-UP QUEUE", S_H1))
+    elements.append(HRFlowable(width="100%", thickness=0.5, color=MID_GREY,
+                               spaceBefore=2, spaceAfter=6))
+
+    overdue = followup_items.get("overdue", [])
+    due_today = followup_items.get("due_today", [])
+
+    if not overdue and not due_today:
+        elements.append(Paragraph(
+            '<i>No follow-ups due or overdue today.</i>', S_BODY))
+    else:
+        if overdue:
+            elements.append(Paragraph(
+                f'<font color="#CC0000"><b>Overdue ({len(overdue)})</b></font>', S_H2))
+            for item in overdue[:12]:
+                project = _esc(str(item.get("project_key", "?")))
+                commitment = _esc(str(item.get("commitment", ""))[:120])
+                due = item.get("follow_up_date", "?")
+                owner = _esc(str(item.get("owner", "?")))
+                elements.append(Paragraph(
+                    f'<b>[{project}]</b> {commitment}<br/>'
+                    f'<i>Due: {due} | Owner: {owner}</i>',
+                    S_ACTION))
+
+        if due_today:
+            elements.append(Paragraph(
+                f'<font color="#CC8800"><b>Due Today ({len(due_today)})</b></font>', S_H2))
+            for item in due_today[:12]:
+                project = _esc(str(item.get("project_key", "?")))
+                commitment = _esc(str(item.get("commitment", ""))[:120])
+                owner = _esc(str(item.get("owner", "?")))
+                elements.append(Paragraph(
+                    f'<b>[{project}]</b> {commitment}<br/>'
+                    f'<i>Owner: {owner}</i>',
+                    S_ACTION))
+
+    elements.append(Spacer(1, 10))
+
+    # ---- Section 6: Scan Findings (condensed) ----
+    if scan_content:
+        elements.append(Paragraph("LATEST DAILY SCAN", S_H1))
+        elements.append(HRFlowable(width="100%", thickness=0.5, color=MID_GREY,
+                                   spaceBefore=2, spaceAfter=6))
+        # Convert markdown to plain-ish text for PDF (strip markdown syntax)
+        cleaned = scan_content
+        # Strip markdown headings
+        cleaned = re.sub(r"^#{1,4}\s+", "", cleaned, flags=re.MULTILINE)
+        # Strip bold/italic markers
+        cleaned = cleaned.replace("**", "").replace("__", "")
+        # Limit length for PDF
+        if len(cleaned) > 4000:
+            cleaned = cleaned[:3800] + "\n\n... (truncated — see full .md file)"
+        for line in cleaned.split("\n"):
+            line = line.strip()
+            if not line:
+                elements.append(Spacer(1, 3))
+            elif line.startswith("- ") or line.startswith("* "):
+                elements.append(Paragraph(
+                    f'  {_esc(line)}', S_ACTION))
+            else:
+                elements.append(Paragraph(_esc(line), S_BODY))
+
+    # Build the PDF
+    try:
+        doc.build(elements)
+        logger.info(f"Morning report PDF generated: {output_path}")
+        return True
+    except Exception:
+        logger.exception(f"Failed to build morning report PDF: {output_path}")
+        return False
+
+
+# ------------------------------------------------------------------
+# Morning Report — Excel generation (openpyxl)
+# ------------------------------------------------------------------
+
+def _generate_morning_excel(
+    output_path: Path,
+    date_str: str,
+    action_items: list[dict],
+    project_health: list[dict],
+    constraint_movement: dict,
+) -> bool:
+    """Generate a morning report Excel workbook with three sheets.
+
+    Sheet 1: Action Items
+    Sheet 2: Project Health Summary
+    Sheet 3: Constraint Movement
+
+    Returns True on success, False on failure.
+    """
+    try:
+        from openpyxl import Workbook
+        from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
+    except ImportError:
+        logger.error("openpyxl not installed — cannot generate morning report Excel")
+        return False
+
+    wb = Workbook()
+
+    # --- Brand colors ---
+    DSC_BLUE_HEX = "003366"
+    HEADER_FILL = PatternFill(start_color=DSC_BLUE_HEX, end_color=DSC_BLUE_HEX, fill_type="solid")
+    HEADER_FONT = Font(name="Calibri", bold=True, color="FFFFFF", size=10)
+    BODY_FONT = Font(name="Calibri", size=10)
+    BOLD_FONT = Font(name="Calibri", bold=True, size=10)
+    ALT_ROW_FILL = PatternFill(start_color="F2F6FA", end_color="F2F6FA", fill_type="solid")
+    RED_FONT = Font(name="Calibri", bold=True, color="CC0000", size=10)
+    AMBER_FONT = Font(name="Calibri", bold=True, color="CC8800", size=10)
+    GREEN_FONT = Font(name="Calibri", bold=True, color="228B22", size=10)
+    THIN_BORDER = Border(
+        left=Side(style="thin", color="D0D0D0"),
+        right=Side(style="thin", color="D0D0D0"),
+        top=Side(style="thin", color="D0D0D0"),
+        bottom=Side(style="thin", color="D0D0D0"),
+    )
+
+    def _style_header(ws, row_num, col_count):
+        for col in range(1, col_count + 1):
+            cell = ws.cell(row=row_num, column=col)
+            cell.fill = HEADER_FILL
+            cell.font = HEADER_FONT
+            cell.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
+            cell.border = THIN_BORDER
+
+    def _style_body(ws, start_row, end_row, col_count):
+        for row in range(start_row, end_row + 1):
+            for col in range(1, col_count + 1):
+                cell = ws.cell(row=row, column=col)
+                cell.font = BODY_FONT
+                cell.border = THIN_BORDER
+                cell.alignment = Alignment(vertical="top", wrap_text=True)
+                if (row - start_row) % 2 == 1:
+                    cell.fill = ALT_ROW_FILL
+
+    # ---- Sheet 1: Action Items ----
+    ws1 = wb.active
+    ws1.title = "Action Items"
+    headers1 = ["ID", "Date", "Description", "Status", "Project"]
+    for col_idx, header in enumerate(headers1, 1):
+        ws1.cell(row=1, column=col_idx, value=header)
+    _style_header(ws1, 1, len(headers1))
+
+    for row_idx, item in enumerate(action_items, 2):
+        proj_key = item.get("project_key") or "general"
+        proj_name = PROJECTS.get(proj_key, {}).get("name", proj_key)
+        ws1.cell(row=row_idx, column=1, value=item.get("id", ""))
+        ws1.cell(row=row_idx, column=2, value=item.get("created_at", "")[:10])
+        ws1.cell(row=row_idx, column=3, value=item.get("summary", ""))
+        ws1.cell(row=row_idx, column=4, value="Open")
+        ws1.cell(row=row_idx, column=5, value=proj_name)
+
+    if action_items:
+        _style_body(ws1, 2, len(action_items) + 1, len(headers1))
+
+    ws1.column_dimensions["A"].width = 8
+    ws1.column_dimensions["B"].width = 12
+    ws1.column_dimensions["C"].width = 60
+    ws1.column_dimensions["D"].width = 10
+    ws1.column_dimensions["E"].width = 18
+
+    # ---- Sheet 2: Project Health Summary ----
+    ws2 = wb.create_sheet("Project Health")
+    headers2 = ["Project", "Constraints Open", "Schedule Status", "Key Risk"]
+    for col_idx, header in enumerate(headers2, 1):
+        ws2.cell(row=1, column=col_idx, value=header)
+    _style_header(ws2, 1, len(headers2))
+
+    for row_idx, p in enumerate(project_health, 2):
+        ws2.cell(row=row_idx, column=1, value=p["name"])
+        ws2.cell(row=row_idx, column=2, value=p.get("constraints_open", 0))
+        status = p.get("schedule_status", "On Track")
+        status_cell = ws2.cell(row=row_idx, column=3, value=status)
+        if status == "At Risk":
+            status_cell.font = RED_FONT
+        elif status == "Monitor":
+            status_cell.font = AMBER_FONT
+        else:
+            status_cell.font = GREEN_FONT
+        ws2.cell(row=row_idx, column=4, value=p.get("key_risk", "None identified"))
+
+    if project_health:
+        _style_body(ws2, 2, len(project_health) + 1, len(headers2))
+
+    ws2.column_dimensions["A"].width = 20
+    ws2.column_dimensions["B"].width = 18
+    ws2.column_dimensions["C"].width = 18
+    ws2.column_dimensions["D"].width = 40
+
+    # ---- Sheet 3: Constraint Movement ----
+    ws3 = wb.create_sheet("Constraint Movement")
+    headers3 = ["Project", "New", "Resolved", "Aging (>14d)", "Critical"]
+    for col_idx, header in enumerate(headers3, 1):
+        ws3.cell(row=1, column=col_idx, value=header)
+    _style_header(ws3, 1, len(headers3))
+
+    per_project = constraint_movement.get("per_project", {})
+    row_idx = 2
+    for proj_name in sorted(per_project.keys()):
+        counts = per_project[proj_name]
+        ws3.cell(row=row_idx, column=1, value=proj_name)
+        ws3.cell(row=row_idx, column=2, value=counts.get("new", 0))
+        ws3.cell(row=row_idx, column=3, value=counts.get("resolved", 0))
+        ws3.cell(row=row_idx, column=4, value=counts.get("aging", 0))
+        critical_cell = ws3.cell(row=row_idx, column=5, value=counts.get("critical", 0))
+        if counts.get("critical", 0) > 0:
+            critical_cell.font = RED_FONT
+        row_idx += 1
+
+    if per_project:
+        _style_body(ws3, 2, row_idx - 1, len(headers3))
+
+    ws3.column_dimensions["A"].width = 20
+    ws3.column_dimensions["B"].width = 10
+    ws3.column_dimensions["C"].width = 12
+    ws3.column_dimensions["D"].width = 14
+    ws3.column_dimensions["E"].width = 12
+
+    # Save
+    try:
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        wb.save(str(output_path))
+        logger.info(f"Morning report Excel generated: {output_path}")
+        return True
+    except Exception:
+        logger.exception(f"Failed to save morning report Excel: {output_path}")
+        return False
+
+
+# ------------------------------------------------------------------
+# Morning Report — Markdown file generation
+# ------------------------------------------------------------------
+
+def _generate_morning_markdown(
+    output_path: Path,
+    date_str: str,
+    verse: dict,
+    action_items: list[dict],
+    project_health: list[dict],
+    constraint_movement: dict,
+    followup_items: dict,
+    scan_content: Optional[str],
+) -> bool:
+    """Generate a morning report as a Markdown file.
+
+    Returns True on success, False on failure.
+    """
+    now = datetime.now(CT)
+    formatted_date = now.strftime("%A, %B %d, %Y")
+
+    lines = []
+    lines.append(f"# GOLIATH Morning Report")
+    lines.append(f"**{formatted_date}**\n")
+
+    # Section 1: Gospel Verse
+    lines.append("---\n")
+    lines.append("## Today's Gospel Word\n")
+    lines.append(f'> *"{verse.get("text", "")}"*')
+    lines.append(f'> — {verse.get("ref", "")}\n')
+    if verse.get("thought"):
+        lines.append(f'*{verse["thought"]}*\n')
+
+    # Section 2: Open Action Items
+    lines.append("---\n")
+    lines.append(f"## Open Action Items ({len(action_items)} pending)\n")
+
+    if action_items:
+        by_project = {}
+        for item in action_items:
+            key = item.get("project_key") or "general"
+            by_project.setdefault(key, []).append(item)
+
+        general = by_project.pop("general", [])
+        if general:
+            lines.append("### General / System\n")
+            for item in general:
+                date = item["created_at"][:10]
+                lines.append(f"- **[{date}]** {item.get('summary', '')}")
+            lines.append("")
+
+        for proj_key in sorted(by_project.keys()):
+            proj_name = PROJECTS.get(proj_key, {}).get("name", proj_key)
+            lines.append(f"### {proj_name}\n")
+            for item in by_project[proj_key]:
+                date = item["created_at"][:10]
+                lines.append(f"- **[{date}]** {item.get('summary', '')}")
+            lines.append("")
+    else:
+        lines.append("*No open action items. Everything is resolved.*\n")
+
+    # Section 3: Project Health Summary
+    lines.append("---\n")
+    lines.append(f"## Portfolio Health Summary ({len(project_health)} projects)\n")
+    lines.append("| Project | POD | Schedule | Constraints | Open | Status | Key Risk |")
+    lines.append("|---------|-----|----------|-------------|------|--------|----------|")
+    for p in project_health:
+        lines.append(
+            f"| {p['name']} | {p.get('pod', 0)} | {p.get('schedule', 0)} | "
+            f"{p.get('constraints', 0)} | {p.get('constraints_open', 0)} | "
+            f"{p.get('schedule_status', 'On Track')} | {p.get('key_risk', 'None')[:50]} |"
+        )
+    lines.append("")
+
+    # Section 4: Constraint Movement
+    lines.append("---\n")
+    lines.append("## Constraint Movement (24h)\n")
+    total_c = constraint_movement.get("total_current", 0)
+    lines.append(f"*{total_c} total constraints tracked*\n")
+
+    new_items = constraint_movement.get("new", [])
+    resolved_items = constraint_movement.get("resolved", [])
+    status_items = constraint_movement.get("status_changed", [])
+    priority_items = constraint_movement.get("priority_changed", [])
+    total_changes = len(new_items) + len(resolved_items) + len(status_items) + len(priority_items)
+
+    if total_changes == 0:
+        lines.append("*No constraint changes in the last 24 hours.*\n")
+    else:
+        lines.append(f"**{total_changes} change(s) detected:**\n")
+        if new_items:
+            lines.append(f"### New Constraints ({len(new_items)})\n")
+            for item in new_items[:10]:
+                lines.append(
+                    f"- **[{item.get('priority', '?')}]** {item.get('project', '?')}: "
+                    f"{item.get('description', '?')}")
+            lines.append("")
+        if resolved_items:
+            lines.append(f"### Resolved ({len(resolved_items)})\n")
+            for item in resolved_items[:10]:
+                lines.append(f"- {item.get('project', '?')}: {item.get('description', '?')}")
+            lines.append("")
+        if status_items:
+            lines.append(f"### Status Changed ({len(status_items)})\n")
+            for item in status_items[:10]:
+                lines.append(
+                    f"- {item.get('project', '?')}: {item.get('old_status', '?')} -> "
+                    f"{item.get('new_status', '?')} -- {item.get('description', '?')}")
+            lines.append("")
+        if priority_items:
+            lines.append(f"### Priority Changed ({len(priority_items)})\n")
+            for item in priority_items[:10]:
+                lines.append(
+                    f"- {item.get('project', '?')}: {item.get('old_priority', '?')} -> "
+                    f"{item.get('new_priority', '?')} ({item.get('direction', 'changed')}) -- "
+                    f"{item.get('description', '?')}")
+            lines.append("")
+
+    # Section 5: Follow-Up Queue
+    lines.append("---\n")
+    lines.append("## Follow-Up Queue\n")
+    overdue = followup_items.get("overdue", [])
+    due_today = followup_items.get("due_today", [])
+
+    if not overdue and not due_today:
+        lines.append("*No follow-ups due or overdue today.*\n")
+    else:
+        if overdue:
+            lines.append(f"### Overdue ({len(overdue)})\n")
+            for item in overdue[:12]:
+                project = item.get("project_key", "?")
+                commitment = str(item.get("commitment", ""))[:120]
+                due = item.get("follow_up_date", "?")
+                owner = item.get("owner", "?")
+                lines.append(f"- **[{project}]** {commitment}")
+                lines.append(f"  - *Due: {due} | Owner: {owner}*")
+            lines.append("")
+        if due_today:
+            lines.append(f"### Due Today ({len(due_today)})\n")
+            for item in due_today[:12]:
+                project = item.get("project_key", "?")
+                commitment = str(item.get("commitment", ""))[:120]
+                owner = item.get("owner", "?")
+                lines.append(f"- **[{project}]** {commitment}")
+                lines.append(f"  - *Owner: {owner}*")
+            lines.append("")
+
+    # Section 6: Daily Scan
+    if scan_content:
+        lines.append("---\n")
+        lines.append("## Latest Daily Scan\n")
+        if len(scan_content) > 5000:
+            lines.append(scan_content[:4800])
+            lines.append("\n\n*... (truncated -- see full scan report file)*\n")
+        else:
+            lines.append(scan_content)
+        lines.append("")
+
+    # Footer
+    lines.append("---\n")
+    lines.append("*Generated by GOLIATH Scheduler*")
+
+    try:
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        output_path.write_text("\n".join(lines))
+        logger.info(f"Morning report Markdown generated: {output_path}")
+        return True
+    except Exception:
+        logger.exception(f"Failed to write morning report Markdown: {output_path}")
+        return False
+
+
 def _markdown_to_html(text: str) -> str:
     """Convert basic Markdown formatting to Telegram HTML.
 
@@ -819,7 +1748,14 @@ def _markdown_to_html(text: str) -> str:
 
 
 async def task_morning_report(scheduler: "Scheduler") -> None:
-    """5:00 AM CT — Assemble and send the morning report."""
+    """5:00 AM CT — Generate morning report files (PDF, Excel, Markdown) and send as attachments.
+
+    Instead of sending the full report as inline text, this:
+      1. Gathers all data (action items, project health, constraints, follow-ups, scan)
+      2. Generates three files: PDF, Excel (.xlsx), and Markdown (.md)
+      3. Sends a SHORT notification message to Telegram
+      4. Sends all three files as Telegram document attachments
+    """
     if not scheduler.bot:
         logger.error("Morning report: no bot instance")
         return
@@ -830,227 +1766,154 @@ async def task_morning_report(scheduler: "Scheduler") -> None:
         return
 
     now_ct = datetime.now(CT)
-    date_str = now_ct.strftime("%A, %B %d, %Y")
+    date_iso = now_ct.strftime("%Y-%m-%d")
+    date_display = now_ct.strftime("%A, %B %d, %Y")
+    is_sunday = now_ct.weekday() == 6  # 6 = Sunday
 
-    # ---- Build the report sections ----
-    sections = []
+    logger.info("Morning report: gathering data...")
 
-    # Header
-    sections.append(
-        f"<b>GOLIATH Morning Report</b>\n"
-        f"<i>{date_str}</i>\n"
-    )
-
-    # Section 1: Today's Gospel Word
+    # ---- Step 1: Gather ALL structured data ----
     verse = _get_daily_verse(now_ct)
-    sections.append(
-        f"\u271d\ufe0f <b>Today's Gospel Word</b>\n"
-        f"<i>\"{verse['text']}\"</i>\n"
-        f"— {verse['ref']}\n\n"
-        f"\U0001f4ad <i>{verse['thought']}</i>"
-    )
-
-    # Section 2: Daily To-Do List
-    todo_content = _get_latest_todo()
-    if todo_content:
-        todo_html = _markdown_to_html(todo_content)
-        sections.append(
-            f"<b>Daily To-Do List</b>\n"
-            f"{todo_html}"
-        )
-    else:
-        sections.append(
-            f"<b>Daily To-Do List</b>\n"
-            f"<i>No todo file found in /reports/. "
-            f"Ask Nimrod to generate one.</i>"
-        )
-
-    # Section 3: Project Health Summary
-    health = _build_project_health_summary()
-    sections.append(
-        f"<b>Portfolio Health Summary</b>\n"
-        f"<i>{len(PROJECTS)} projects tracked</i>\n\n"
-        f"{health}"
-    )
-
-    # Section 4: Latest Scan Report (condensed)
+    action_items = _gather_open_action_items()
+    project_health = _gather_project_health()
+    constraint_movement = _gather_constraint_movement()
+    followup_items = _gather_followup_items()
     scan_content = _get_latest_scan_report()
-    if scan_content:
-        # Convert from Markdown to HTML and truncate if very long
-        scan_html = _markdown_to_html(scan_content)
-        if len(scan_html) > 3000:
-            scan_html = scan_html[:2900] + "\n\n<i>... (truncated — full report available in cron-jobs/reports/)</i>"
-        sections.append(
-            f"<b>Latest Daily Scan</b>\n"
-            f"{scan_html}"
+
+    # ---- Step 2: Build short notification summary ----
+    n_items = len(action_items)
+    n_changes = (len(constraint_movement.get("new", []))
+                 + len(constraint_movement.get("resolved", [])))
+    n_overdue = len(followup_items.get("overdue", []))
+    n_due = len(followup_items.get("due_today", []))
+
+    summary_parts = []
+    if n_items > 0:
+        summary_parts.append(f"{n_items} open action items")
+    if n_changes > 0:
+        summary_parts.append(f"{n_changes} constraint changes overnight")
+    if n_overdue > 0:
+        summary_parts.append(f"{n_overdue} overdue follow-ups")
+    elif n_due > 0:
+        summary_parts.append(f"{n_due} follow-ups due today")
+    if not summary_parts:
+        summary_parts.append("all clear across the portfolio")
+
+    summary_line = "; ".join(summary_parts) + "."
+
+    if is_sunday:
+        notification = (
+            f"\U0001f4cb Monday Prep Report ready \u2014 {date_display}.\n"
+            f"{summary_line}\n"
+            f"Files attached below."
         )
+        report_label = "Monday Prep Report"
+        file_slug = "monday-prep-report"
     else:
-        sections.append(
-            f"<b>Latest Daily Scan</b>\n"
-            f"<i>No scan reports found yet. The 11 PM scan has not run or produced output.</i>"
+        notification = (
+            f"\u2600\ufe0f Morning report ready \u2014 {date_display}.\n"
+            f"{summary_line}\n"
+            f"Files attached below."
         )
+        report_label = "Morning Report"
+        file_slug = "morning-report"
 
-    # Section 5: Constraint Movement (24h) + Follow-Up Queue (trend analysis)
-    try:
-        from bot.services.trend_analysis import TrendAnalyzer
-        trend_analyzer = TrendAnalyzer()
-        trend_section = await trend_analyzer.generate_trend_section()
-        sections.append(trend_section)
-    except Exception:
-        logger.exception("Morning report: trend analysis section failed")
-        sections.append(
-            "<b>Constraint Movement (24h)</b>\n"
-            "<i>Unable to analyze constraint changes at this time.</i>"
-        )
+    # ---- Step 3: Generate report files ----
+    report_dir = REPORTS_DIR
+    report_dir.mkdir(parents=True, exist_ok=True)
 
-    # Footer
-    sections.append(
-        "<i>Generated by GOLIATH Scheduler</i>"
-    )
+    pdf_path = report_dir / f"{date_iso}-{file_slug}.pdf"
+    xlsx_path = report_dir / f"{date_iso}-{file_slug}.xlsx"
+    md_path = report_dir / f"{date_iso}-{file_slug}.md"
 
-    full_report = "\n\n---\n\n".join(sections)
-
-    await _send_telegram(scheduler.bot, chat_id, full_report)
-    logger.info(f"Morning report sent to chat_id={chat_id} ({len(full_report)} chars)")
-
-    # ---- Generate and send report file attachments (Markdown, Excel, PDF) ----
-    await _generate_and_send_report_files(scheduler, chat_id, now_ct)
-
-
-async def _generate_and_send_report_files(
-    scheduler: "Scheduler", chat_id: int, now_ct: datetime
-) -> None:
-    """Generate Markdown, Excel, and PDF report files and send them as Telegram documents.
-
-    Called after the text morning report is sent. Each generator is independent —
-    if one fails, the others still get sent.
-    """
-    date_str = now_ct.strftime("%Y-%m-%d")
     files_sent = []
     files_failed = []
 
-    # --- Step 1: Run the daily scan to produce the Markdown report ---
-    logger.info("Morning report attachments: running daily scan for Markdown report...")
-    scan_script = CRON_JOBS_DIR / "daily_scan.py"
-    md_report_path = CRON_REPORTS_DIR / f"{date_str}_daily_scan.md"
-
-    # Only run scan if today's report doesn't already exist
-    if not md_report_path.exists():
-        success, output = await _run_script_async(scan_script, timeout=720)
-        if success:
-            logger.info(f"Daily scan completed: {output[:200]}")
-        else:
-            logger.error(f"Daily scan failed: {output[:300]}")
-    else:
-        logger.info(f"Daily scan report already exists: {md_report_path}")
-
-    # Find the most recent markdown scan report (in case date naming differs)
-    if md_report_path.exists():
-        actual_md_path = md_report_path
-    else:
-        md_candidates = sorted(CRON_REPORTS_DIR.glob("*_daily_scan.md"), reverse=True)
-        actual_md_path = md_candidates[0] if md_candidates else None
-
-    if actual_md_path and actual_md_path.exists():
-        sent = await _send_telegram_document(
-            scheduler.bot, chat_id, actual_md_path,
-            caption=f"<b>Daily Scan Report</b> — {date_str}",
-        )
-        if sent:
-            files_sent.append(actual_md_path.name)
-        else:
-            files_failed.append(("Markdown", str(actual_md_path)))
-    else:
-        logger.warning("No Markdown scan report found to send")
-        files_failed.append(("Markdown", "no file found"))
-
-    # --- Step 2: Run the Excel dashboard generator ---
-    logger.info("Morning report attachments: generating Excel dashboard...")
-    excel_script = REPORTS_DIR / "generate_dashboard.py"
-    excel_report_path = REPORTS_DIR / f"{date_str}-portfolio-dashboard.xlsx"
-
-    success, output = await _run_script_async(excel_script, timeout=120)
-    if success:
-        logger.info(f"Excel dashboard generated: {output[:200]}")
-    else:
-        logger.error(f"Excel dashboard generation failed: {output[:300]}")
-
-    # Find the Excel file (the script may use a slightly different name)
-    if excel_report_path.exists():
-        actual_xlsx_path = excel_report_path
-    else:
-        xlsx_candidates = sorted(REPORTS_DIR.glob(f"*portfolio-dashboard*.xlsx"), reverse=True)
-        actual_xlsx_path = xlsx_candidates[0] if xlsx_candidates else None
-
-    if actual_xlsx_path and actual_xlsx_path.exists():
-        sent = await _send_telegram_document(
-            scheduler.bot, chat_id, actual_xlsx_path,
-            caption=f"<b>Portfolio Dashboard (Excel)</b> — {date_str}",
-        )
-        if sent:
-            files_sent.append(actual_xlsx_path.name)
-        else:
-            files_failed.append(("Excel", str(actual_xlsx_path)))
-    else:
-        logger.warning("No Excel dashboard found to send")
-        files_failed.append(("Excel", "no file found"))
-
-    # --- Step 3: Run the PDF report generator ---
-    logger.info("Morning report attachments: generating PDF report...")
-    pdf_script = REPORTS_DIR / "generate_pdf.py"
-    pdf_report_path = REPORTS_DIR / f"{date_str}-portfolio-report.pdf"
-
+    # Generate PDF
+    logger.info("Morning report: generating PDF...")
     try:
-        success, output = await _run_script_async(pdf_script, timeout=120)
-        if success:
-            logger.info(f"PDF report generated: {output[:200]}")
-        else:
-            logger.error(f"PDF report generation failed: {output[:300]}")
-    except Exception as e:
-        logger.error(f"PDF generation raised an exception: {e}")
-        success = False
+        pdf_ok = _generate_morning_pdf(
+            pdf_path, date_iso, verse, action_items, project_health,
+            constraint_movement, followup_items, scan_content,
+        )
+    except Exception:
+        logger.exception("Morning report: PDF generation raised an exception")
+        pdf_ok = False
 
-    # Find the PDF file (search for any recent portfolio PDF)
-    if pdf_report_path.exists():
-        actual_pdf_path = pdf_report_path
-    else:
-        pdf_candidates = sorted(REPORTS_DIR.glob(f"*portfolio*.pdf"), reverse=True)
-        actual_pdf_path = pdf_candidates[0] if pdf_candidates else None
+    # Generate Excel
+    logger.info("Morning report: generating Excel...")
+    try:
+        xlsx_ok = _generate_morning_excel(
+            xlsx_path, date_iso, action_items, project_health, constraint_movement,
+        )
+    except Exception:
+        logger.exception("Morning report: Excel generation raised an exception")
+        xlsx_ok = False
 
-    if actual_pdf_path and actual_pdf_path.exists():
+    # Generate Markdown
+    logger.info("Morning report: generating Markdown...")
+    try:
+        md_ok = _generate_morning_markdown(
+            md_path, date_iso, verse, action_items, project_health,
+            constraint_movement, followup_items, scan_content,
+        )
+    except Exception:
+        logger.exception("Morning report: Markdown generation raised an exception")
+        md_ok = False
+
+    # ---- Step 4: Send short notification ----
+    await _send_telegram(scheduler.bot, chat_id, notification)
+    logger.info(f"Morning report notification sent to chat_id={chat_id}")
+
+    # ---- Step 5: Send file attachments ----
+    if pdf_ok and pdf_path.exists():
         sent = await _send_telegram_document(
-            scheduler.bot, chat_id, actual_pdf_path,
-            caption=f"<b>Portfolio Report (PDF)</b> — {date_str}",
+            scheduler.bot, chat_id, pdf_path,
+            caption=f"<b>{report_label} (PDF)</b> \u2014 {date_iso}",
         )
         if sent:
-            files_sent.append(actual_pdf_path.name)
+            files_sent.append(pdf_path.name)
         else:
-            files_failed.append(("PDF", str(actual_pdf_path)))
+            files_failed.append(("PDF", str(pdf_path)))
     else:
-        logger.warning("No PDF report found to send")
-        files_failed.append(("PDF", "no file generated or script missing"))
+        files_failed.append(("PDF", "generation failed"))
 
-    # --- Summary log ---
+    if xlsx_ok and xlsx_path.exists():
+        sent = await _send_telegram_document(
+            scheduler.bot, chat_id, xlsx_path,
+            caption=f"<b>{report_label} (Excel)</b> \u2014 {date_iso}",
+        )
+        if sent:
+            files_sent.append(xlsx_path.name)
+        else:
+            files_failed.append(("Excel", str(xlsx_path)))
+    else:
+        files_failed.append(("Excel", "generation failed"))
+
+    if md_ok and md_path.exists():
+        sent = await _send_telegram_document(
+            scheduler.bot, chat_id, md_path,
+            caption=f"<b>{report_label} (Markdown)</b> \u2014 {date_iso}",
+        )
+        if sent:
+            files_sent.append(md_path.name)
+        else:
+            files_failed.append(("Markdown", str(md_path)))
+    else:
+        files_failed.append(("Markdown", "generation failed"))
+
+    # ---- Summary log ----
     logger.info(
-        f"Morning report attachments complete: "
-        f"{len(files_sent)} sent ({', '.join(files_sent) if files_sent else 'none'}), "
+        f"Morning report complete: "
+        f"{len(files_sent)} files sent ({', '.join(files_sent) if files_sent else 'none'}), "
         f"{len(files_failed)} failed ({', '.join(f[0] for f in files_failed) if files_failed else 'none'})"
     )
 
-    # Send a brief status message if any files failed
     if files_failed and files_sent:
         fail_list = ", ".join(f[0] for f in files_failed)
         await _send_telegram(
             scheduler.bot, chat_id,
-            f"<i>Note: Could not generate/send some report files: {fail_list}. "
-            f"Successfully sent: {', '.join(files_sent)}.</i>"
-        )
-    elif files_failed and not files_sent:
-        fail_list = "\n".join(f"  - {f[0]}: {f[1]}" for f in files_failed)
-        await _send_telegram(
-            scheduler.bot, chat_id,
-            f"<i>Warning: No report file attachments could be generated.\n"
-            f"<pre>{fail_list}</pre></i>"
+            f"<i>Note: Could not generate some report files: {fail_list}.</i>"
         )
 
 
@@ -1398,89 +2261,72 @@ async def task_email_poll(scheduler: "Scheduler") -> None:
 
 
 # ------------------------------------------------------------------
-# Escalation Engine tasks (9 AM, 1 PM, 5 PM CT)
+# Proactive Follow-Up — Daily PDF Report (replaces old Escalation Engine)
 # ------------------------------------------------------------------
 
-async def task_escalation_scan(scheduler: "Scheduler") -> None:
-    """Run escalation scan — pulls HIGH/MEDIUM constraints, drafts escalation emails,
-    sends each to Telegram for approve/reject.
+async def task_proactive_followup_report(scheduler: "Scheduler") -> None:
+    """Generate the daily Proactive Follow-Up PDF report.
 
-    Fires 3x/day at 9 AM, 1 PM, and 5 PM CT. Each constraint tracks its own
-    escalation level and 5-day cooldown, so repeated scans won't re-escalate
-    the same constraint until the cooldown expires.
+    Fires once daily at 5 PM CT Mon-Fri (end of day) and 4:15 PM Sunday.
+    Pulls ALL open constraints from ConstraintsPro, routes each to a specialist
+    "brain" for solution-oriented draft generation, generates ONE consolidated
+    PDF, and sends it to Telegram.
+
+    The PDF also includes any pending commitment-based follow-ups from the
+    followup queue database (action items from meetings), so the user has
+    ONE report covering everything they need to chase the next morning.
+
+    This replaces the old escalation engine that sent 50+ individual messages
+    AND the old follow-up queue scans that sent 30+ individual messages.
+    Now: one clean PDF with copy-paste-ready drafts organized by project and priority.
     """
     if not scheduler.bot:
-        logger.error("Escalation scan: no bot instance")
+        logger.error("Proactive follow-up: no bot instance")
         return
 
     chat_id = _get_chat_id()
     if not chat_id:
-        logger.error("Escalation scan: no chat ID configured (set REPORT_CHAT_ID)")
+        logger.error("Proactive follow-up: no chat ID configured (set REPORT_CHAT_ID)")
         return
 
     try:
-        from bot.services.escalation import EscalationTracker
+        from bot.services.proactive_followup import ProactiveFollowUpEngine
+        from bot.config import PROACTIVE_FOLLOWUP_DB_PATH
 
-        tracker = EscalationTracker(ESCALATION_DB_PATH)
-        await tracker.initialize()
+        engine = ProactiveFollowUpEngine(PROACTIVE_FOLLOWUP_DB_PATH)
+        await engine.initialize()
 
-        drafts_sent = await tracker.run_escalation_scan(scheduler.bot, chat_id)
+        constraints_count = await engine.run_daily_report(scheduler.bot, chat_id)
 
-        await tracker.close()
+        await engine.close()
 
-        if drafts_sent > 0:
-            logger.info(f"Escalation scan: {drafts_sent} draft(s) sent for approval")
+        if constraints_count > 0:
+            logger.info(
+                f"Proactive follow-up: report generated with {constraints_count} constraint(s)"
+            )
         else:
-            logger.info("Escalation scan: no escalations needed this cycle")
+            logger.info("Proactive follow-up: no constraints to report")
 
     except Exception:
-        logger.exception("Escalation scan task failed")
+        logger.exception("Proactive follow-up report task failed")
 
 
 # ------------------------------------------------------------------
-# Constraint Heartbeat task (every 60 minutes)
-# ------------------------------------------------------------------
-
-async def task_constraint_heartbeat(scheduler: "Scheduler") -> None:
-    """Hourly constraint heartbeat — snapshot ConstraintsPro state, compare to
-    previous snapshot, notify user only if something meaningful changed.
-
-    Silent if nothing changed (no spam).
-    """
-    if not scheduler.bot:
-        logger.error("Constraint heartbeat: no bot instance")
-        return
-
-    chat_id = _get_chat_id()
-    if not chat_id:
-        logger.error("Constraint heartbeat: no chat ID configured (set REPORT_CHAT_ID)")
-        return
-
-    try:
-        from bot.services.heartbeat import ConstraintHeartbeat
-
-        heartbeat = ConstraintHeartbeat()
-        changes = await heartbeat.run_heartbeat(scheduler.bot, chat_id)
-
-        if changes > 0:
-            logger.info(f"Constraint heartbeat: {changes} change(s) notified")
-        else:
-            logger.debug("Constraint heartbeat: no changes (silent)")
-
-    except Exception:
-        logger.exception("Constraint heartbeat task failed")
-
-
-# ------------------------------------------------------------------
-# Follow-Up Queue task (10 AM and 4 PM CT)
+# Follow-Up Queue task (DISABLED 2026-03-01)
+# Was: 10 AM and 4 PM CT, sending individual Telegram messages per item.
+# Now: All follow-ups consolidated into the end-of-day PDF report via
+#      task_proactive_followup_report. This function is kept but no longer
+#      registered in create_scheduler().
 # ------------------------------------------------------------------
 
 async def task_follow_up_scan(scheduler: "Scheduler") -> None:
     """Run follow-up queue scan — checks for due commitments and approaching
-    constraint deadlines, drafts follow-up messages, and sends each to
-    Telegram for approve/reject.
+    constraint deadlines.
 
-    Fires 2x/day at 10 AM and 4 PM CT, staggered from escalation scans.
+    DEPRECATED (2026-03-01): No longer registered in the scheduler.
+    Was firing 2x/day at 10 AM and 4 PM CT and sending individual Telegram
+    messages per item (30+ messages = spam). Follow-ups are now consolidated
+    into the end-of-day PDF report via task_proactive_followup_report.
     """
     if not scheduler.bot:
         logger.error("Follow-up scan: no bot instance")
@@ -1502,7 +2348,7 @@ async def task_follow_up_scan(scheduler: "Scheduler") -> None:
         await queue.close()
 
         if drafts_sent > 0:
-            logger.info(f"Follow-up scan: {drafts_sent} draft(s) sent for approval")
+            logger.info(f"Follow-up scan: {drafts_sent} draft(s) sent")
         else:
             logger.info("Follow-up scan: no follow-ups due this cycle")
 
@@ -1625,12 +2471,44 @@ async def task_weekend_todo(scheduler: "Scheduler") -> None:
             break
 
 
+# ------------------------------------------------------------------
+# Health Monitor Task (every 4 hours during business hours)
+# ------------------------------------------------------------------
+
+async def task_health_check(scheduler: "Scheduler") -> None:
+    """Run the central health monitor and send results to Telegram.
+
+    Executes health_monitor.py as a subprocess. The health monitor checks:
+      - systemd service status (goliath-bot, goliath-web)
+      - database freshness and integrity
+      - disk usage
+      - network health (web API, Cloudflare tunnel)
+      - cron job output files
+    """
+    script_path = CRON_JOBS_DIR / "health_monitor.py"
+    success, output = await _run_script_async(script_path, timeout=120)
+
+    if success:
+        logger.info(f"Health check completed:\n{output[:500]}")
+    else:
+        logger.warning(f"Health check reported issues:\n{output[:500]}")
+        # The health_monitor.py script handles its own Telegram notification,
+        # so we don't need to send anything here — just log the result.
+
+
 # ======================================================================
 # Setup: register all default tasks and return a configured Scheduler
 # ======================================================================
 
 def create_scheduler(bot=None) -> Scheduler:
     """Create a Scheduler with all default GOLIATH tasks registered.
+
+    Schedule philosophy:
+      - Monday-Friday: Full workday schedule (5 AM morning report through 7 PM cleanup)
+      - Saturday: Day off — only infrastructure tasks (email poll, heartbeat,
+        daily constraints folder, daily scan)
+      - Sunday: Shifted schedule — user-facing reports and sessions fire at 4 PM CT
+        (respects church in the morning, preps for Monday in the evening)
 
     All tasks fire once per day at their specified CT time. The scheduler's
     three-layer defense (in-flight set, eager last_run, proactive dedup)
@@ -1639,36 +2517,17 @@ def create_scheduler(bot=None) -> Scheduler:
     """
     sched = Scheduler(bot=bot)
 
+    # ==================================================================
+    # Mon-Fri workday tasks (standard schedule)
+    # ==================================================================
+
     sched.add_task(
         name="morning_report",
         hour=5,
         minute=0,
         callback=task_morning_report,
-        description="Send morning report with Bible verse, todo list, health summary, scan results, and file attachments (MD, XLSX, PDF)",
-    )
-
-    sched.add_task(
-        name="daily_scan",
-        hour=23,
-        minute=0,
-        callback=task_daily_scan,
-        description="Run Claude analysis of POD/Schedule/Constraints across all projects",
-    )
-
-    sched.add_task(
-        name="daily_constraints_folder",
-        hour=0,
-        minute=5,
-        callback=task_daily_constraints_folder,
-        description="Create date-stamped constraints folder for the new day",
-    )
-
-    sched.add_task(
-        name="folder_cleanup",
-        hour=19,
-        minute=0,
-        callback=task_folder_cleanup,
-        description="Scan workspace for duplicates, misplaced files, and folder hygiene issues",
+        description="5 AM CT Mon-Fri — Morning report with Bible verse, todo, health summary, scan results, and attachments",
+        days_of_week=MON_FRI,
     )
 
     sched.add_task(
@@ -1676,15 +2535,140 @@ def create_scheduler(bot=None) -> Scheduler:
         hour=6,
         minute=0,
         callback=task_proactive_morning,
-        description="6 AM CT morning thinking session — Nimrod reviews memories and sends ideas",
+        description="6 AM CT Mon-Fri — Morning thinking session — Nimrod reviews memories and sends ideas",
+        days_of_week=MON_FRI,
     )
+
+    # Proactive Follow-Up: daily PDF report at 5 PM CT (Mon-Fri, end of day)
+    # Moved from 7 AM to 5 PM on 2026-03-01 so the user gets ONE consolidated
+    # PDF at end of day summarizing what to chase tomorrow morning.
+    # Runs before the 6 PM evening proactive thinking session.
+    sched.add_task(
+        name="proactive_followup_report",
+        hour=17,
+        minute=0,
+        callback=task_proactive_followup_report,
+        description="5 PM CT Mon-Fri — End-of-day Proactive Follow-Up PDF report (what to chase tomorrow)",
+        days_of_week=MON_FRI,
+    )
+
+    # DISABLED 2026-03-01: Follow-up queue scan sent 30+ individual Telegram
+    # messages per run (one per follow-up item). Replaced by the consolidated
+    # Proactive Follow-Up PDF report which generates ONE end-of-day PDF with
+    # all constraint follow-ups organized by project and priority.
+    # The followup.py module is kept for its commitment tracking DB and
+    # get_overdue_summary() (used by the morning report), but its scheduled
+    # scans that call send_for_approval() are disabled.
+    #
+    # for hour, minute in FOLLOWUP_SCAN_TIMES:
+    #     time_label = f"{hour:02d}:{minute:02d}"
+    #     sched.add_task(
+    #         name=f"followup_{time_label}",
+    #         hour=hour,
+    #         minute=minute,
+    #         callback=task_follow_up_scan,
+    #         description=f"Follow-up scan at {time_label} CT Mon-Fri — check due commitments and approaching deadlines",
+    #         days_of_week=MON_FRI,
+    #     )
 
     sched.add_task(
         name="proactive_evening",
         hour=18,
         minute=0,
         callback=task_proactive_evening,
-        description="6 PM CT evening debrief — Nimrod reflects on the day and sets up tomorrow",
+        description="6 PM CT Mon-Fri — Evening debrief — Nimrod reflects on the day and sets up tomorrow",
+        days_of_week=MON_FRI,
+    )
+
+    sched.add_task(
+        name="folder_cleanup",
+        hour=19,
+        minute=0,
+        callback=task_folder_cleanup,
+        description="7 PM CT Mon-Fri — Scan workspace for duplicates, misplaced files, and folder hygiene",
+        days_of_week=MON_FRI,
+    )
+
+    # ==================================================================
+    # Sunday shifted schedule (4 PM CT start — respects church morning)
+    # ==================================================================
+
+    sched.add_task(
+        name="sunday_morning_report",
+        hour=16,
+        minute=0,
+        callback=task_morning_report,
+        description="4 PM CT Sunday — Morning report (Sunday edition, prep for Monday)",
+        days_of_week=SUN_ONLY,
+    )
+
+    sched.add_task(
+        name="sunday_proactive_morning",
+        hour=16,
+        minute=5,
+        callback=task_proactive_morning,
+        description="4:05 PM CT Sunday — Proactive thinking session (Sunday edition)",
+        days_of_week=SUN_ONLY,
+    )
+
+    sched.add_task(
+        name="sunday_proactive_followup",
+        hour=16,
+        minute=15,
+        callback=task_proactive_followup_report,
+        description="4:15 PM CT Sunday — Proactive Follow-Up PDF report (Sunday edition)",
+        days_of_week=SUN_ONLY,
+    )
+
+    # DISABLED 2026-03-01: Sunday follow-up scan disabled along with the
+    # Mon-Fri scans. Individual message spam replaced by consolidated PDF.
+    # See the sunday_proactive_followup task at 4:15 PM for the PDF report.
+    #
+    # sched.add_task(
+    #     name="sunday_followup_scan",
+    #     hour=17,
+    #     minute=0,
+    #     callback=task_follow_up_scan,
+    #     description="5 PM CT Sunday — Follow-up scan (Sunday edition)",
+    #     days_of_week=SUN_ONLY,
+    # )
+
+    sched.add_task(
+        name="sunday_proactive_evening",
+        hour=18,
+        minute=0,
+        callback=task_proactive_evening,
+        description="6 PM CT Sunday — Evening debrief (Sunday edition)",
+        days_of_week=SUN_ONLY,
+    )
+
+    sched.add_task(
+        name="sunday_folder_cleanup",
+        hour=19,
+        minute=0,
+        callback=task_folder_cleanup,
+        description="7 PM CT Sunday — Folder cleanup scan (Sunday edition)",
+        days_of_week=SUN_ONLY,
+    )
+
+    # ==================================================================
+    # Always-on tasks (every day including Saturday)
+    # ==================================================================
+
+    sched.add_task(
+        name="daily_constraints_folder",
+        hour=0,
+        minute=5,
+        callback=task_daily_constraints_folder,
+        description="12:05 AM CT daily — Create date-stamped constraints folder for the new day",
+    )
+
+    sched.add_task(
+        name="daily_scan",
+        hour=23,
+        minute=0,
+        callback=task_daily_scan,
+        description="11 PM CT daily — Run Claude analysis of POD/Schedule/Constraints across all projects",
     )
 
     sched.add_task(
@@ -1693,6 +2677,7 @@ def create_scheduler(bot=None) -> Scheduler:
         minute=0,
         callback=task_weekly_portfolio_check,
         description="Monday 8 AM CT — Remind about new DSC project onboarding",
+        days_of_week={0},  # Monday only (has its own weekday guard too)
     )
 
     # Interval task: poll Gmail for inbound emails every 45 seconds
@@ -1703,43 +2688,31 @@ def create_scheduler(bot=None) -> Scheduler:
         description="Poll Gmail IMAP for inbound [INBOX:] tagged emails + auto-file POD/constraints attachments",
     )
 
-    # Escalation engine: 3x/day at 9 AM, 1 PM, 5 PM CT
-    for hour, minute in ESCALATION_SCAN_TIMES:
-        time_label = f"{hour:02d}:{minute:02d}"
+    # DISABLED 2026-03-01: One-time task for Feb 28 — no longer needed.
+    # Was missing days_of_week filter so it fired EVERY DAY at 6 AM.
+    # Removed to prevent stale task execution.
+    #
+    # sched.add_task(
+    #     name="weekend_todo",
+    #     hour=6,
+    #     minute=0,
+    #     callback=task_weekend_todo,
+    #     description="One-time weekend to-do list — Saturday Feb 28, 2026 at 6 AM CT",
+    # )
+
+    # ==================================================================
+    # Health monitoring (every 4 hours during business hours)
+    # ==================================================================
+    # Runs at :30 past the hour to avoid colliding with other tasks
+    # that fire on the hour (morning report, proactive sessions, etc.)
+
+    for hour in [6, 10, 14, 18, 22]:
         sched.add_task(
-            name=f"escalation_{time_label}",
+            name=f"health_check_{hour:02d}",
             hour=hour,
-            minute=minute,
-            callback=task_escalation_scan,
-            description=f"Escalation scan at {time_label} CT — draft follow-up emails for stalled constraints",
+            minute=30,
+            callback=task_health_check,
+            description=f"Health check at {hour}:30 CT — monitor services, DBs, disk, network",
         )
-
-    # Constraint heartbeat: every hour
-    sched.add_interval_task(
-        name="constraint_heartbeat",
-        interval_seconds=HEARTBEAT_INTERVAL_SECONDS,
-        callback=task_constraint_heartbeat,
-        description="Hourly constraint snapshot + diff — notify on meaningful changes only",
-    )
-
-    # Follow-up queue: 2x/day at 10 AM and 4 PM CT
-    for hour, minute in FOLLOWUP_SCAN_TIMES:
-        time_label = f"{hour:02d}:{minute:02d}"
-        sched.add_task(
-            name=f"followup_{time_label}",
-            hour=hour,
-            minute=minute,
-            callback=task_follow_up_scan,
-            description=f"Follow-up scan at {time_label} CT — check due commitments and approaching deadlines",
-        )
-
-    # One-time weekend to-do list: Saturday Feb 28, 2026 at 6 AM CT
-    sched.add_task(
-        name="weekend_todo",
-        hour=6,
-        minute=0,
-        callback=task_weekend_todo,
-        description="One-time weekend to-do list — Saturday Feb 28, 2026 at 6 AM CT",
-    )
 
     return sched

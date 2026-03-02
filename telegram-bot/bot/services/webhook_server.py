@@ -127,7 +127,7 @@ async def handle_outbox(request):
     # Shape the response for Power Automate consumption
     results = []
     for item in items:
-        results.append({
+        entry = {
             "id": item["id"],
             "source": item["source"],
             "sender": item["sender"],
@@ -136,12 +136,23 @@ async def handle_outbox(request):
             "channel": item["channel"],
             "external_message_id": item["external_message_id"],
             "response": item["approved_response"],
-        })
+        }
+        # Include CC recipients if present (reply-all behavior)
+        if item.get("cc"):
+            entry["cc"] = item["cc"]
+        results.append(entry)
 
     return web.json_response({"items": results})
 
 
-def create_webhook_app(message_queue, auth_token: str, recall_service=None) -> web.Application:
+def create_webhook_app(
+    message_queue,
+    auth_token: str,
+    recall_service=None,
+    memory=None,
+    web_conversations=None,
+    token_tracker=None,
+) -> web.Application:
     app = web.Application()
     app["message_queue"] = message_queue
     app["webhook_auth_token"] = auth_token
@@ -154,11 +165,39 @@ def create_webhook_app(message_queue, auth_token: str, recall_service=None) -> w
     app.router.add_get("/webhook/outbox", handle_outbox)
     app.router.add_post("/webhook/recall", handle_recall_webhook)
 
+    # --- Web Platform API routes ---
+    if memory and web_conversations:
+        app["memory"] = memory
+        app["web_conversations"] = web_conversations
+        if token_tracker:
+            app["token_tracker"] = token_tracker
+
+        from bot.web_api import setup_web_routes
+        setup_web_routes(app)
+        logger.info("Web platform API routes registered on webhook server")
+    else:
+        logger.info("Web platform API not registered (memory or web_conversations not provided)")
+
     return app
 
 
-async def start_webhook_server(message_queue, auth_token: str, port: int = 8000, recall_service=None):
-    app = create_webhook_app(message_queue, auth_token, recall_service=recall_service)
+async def start_webhook_server(
+    message_queue,
+    auth_token: str,
+    port: int = 8000,
+    recall_service=None,
+    memory=None,
+    web_conversations=None,
+    token_tracker=None,
+):
+    app = create_webhook_app(
+        message_queue,
+        auth_token,
+        recall_service=recall_service,
+        memory=memory,
+        web_conversations=web_conversations,
+        token_tracker=token_tracker,
+    )
     runner = web.AppRunner(app)
     await runner.setup()
     site = web.TCPSite(runner, "0.0.0.0", port)

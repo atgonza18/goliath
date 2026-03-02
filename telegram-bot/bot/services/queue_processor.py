@@ -141,16 +141,26 @@ def _build_draft_prompt(item: dict) -> str:
         "Three Rivers, Scioto Ridge, Mayes, Graceland, Pecan Prairie, Duffy BESS"
     )
 
+    cc = item.get("cc") or ""
+
     if source == "email":
+        cc_line = f"CC: {cc}\n" if cc else ""
+        cc_note = (
+            f"\nNOTE: This is a reply-all — the CC recipients ({cc}) will also "
+            f"receive your reply. Keep your tone and content appropriate for all "
+            f"parties on the thread.\n"
+        ) if cc else ""
         return (
             f"You are drafting an email reply AS Aaron Gonzalez (MasTec DSC). "
             f"You are his double — you respond the way he would, with the same "
             f"knowledge and authority.\n\n"
             f"== INBOUND EMAIL ==\n"
             f"From: {sender}\n"
+            f"{cc_line}"
             f"Subject: {subject}\n"
             f"Body:\n{body}\n"
             f"== END EMAIL ==\n"
+            f"{cc_note}"
             f"{soul_section}\n"
             f"== YOUR MISSION ==\n"
             f"1. UNDERSTAND what the sender is asking for or communicating about.\n"

@@ -51,6 +51,13 @@ _TRANSIENT_ERROR_SUBSTRINGS: tuple[str, ...] = (
     "Connection reset",
     "Broken pipe",
     "zombie safety net",
+    # CLI process failures — always worth retrying.  The bundled Claude CLI
+    # can exit 1 (or get SIGKILLed → -9) for transient reasons (API hiccup,
+    # resource pressure, etc.).  The SDK wraps these as a generic Exception
+    # with "Command failed with exit code N" — treat them all as transient.
+    "Command failed with exit code",
+    "exit code",
+    "Check stderr output for details",
 )
 
 # Substrings that indicate permanent failures (never retry)
@@ -93,6 +100,14 @@ def is_transient_error(error_msg: str | None, exception: Exception | None = None
         for substr in _TRANSIENT_ERROR_SUBSTRINGS:
             if substr in error_msg:
                 return True
+
+    # DEFAULT TO TRANSIENT: If an error doesn't match any permanent pattern,
+    # retry it.  The cost of a wasted retry is low; the cost of giving up on
+    # a transient failure and bricking the bot for 5 min is high.  Only
+    # explicitly-permanent errors (auth, billing, CLI-not-found) skip retry.
+    if error_msg:
+        logger.info(f"Unknown error pattern — defaulting to TRANSIENT (will retry): {error_msg[:200]}")
+        return True
 
     return False
 

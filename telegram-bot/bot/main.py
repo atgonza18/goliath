@@ -20,6 +20,7 @@ from bot.services.message_queue import MessageQueue
 from bot.services.preferences import PreferenceStore
 from bot.services.webhook_server import start_webhook_server
 from bot.services.queue_processor import run_queue_processor
+from bot.web_api import WebConversationStore
 from bot.services.email_service import EmailService
 from bot.services.recall_service import RecallService
 from bot.scheduler import create_scheduler
@@ -72,6 +73,11 @@ async def post_init(application) -> None:
     await preferences.initialize()
     application.bot_data["preferences"] = preferences
 
+    # Web conversation store shares the same DB connection
+    web_conversations = WebConversationStore(memory._db)
+    await web_conversations.initialize()
+    application.bot_data["web_conversations"] = web_conversations
+
     # Message queue shares the same DB connection
     queue = MessageQueue(memory._db)
     await queue.initialize()
@@ -109,16 +115,21 @@ async def post_init(application) -> None:
             _cleanup_conversations, interval=3600, first=3600
         )
 
-    # Start webhook server
+    # Start webhook + web API server
+    # Always start the server — web platform API needs it even without WEBHOOK_AUTH_TOKEN.
+    # Webhook endpoints still check their own auth; web API uses WEB_API_KEY if set.
+    webhook_runner = await start_webhook_server(
+        queue, WEBHOOK_AUTH_TOKEN, WEBHOOK_PORT,
+        recall_service=recall_service,
+        memory=memory,
+        web_conversations=web_conversations,
+        token_tracker=token_tracker,
+    )
+    application.bot_data["webhook_runner"] = webhook_runner
     if WEBHOOK_AUTH_TOKEN:
-        webhook_runner = await start_webhook_server(
-            queue, WEBHOOK_AUTH_TOKEN, WEBHOOK_PORT,
-            recall_service=recall_service,
-        )
-        application.bot_data["webhook_runner"] = webhook_runner
-        logger.info(f"Webhook server running on port {WEBHOOK_PORT}")
+        logger.info(f"Webhook + Web API server running on port {WEBHOOK_PORT}")
     else:
-        logger.warning("WEBHOOK_AUTH_TOKEN not set — webhook server disabled")
+        logger.info(f"Web API server running on port {WEBHOOK_PORT} (webhook auth not configured — webhook endpoints open)")
 
     # Start queue processor if REPORT_CHAT_ID is configured
     if REPORT_CHAT_ID:
@@ -146,14 +157,24 @@ async def post_init(application) -> None:
         try:
             chat_id = int(REPORT_CHAT_ID)
 
+            # Run startup self-test
+            self_test_note = ""
+            try:
+                self_test_note = await _run_startup_self_test()
+                if self_test_note:
+                    self_test_note = f"\n\n{self_test_note}"
+            except Exception as e:
+                logger.warning(f"Startup self-test failed: {e}")
+                self_test_note = "\n\n<i>Self-test: could not run</i>"
+
             # Check for pending transcripts to process
             pending_transcripts = _find_pending_transcripts()
             pending_note = ""
             if pending_transcripts:
                 names = ", ".join(p.name for p in pending_transcripts)
                 pending_note = (
-                    f"\n\n<b>🔄 Processing pending transcript(s):</b> {names}\n"
-                    "Full pipeline: analysis → constraint extraction → ConstraintsPro sync. "
+                    f"\n\n<b>Processing pending transcript(s):</b> {names}\n"
+                    "Full pipeline: analysis, constraint extraction, ConstraintsPro sync. "
                     "Results incoming shortly."
                 )
 
@@ -162,6 +183,7 @@ async def post_init(application) -> None:
                 text="<b>GOLIATH is online.</b>\n"
                      "Bot restarted and all systems operational.\n\n"
                      f"<i>Scheduler active with {len(scheduler.list_tasks())} tasks.</i>"
+                     f"{self_test_note}"
                      f"{pending_note}",
                 parse_mode="HTML",
             )
@@ -292,6 +314,50 @@ async def _cleanup_conversations(context: ContextTypes.DEFAULT_TYPE) -> None:
     conversation = context.bot_data.get("conversation")
     if conversation:
         await conversation.cleanup_old(max_age_hours=48)
+
+
+async def _run_startup_self_test() -> str:
+    """Run the self-test script and return an HTML summary for the startup message.
+
+    Executes self_test.py's run_self_test_summary() in-process (it's fast and
+    doesn't use Claude CLI or network calls that could hang). Falls back to
+    a subprocess if the import fails.
+    """
+    import sys as _sys
+    cron_dir = REPO_ROOT / "cron-jobs"
+
+    # Try importing directly (fastest path)
+    try:
+        if str(cron_dir) not in _sys.path:
+            _sys.path.insert(0, str(cron_dir))
+        from self_test import run_self_test_summary
+        return run_self_test_summary()
+    except ImportError:
+        logger.warning("Could not import self_test module, falling back to subprocess")
+
+    # Fallback: run as subprocess
+    try:
+        script_path = cron_dir / "self_test.py"
+        if not script_path.exists():
+            return "<i>Self-test: script not found</i>"
+
+        env = dict(os.environ)
+        env.pop("CLAUDECODE", None)
+
+        process = await asyncio.create_subprocess_exec(
+            _sys.executable, "-c",
+            f"import sys; sys.path.insert(0, '{cron_dir}'); "
+            f"from self_test import run_self_test_summary; print(run_self_test_summary())",
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+            cwd=str(REPO_ROOT),
+            env=env,
+        )
+        stdout, _ = await asyncio.wait_for(process.communicate(), timeout=30)
+        return stdout.decode(errors="replace").strip()
+    except Exception as e:
+        logger.warning(f"Self-test subprocess failed: {e}")
+        return f"<i>Self-test: failed ({type(e).__name__})</i>"
 
 
 def main():

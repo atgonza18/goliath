@@ -304,13 +304,24 @@ class SubagentRunnerSDK:
 
         except Exception as e:
             elapsed = time.monotonic() - start
-            logger.exception(f"Subagent '{agent.name}' unexpected error")
+            error_str = str(e)[:500]
+            # The SDK's query.py raises generic Exception for CLI process
+            # failures (e.g. "Command failed with exit code 1").  Log at
+            # WARNING instead of EXCEPTION to avoid scary tracebacks for
+            # what is really a transient CLI failure.
+            if "exit code" in error_str or "Command failed" in error_str:
+                logger.warning(
+                    f"Subagent '{agent.name}' CLI process failure "
+                    f"(transient, will retry): {error_str[:200]}"
+                )
+            else:
+                logger.exception(f"Subagent '{agent.name}' unexpected error")
             return AgentResult(
                 agent_name=agent.name,
                 success=False,
                 output="",
                 duration_seconds=elapsed,
-                error=str(e)[:500],
+                error=error_str,
             )
 
     @staticmethod

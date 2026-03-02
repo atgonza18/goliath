@@ -1,12 +1,31 @@
 """
 Auto Follow-Up Queue — Tracks commitments and approaching constraint deadlines.
 
-Runs 2x/day (10 AM and 4 PM CT) via the scheduler, staggered from escalation scans.
-When someone commits to something (captured as action_item in memory), auto-queues
-a follow-up. When constraints approach their need-by date within 48 hours, creates
-a reminder. Overdue items surface in the morning report.
+SCHEDULED SENDS DISABLED (2026-03-01):
+  The scheduled scans (10 AM and 4 PM CT) that called run_follow_up_scan() and
+  sent INDIVIDUAL Telegram messages via send_for_approval() have been disabled
+  in scheduler.py. This was sending 30+ separate messages per run — pure spam.
 
-Follow-up drafts are sent to Telegram for approval (same pattern as escalation).
+  The follow-up system is now consolidated into ONE end-of-day PDF report via
+  proactive_followup.py (fires at 5 PM CT Mon-Fri, 4:15 PM Sunday). That PDF
+  includes both constraint-based follow-ups AND commitment-based items from
+  this module's database.
+
+WHAT'S STILL ACTIVE IN THIS MODULE:
+  - The SQLite schema and DB (follow_ups table) — still used for tracking
+  - get_overdue_summary() — still called by the morning report
+  - scan_for_follow_ups() — called by proactive_followup.py to pull commitment items
+  - create_follow_up() / check_due_follow_ups() — data layer still works
+  - mark_completed() / mark_rejected() — still available for manual use
+
+WHAT'S DISABLED:
+  - run_follow_up_scan() — no longer called by the scheduler (was the spam source)
+  - send_for_approval() — no longer called (sent individual Telegram messages)
+  - generate_follow_up_draft() — no longer called (drafts now in the PDF)
+
+If we want to repurpose this module later for commitment tracking, the data
+layer is intact. Just don't re-enable the scheduled scans without removing
+the individual Telegram message sends.
 """
 
 import asyncio
@@ -356,15 +375,21 @@ class FollowUpQueue:
         return None
 
     # ------------------------------------------------------------------
-    # Send follow-up draft to Telegram with approve/reject buttons
+    # Send follow-up reminder to Telegram (no approve/reject buttons)
     # ------------------------------------------------------------------
 
     async def send_for_approval(
         self, bot, chat_id: int, item: dict, draft: str
     ) -> None:
-        """Send a follow-up draft to Telegram with inline approval buttons."""
-        from telegram import InlineKeyboardButton, InlineKeyboardMarkup
+        """Send a follow-up reminder to Telegram.
 
+        DEPRECATED (2026-03-01): This method is no longer called by the scheduler.
+        It sent individual Telegram messages per follow-up item, which resulted in
+        30+ messages of spam. Follow-ups are now consolidated into a single PDF
+        report via proactive_followup.py.
+
+        Kept for backward compatibility in case manual triggering is needed.
+        """
         fu_id = item.get("id", "?")
         project = escape(str(item.get("project_key", "Unknown")))
         commitment = escape(str(item.get("commitment", ""))[:200])
@@ -379,35 +404,20 @@ class FollowUpQueue:
         draft_display = escape(draft[:2800])
 
         text = (
-            f"<b>Follow-Up Draft</b>{overdue_tag}\n"
+            f"<b>Follow-Up Reminder</b>{overdue_tag}\n"
             f"<b>Project:</b> {project}\n"
             f"<b>Owner:</b> {owner}\n"
             f"<b>Commitment:</b> {commitment}\n"
             f"<b>Committed:</b> {committed_date} | <b>Due:</b> {follow_up_date}\n\n"
-            f"<b>Draft message:</b>\n"
-            f"<i>{draft_display}</i>\n\n"
-            f"Approve or reject this follow-up?"
+            f"<b>Suggested follow-up:</b>\n"
+            f"<i>{draft_display}</i>"
         )
-
-        keyboard = InlineKeyboardMarkup([
-            [
-                InlineKeyboardButton(
-                    "Approve & Send",
-                    callback_data=f"fu_approve:{fu_id}",
-                ),
-                InlineKeyboardButton(
-                    "Reject",
-                    callback_data=f"fu_reject:{fu_id}",
-                ),
-            ]
-        ])
 
         try:
             await bot.send_message(
                 chat_id=chat_id,
                 text=text,
                 parse_mode="HTML",
-                reply_markup=keyboard,
             )
         except Exception:
             # Fallback without HTML
@@ -415,10 +425,9 @@ class FollowUpQueue:
                 await bot.send_message(
                     chat_id=chat_id,
                     text=text,
-                    reply_markup=keyboard,
                 )
             except Exception:
-                logger.exception("Failed to send follow-up approval to Telegram")
+                logger.exception("Failed to send follow-up reminder to Telegram")
 
         # Mark that a reminder was sent for this item
         try:
@@ -495,10 +504,14 @@ class FollowUpQueue:
     async def run_follow_up_scan(self, bot, chat_id: int) -> int:
         """Run a full follow-up scan cycle.
 
-        1. Scan memory for new action items and approaching constraints
-        2. Create follow-up entries for new items
-        3. Check for due/overdue follow-ups
-        4. Draft messages and send for approval
+        DEPRECATED (2026-03-01): This method is no longer called by the scheduler.
+        It scanned for due items and sent individual Telegram messages for each one,
+        resulting in 30+ messages of spam. The scheduler tasks that called this
+        (followup_10:00, followup_16:00, sunday_followup_scan) are all disabled.
+
+        Follow-ups are now consolidated into a single end-of-day PDF report via
+        proactive_followup.py. The data-layer methods (scan_for_follow_ups,
+        create_follow_up, check_due_follow_ups) are still used by that system.
 
         Returns the number of follow-up drafts sent for approval.
         """

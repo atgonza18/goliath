@@ -1,0 +1,39 @@
+{
+  "project": "scioto-ridge",
+  "project_name": "Scioto Ridge",
+  "last_updated": "2026-02-28",
+  "contacts": [
+    {
+      "name": "Sahil Patil",
+      "email": null,
+      "role": "Field Manager / Site Lead",
+      "company": "MasTec",
+      "source": "transcript_feb27",
+      "added": "2026-02-28"
+    },
+    {
+      "name": "Luis Soto",
+      "email": "Luis.Soto3@mastec.com",
+      "role": "BOM / Procurement / DMC Connectors",
+      "company": "MasTec",
+      "source": "transcript_feb27",
+      "added": "2026-02-28"
+    },
+    {
+      "name": "Cody Martens",
+      "email": null,
+      "role": "Engineering Coordination (Stantec)",
+      "company": "Stantec",
+      "source": "transcript_feb27",
+      "added": "2026-02-28"
+    },
+    {
+      "name": "Ferdinand Abella",
+      "email": "Ferdinand.Abella@mastec.com",
+      "role": "Internal Engineering Group",
+      "company": "MasTec",
+      "source": "email_history",
+      "added": "2026-02-28"
+    }
+  ]
+}

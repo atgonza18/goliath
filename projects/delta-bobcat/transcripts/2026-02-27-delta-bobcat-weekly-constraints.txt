@@ -1,0 +1,452 @@
+[00:00:03] Ary Mathews:
+  And then G sent out a filtech next week to answer some questions that Exterra has to clear up the gap and then just. Just kind of look at a racking system, make sure that there's no issues. Is
+
+[00:00:20] Joshua Hauger:
+  there like an RFI for something or. What do you mean, clear up the gap?
+
+[00:00:24] Ary Mathews:
+  Yeah, there's a. There's been an RFI out for. So the. Due to the bone of the modules and the long speed clamp, your tolerance is 0 to 1 16. And then as you go down the speed clamp right to the very end, there's a gap that's a little bit higher. It's closer to an eighth. And so make sure. Wanting clarification that that gap is appropriate and they're going to cover the warranty on it. There's been some RFIs sent off from us, but they haven't been. I've been detailed, but not like detailed enough to where game change is kind of understanding. So I talked to Alan. Alan just said they were sending the tech out and then he's gonna take a look at it because it's definitely, I guess, something they've never seen before. So.
+
+[00:01:21] Joshua Hauger:
+  Okay. Do we need to add that as a constraint, like something that we need to track or.
+
+[00:01:25] Ary Mathews:
+  No.
+
+[00:01:26] Joshua Hauger:
+  Okay.
+
+[00:01:28] Ary Mathews:
+  No, it's not. It's not an issue. It's just due to the bone of the models. Right. So there's, there's a slide. There's like. If you go up to the. If you go up to the speed clamp at the very end, right. Like you can, you can move the speed clamp because it's not. It's. There's a. There's a gap there of like an eighth inch. Right. So it's fully engaged from the center, like midways down the module, as it should be. There's just a slight gap in the very end. And visually. Right. Next year wants a answer on if that's appropriate or not from game change.
+
+[00:02:03] Joshua Hauger:
+  Gotcha. Okay.
+
+[00:02:07] Aaron Gonzalez:
+  All right. Just want to go over the production view we have right now. Just have a couple questions. I might not have full context, so bear with me, but in these blocks right here, I do see there's some leave outs. I'm assuming we haven't completed racking. Are we working on these or what's the situation here?
+
+[00:02:28] Ary Mathews:
+  Yeah,
+
+[00:02:29] Aaron Gonzalez:
+  block five and
+
+[00:02:30] Ary Mathews:
+  four. Yep, yep. So tomorrow we're bringing the torque tube team in and they're going to do all the fill ins and then they're going to proceed to complete that whole section down there with tubes.
+
+[00:02:40] Aaron Gonzalez:
+  Okay. Was this due to allow for some trenching or was there remediation going on or.
+
+[00:02:46] Ary Mathews:
+  I'm not exact. James. You know, do you know if it was due to trenching activities or whatever? I think it was.
+
+[00:02:52] James Kelly:
+  That's something
+
+[00:02:52] Ary Mathews:
+  to
+
+[00:02:52] James Kelly:
+  do. Yeah. A lot of it was the trenching activity along the roadside there.
+
+[00:02:58] Aaron Gonzalez:
+  Okay, okay, so it was trenching, but we're out of there and we're just gonna send the. Tube team down there, right?
+
+[00:03:03] James Kelly:
+  Yeah, there's still some simultaneous operations going on down there, but we, we're fairly confident that we can work around them. Now we're, there's the, they're wrapping up between the 07 and 06 there in the center of the screen. So hopefully with that backfill is going to be compacted today and cleaned up. I, it wasn't this morning, but that was kind of what we were expecting today. Either way, we can still get that torque put on through there, get that finished so that we can open up some more space for the module throwers.
+
+[00:03:33] Aaron Gonzalez:
+  Okay. Okay. And right now you have about half a block of running room for modules.
+
+[00:03:40] James Kelly:
+  It's a quarter of a block because it's up to the inverter in 07.
+
+[00:03:46] Aaron Gonzalez:
+  Yeah,
+
+[00:03:47] James Kelly:
+  from the, from the, from the west. So the inverter to the east was where the trenching just was
+
+[00:03:53] Aaron Gonzalez:
+  right here?
+
+[00:03:54] James Kelly:
+  Yeah,
+
+[00:03:55] Aaron Gonzalez:
+  yeah. Okay. All right. And then as far as piles installed, where are we, where are we at right now? I see some leave out areas here in block 7 and 8,
+
+[00:04:09] James Kelly:
+  right? Yes. So that leave out there in 2, 3 and 4 was for trenching. We'll get that. We're doing the, getting our documentation in place so that in the, the utility avoidance permits going out. So we get that done. They're also working along at 6, 7 and 8 and then they're going to work on the east side of the road and 1 and 4 because that's available. And then the south side of the road and the west side
+
+[00:04:40] Ary Mathews:
+  of the
+
+[00:04:41] James Kelly:
+  road in 5 and 1. We're still using the west side of the road for a lay down yard. So it's going to be a bit before we can get in there and drive piles.
+
+[00:04:49] Aaron Gonzalez:
+  Okay.
+
+[00:04:51] Ary Mathews:
+  Okay.
+
+[00:04:51] Aaron Gonzalez:
+  So right now we pretty much the only thing is we have modules kind of right behind racking. But as far as piles go, we, we're chugging along.
+
+[00:05:01] James Kelly:
+  That's correct. Our remediation efforts is already across 25. They finished two blocks already. They're into their third block. That would be. They're in the 03, the, the 11A1, 03. There's where they're in remediation now. And they're gonna go to the west and then north from there and then straight west along the, along that center section.
+
+[00:05:26] Aaron Gonzalez:
+  Okay. 10 4. We have a good grip on what we're going to do to give modules running room.
+
+[00:05:36] James Kelly:
+  Yes, that's part of the reason we got that torque tube crew coming in so that they can open that up. The electrical's already putting charging modules and control nodes in. And 12A106, they're doing that work now. That way they're ready for modules when it's ready for modules there. And that would be the. If it's the north side of the 12A0106 that is ready for them.
+
+[00:06:03] Aaron Gonzalez:
+  Okay.
+
+[00:06:03] Joshua Hauger:
+  Yeah, I just. I just finished running the AI model in the last couple days, and there is a significant step change in racking. You're now doing more than you need to achieve baseline schedule on racking. So you've. You've doubled your racking in the last week, which is awesome, and
+
+[00:06:21] James Kelly:
+  that's
+
+[00:06:21] Ary Mathews:
+  great,
+
+[00:06:22] James Kelly:
+  but we are still not quite where we want to be. Yeah,
+
+[00:06:25] Joshua Hauger:
+  I know. You guys want to finish two months early. I got it. That's good.
+
+[00:06:31] James Kelly:
+  Running room.
+
+[00:06:33] Ary Mathews:
+  No.
+
+[00:06:35] Joshua Hauger:
+  What are you saying, Ari?
+
+[00:06:37] Ary Mathews:
+  Said. Said whoever's presenting, but plug in a computer room before it dies.
+
+[00:06:44] Joshua Hauger:
+  Okay. There
+
+[00:06:45] Ary Mathews:
+  was like. There was like a little battery thing on the.
+
+[00:06:47] Aaron Gonzalez:
+  Oh, my computer? Yeah, dude, it was dying. Had to plug it in really fast.
+
+[00:06:51] Ary Mathews:
+  Okay.
+
+[00:06:53] Joshua Hauger:
+  All right, let's. Let's
+
+[00:06:54] Ary Mathews:
+  hit the
+
+[00:06:55] Joshua Hauger:
+  constraints real quick, Aaron, and then we'll get rocking.
+
+[00:06:58] Aaron Gonzalez:
+  Yeah, absolutely. I have D over here. Okay. Above ground electrical material. We. Last update was we were receiving cab line material. We requested a delivery schedule. Did we get that back with the material breakdown?
+
+[00:07:21] James Kelly:
+  There was a delivery that was supposed to be this week. It did come in. I haven't reconciled it with the rest of the order, but they have another order that's coming in in a few more weeks. I've got it in the email somewhere, but they've reconciled some of it in.
+
+[00:07:38] Ary Mathews:
+  I
+
+[00:07:38] James Kelly:
+  don't have the details on it, so it's. It's enough to start, but I don't think we have the cable yet.
+
+[00:07:44] Aaron Gonzalez:
+  Okay. Is it the string wire we're missing? String
+
+[00:07:48] James Kelly:
+  wires is showing up. I'm trying to find the. Actually, I'm trying to find all the Shoals drawings so I can start reconciling what's come in. I don't know where it's at. I can't find anything in Pro Core. Sorry.
+
+[00:07:59] Aaron Gonzalez:
+  Okay, no worries. Can we make sure we reconcile and we kind of know where we're at and what's. What's pending and then maybe on the next call, or James, maybe I can shoot you a message on Monday or Tuesday and we can update
+
+[00:08:15] James Kelly:
+  this. Yeah, because right now I'm not very confident that there's even enough for them to do a
+
+[00:08:19] Ary Mathews:
+  block
+
+[00:08:19] James Kelly:
+  if everything.
+
+[00:08:20] Ary Mathews:
+  If
+
+[00:08:20] James Kelly:
+  all the Scholes material was on site. I mean, you know.
+
+[00:08:24] Aaron Gonzalez:
+  Okay, so
+
+[00:08:24] James Kelly:
+  it's not an
+
+[00:08:25] Aaron Gonzalez:
+  immediate concern. It's
+
+[00:08:26] James Kelly:
+  not an immediate concern when they're not ready to start it. But I. I've got. We've all got to know that enough's here to do something.
+
+[00:08:35] Aaron Gonzalez:
+  Okay. Yeah, I guess once. Once we get that reconciled, like, I'll. I'll revisit it with you Tuesday or Monday and see. See what's up. I
+
+[00:08:46] Ary Mathews:
+  got. I got it on my board. We'll ensure we'll work on it this week or this
+
+[00:08:50] Aaron Gonzalez:
+  next
+
+[00:08:50] Ary Mathews:
+  week.
+
+[00:08:51] Aaron Gonzalez:
+  10 4. Okay. We have a meeting coming up on the 17th for this MBA. Subcontractor
+
+[00:09:03] Ary Mathews:
+  potential
+
+[00:09:03] Aaron Gonzalez:
+  impacts. So I guess we'll wait for an update on that. Anything changing on that end, Ari?
+
+[00:09:10] Ary Mathews:
+  No, it's still the same.
+
+[00:09:12] Aaron Gonzalez:
+  Okay.
+
+[00:09:14] Ary Mathews:
+  I don't know if we should add it just yet, but Rich had a. Which was part of a meeting this morning with JFE and the substation contractor. Sounds like there's some. Some concerns with some delays that the sub ain't gonna be ready for Jeffe to perform the work. So I need to understand what it is and then we can probably add it next week.
+
+[00:09:38] Aaron Gonzalez:
+  Okay, so we'll wait until you get full details and
+
+[00:09:41] Ary Mathews:
+  you can
+
+[00:09:41] Aaron Gonzalez:
+  add it. Okay.
+
+[00:09:43] Ary Mathews:
+  Yeah, but it could be an opportunity to. For JFE to slow down and not be rushed. So rushed. Right. So I'll get back to you.
+
+[00:09:54] Aaron Gonzalez:
+  Okay. And forgive my ignorance. JFE is doing what on your project? Just so I can
+
+[00:09:59] Ary Mathews:
+  track
+
+[00:09:59] Aaron Gonzalez:
+  this
+
+[00:10:00] James Kelly:
+  Underground me MV under.
+
+[00:10:02] Aaron Gonzalez:
+  Underground mv. Gotcha. That's the sub. Okay. All right. As far as the leave outs and having Keely descoped. I know we. We're not going to be scoped them and we're going to be pulling out our dead ends. Yeah.
+
+[00:10:18] Ary Mathews:
+  I've
+
+[00:10:18] James Kelly:
+  been assured
+
+[00:10:19] Ary Mathews:
+  that the.
+
+[00:10:20] James Kelly:
+  Yeah. By end of day today they're going to have 1, 2, 3, 6 blocks of dead ends next to the trench way removed. By end of day today. Yeah.
+
+[00:10:33] Ary Mathews:
+  Region five.
+
+[00:10:34] James Kelly:
+  Yes, Region five.
+
+[00:10:42] Aaron Gonzalez:
+  Okay. Is this something that we would consider. It's already resolved as far as the bottleneck here or are we tracking it?
+
+[00:10:53] Ary Mathews:
+  No, you can. You can resolve it. I got with Tyler this morning. So what we're going to do is we got together. I provided a map to. To Kenneth just for region five because that's the next block they're going to go into. And then. And then next week we'll look at the next block and I'll do the same thing.
+
+[00:11:13] Aaron Gonzalez:
+  Okay. Down four. Road repair at 247. There was some contention I guess on who was going to cover the cost or something like that. We're gonna have a
+
+[00:11:26] Ary Mathews:
+  meeting. Yeah, doll, you wanna. You wanna go through this? Just talk to.
+
+[00:11:32] Daliah Deloria:
+  Yeah, I can. That one. Yeah, we kind of were getting real close, if not over our budget that we had. Nextera had a budget and they also kind of doubled what they were anticipating. So I think they're looking at another 500,000. We are planning to put everything on a TNM ticket tomorrow of the repairs that we're going to do. Ari notified the county this morning that we're going to make the repairs and then Steve from Nextera requested that I get a quote to see what it would cost to do the asphalt, to have someone come in and do the asphalt for that road, to eliminate future repairs, since we're not going to be hauling down it anymore.
+
+[00:12:05] Aaron Gonzalez:
+  Okay. On
+
+[00:12:06] Daliah Deloria:
+  their ticket though. So tomorrow's repairs will be done on a CM ticket and covered by Nextera.
+
+[00:12:12] Aaron Gonzalez:
+  Okay, perfect. So we're doing partial.
+
+[00:12:17] Ary Mathews:
+  I'm
+
+[00:12:17] Daliah Deloria:
+  sorry, are
+
+[00:12:18] Aaron Gonzalez:
+  we covering?
+
+[00:12:22] Ary Mathews:
+  No, no, we're. No, we're going to do the work and next year is going to pay for it.
+
+[00:12:25] Aaron Gonzalez:
+  Okay,
+
+[00:12:26] Daliah Deloria:
+  cool. This
+
+[00:12:26] Aaron Gonzalez:
+  one's resolved then, right?
+
+[00:12:28] Ary Mathews:
+  Resolved?
+
+[00:12:30] Aaron Gonzalez:
+  Yeah,
+
+[00:12:36] Ary Mathews:
+  The work will start this weekend.
+
+[00:12:38] Aaron Gonzalez:
+  Okay.
+
+[00:12:40] Ary Mathews:
+  For the major areas there's. There's like four or five big areas they gotta do.
+
+[00:12:46] Aaron Gonzalez:
+  Awesome.
+
+[00:12:51] Ary Mathews:
+  Before
+
+[00:12:52] Daliah Deloria:
+  I Forget, Ari, those 811 tickets did come back, so we're all bid for that tomorrow as well.
+
+[00:12:56] Ary Mathews:
+  Sweet.
+
+[00:12:59] Aaron Gonzalez:
+  Okay, any updates on the shoals and game change tariff, cost increases?
+
+[00:13:09] Ary Mathews:
+  What are you talking about? Turfs?
+
+[00:13:11] Aaron Gonzalez:
+  Yeah, there's some low priority
+
+[00:13:13] Ary Mathews:
+  ones here. Yeah, there's notes in there. It's all. It's. It's all being handled by. The answer I got from. From Colin. Was that it? It's going to be elevated to the SVP level near. And then everything is going to be handled by Mike Flynn.
+
+[00:13:30] Aaron Gonzalez:
+  Okay, Josh, we're keeping these on until it's officially like on the books. Handled. Yeah,
+
+[00:13:35] Joshua Hauger:
+  I mean it's $5 million that the project's already recognized. Half of that like this is near. Needs to sign up for this. This should be passed through when I read. I mean the contract says that you should be able to get this, right, Ari, so.
+
+[00:13:48] Ary Mathews:
+  Yep.
+
+[00:13:49] Joshua Hauger:
+  Yeah, keep on here for now. We could maybe combine them into one, but there are two different ones, so.
+
+[00:13:56] Aaron Gonzalez:
+  Okay, yeah, I'll do that after the call. I'll combine them just for cleanliness. What about short on pile caps? We're only short one inverter. Do we have like a. Any lead
+
+[00:14:11] Ary Mathews:
+  updates?
+
+[00:14:12] Aaron Gonzalez:
+  Yeah,
+
+[00:14:12] Ary Mathews:
+  I think the date's still the same, right? James? I
+
+[00:14:16] James Kelly:
+  have not heard anything else. There's been several emails, exchanges about Kyan to get the quantity that we need in just to do the last one, but I haven't seen anything come in recently that was positive. So
+
+[00:14:29] Aaron Gonzalez:
+  we still need to get the quantity in or. Sorry, I didn't quite understand that
+
+[00:14:33] James Kelly:
+  we asked for. I think it was 30 of them and we're asking for half of them be expedited. And I don't have an update on that email Kane yet. We
+
+[00:14:43] Ary Mathews:
+  have. Do we have a contact premiere for Phoebe? Can you get. Can you send it to me?
+
+[00:14:48] James Kelly:
+  Yes.
+
+[00:14:49] Ary Mathews:
+  Okay. Okay.
+
+[00:14:57] Aaron Gonzalez:
+  Yeah. Because the date I have on here for the Last delivery is 33 11. Is that still the case?
+
+[00:15:05] James Kelly:
+  I don't believe so.
+
+[00:15:10] Aaron Gonzalez:
+  Do we have a estimated date?
+
+[00:15:17] Jack Costello:
+  Would be about four weeks.
+
+[00:15:20] Ary Mathews:
+  Yeah. Four
+
+[00:15:22] Aaron Gonzalez:
+  weeks from execution.
+
+[00:15:24] Jack Costello:
+  Correct.
+
+[00:15:25] Aaron Gonzalez:
+  Okay. All right. Okay. Well, you guys only have seven right now. I'm a little nervous because. That looks good. Is there anything you guys want to add? Anything you guys are seeing out there?
+
+[00:15:52] Ary Mathews:
+  No, we're trying to, based off these conversations, we're probably going to end up adding the. The substation one based off the conversation that JFE had today. That's. But I need to get the information so I can give it to you.
+
+[00:16:08] Aaron Gonzalez:
+  Okay. 10, 4. Either ping me before the next meeting or bring it up in the next meeting. Whatever you feel is best. But. Yeah, we can add it on here. Okay,
+
+[00:16:16] Ary Mathews:
+  sounds good. All
+
+[00:16:19] Joshua Hauger:
+  right. And I'm editing. I'm editing the invite right now. It'll be Tuesday, Thursday, starting next week. So you guys have been doing a really good job. We appreciate all the hard work out there, and I hope you guys have a good weekend.
+
+[00:16:32] Ary Mathews:
+  Appreciate it.
+
+[00:16:33] Aaron Gonzalez:
+  Thanks, guys. See
+
+[00:16:33] Joshua Hauger:
+  you, guys.
+
+[00:16:34] Daliah Deloria:
+  Thank you. Have a good weekend.

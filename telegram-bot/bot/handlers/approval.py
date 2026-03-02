@@ -35,9 +35,15 @@ async def send_approval_request(bot, chat_id: int, queue_item: dict) -> None:
     )
     queue_id = queue_item["id"]
 
+    # CC recipients from the original inbound email (reply-all behavior)
+    cc = queue_item.get("cc") or ""
+    cc_display = escape(cc) if cc else ""
+
     if source == "email":
         header = f"📧 <b>{sender}</b>"
         meta = f"<b>Re:</b> {subject}"
+        if cc_display:
+            meta += f"\n<b>CC:</b> {cc_display}"
     else:
         channel = escape(queue_item.get("channel") or "DM")
         header = f"💬 <b>{sender}</b>"

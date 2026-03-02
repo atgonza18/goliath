@@ -22,6 +22,9 @@ from datetime import datetime, timedelta
 from html import escape
 from pathlib import Path
 from typing import Optional
+from zoneinfo import ZoneInfo
+
+CT = ZoneInfo("America/Chicago")
 
 import aiosqlite
 
@@ -238,7 +241,7 @@ class EscalationTracker:
         cid = constraint.get("id", "")
         state = await self.get_escalation_state(cid)
 
-        now = datetime.utcnow()
+        now = datetime.now(CT)
 
         if state is None:
             # Never escalated — start at Level 1
@@ -331,8 +334,8 @@ class EscalationTracker:
     ) -> None:
         """Record that an escalation draft was sent for approval."""
         cid = constraint.get("id", "")
-        now_str = datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%S")
-        cooldown = (datetime.utcnow() + timedelta(days=5)).strftime("%Y-%m-%dT%H:%M:%S")
+        now_str = datetime.now(CT).strftime("%Y-%m-%dT%H:%M:%S")
+        cooldown = (datetime.now(CT) + timedelta(days=5)).strftime("%Y-%m-%dT%H:%M:%S")
 
         await self._db.execute(
             """

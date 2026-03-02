@@ -1,0 +1,63 @@
+{
+  "project": "delta-bobcat",
+  "project_name": "Delta Bobcat",
+  "last_updated": "2026-02-28",
+  "contacts": [
+    {
+      "name": "James Kelly",
+      "email": null,
+      "role": "Construction / Material Lead",
+      "company": "MasTec",
+      "source": "transcript_feb27",
+      "added": "2026-02-28"
+    },
+    {
+      "name": "Ary Mathews",
+      "email": null,
+      "role": "Electrical / Substation Coordination",
+      "company": "MasTec",
+      "source": "transcript_feb27",
+      "added": "2026-02-28"
+    },
+    {
+      "name": "Daliah Deloria",
+      "email": null,
+      "role": "Administration / Contracts / Road Coordination",
+      "company": "MasTec",
+      "source": "transcript_feb27",
+      "added": "2026-02-28"
+    },
+    {
+      "name": "Joshua Hauger",
+      "email": "joshua.hauger@mastec.com",
+      "role": "DSC Manager / Constraints Oversight",
+      "company": "MasTec",
+      "source": "email_history",
+      "added": "2026-02-28"
+    },
+    {
+      "name": "Aaron Gonzalez",
+      "email": "Aaron.Gonzalez2@mastec.com",
+      "role": "Constraints Call Facilitator",
+      "company": "MasTec",
+      "source": "transcript_feb27",
+      "added": "2026-02-28"
+    },
+    {
+      "name": "Emmanuel Iroulor",
+      "email": "Emmanuel.Iroulor@mastec.com",
+      "role": "POD Coordinator",
+      "company": "MasTec",
+      "source": "email_history",
+      "added": "2026-02-28"
+    },
+    {
+      "name": "James Logan",
+      "email": "James.Logan3@mastec.com",
+      "role": "POD Coordinator",
+      "company": "MasTec",
+      "source": "email_history",
+      "added": "2026-02-28"
+    }
+  ]
+}

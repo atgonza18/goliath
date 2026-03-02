@@ -56,6 +56,9 @@ logger = logging.getLogger(__name__)
 # Regex to parse [INBOX: sender@email.com] from the subject line
 INBOX_TAG_PATTERN = re.compile(r"\[INBOX:\s*([^\]]+)\]\s*(.*)", re.IGNORECASE)
 
+# Regex to parse [CC: addr1, addr2] tag from subject (added by Power Automate relay)
+CC_TAG_PATTERN = re.compile(r"\[CC:\s*([^\]]+)\]\s*(.*)", re.IGNORECASE)
+
 # IMAP connection timeout
 IMAP_TIMEOUT = 15
 
@@ -63,6 +66,7 @@ IMAP_TIMEOUT = 15
 ALLOWED_EXTENSIONS = {
     '.pdf', '.xlsx', '.xls', '.csv', '.doc', '.docx',
     '.ppt', '.pptx', '.png', '.jpg', '.jpeg', '.zip', '.msg',
+    '.ics', '.vcs',  # Calendar invite files (for meeting invite detection)
 }
 
 # Known constraints update senders (case-insensitive partial match on email address)
@@ -289,20 +293,41 @@ class EmailPoller:
                         _mark_processed(dedup)
                         continue
 
+                    # ── Meeting invite: auto-schedule Recall bot + harvest contacts ──
+                    # DISABLED — meeting invite detection disabled to prevent
+                    # automatic firing. Code kept dormant for future re-enable.
+                    # if classification == "meeting_invite":
+                    #     self._spawn_meeting_invite_processing(parsed)
+                    #     count += 1
+                    #     _mark_processed(dedup)
+                    #     continue
+                    # ── End meeting invite ────────────────────────────────────────────
+
                     # ── Normal email: enqueue for draft response ──────────
+                    inbound_cc = parsed.get("cc") or None
                     await self._queue.enqueue(
                         source="email",
                         direction="inbound",
                         sender=parsed["sender"],
                         subject=parsed["subject"],
                         body=parsed["body"],
+                        cc=inbound_cc,
                         external_message_id=parsed.get("message_id"),
                     )
                     count += 1
+                    cc_info = f" cc={inbound_cc}" if inbound_cc else ""
                     logger.info(
-                        f"Polled inbound email from {parsed['sender']} — "
+                        f"Polled inbound email from {parsed['sender']}{cc_info} — "
                         f"subject: {parsed['subject']!r}"
                     )
+
+                    # ── Email Reply Monitor: check for constraint resolution signals ──
+                    # Runs as a background task so it never blocks the polling cycle.
+                    # Detects signals like "PO submitted", "delivery confirmed" and
+                    # proposes ConstraintsPro updates to the user via Telegram.
+                    self._spawn_reply_monitoring(parsed)
+                    # ── End email reply monitor ────────────────────────────────────
+
                     _mark_processed(dedup)
 
                 except Exception:
@@ -487,14 +512,16 @@ class EmailPoller:
     # ==================================================================
 
     def _classify_email(self, parsed: dict) -> str:
-        """Classify an email as 'pod', 'hauger_update', 'constraints', 'schedule', or 'normal'.
+        """Classify an email as 'pod', 'hauger_update', 'constraints', 'schedule',
+        'meeting_invite', or 'normal'.
 
         Returns:
-            'pod'            — Production/POD report email
-            'hauger_update'  — Josh Hauger's DSC summary (constraint notes + production intel)
-            'constraints'    — Constraints update from other senders
-            'schedule'       — Schedule update (lookahead, baseline, P6 export, etc.)
-            'normal'         — Everything else (queued for draft response)
+            'pod'              — Production/POD report email
+            'hauger_update'    — Josh Hauger's DSC summary (constraint notes + production intel)
+            'constraints'      — Constraints update from other senders
+            'schedule'         — Schedule update (lookahead, baseline, P6 export, etc.)
+            'meeting_invite'   — Meeting invite with Teams URL (auto-schedule Recall bot)
+            'normal'           — Everything else (queued for draft response)
         """
         subject = (parsed.get("subject") or "").lower()
         sender = (parsed.get("sender") or "").lower()
@@ -535,6 +562,11 @@ class EmailPoller:
         if self._is_schedule_email(parsed):
             return "schedule"
 
+        # Meeting invite detection: Teams URL + invite signals in body
+        # DISABLED — meeting invite detection disabled to prevent automatic firing.
+        # if self._is_meeting_invite(parsed):
+        #     return "meeting_invite"
+
         return "normal"
 
     def _is_schedule_email(self, parsed: dict) -> bool:
@@ -571,6 +603,21 @@ class EmailPoller:
                         return True
 
         return False
+
+    def _is_meeting_invite(self, parsed: dict) -> bool:
+        """Check if an email is a meeting invite with a Teams URL.
+
+        DISABLED — meeting invite detection disabled to prevent automatic firing.
+        Always returns False. Original code kept below for future re-enable.
+        """
+        return False
+        # try:
+        #     from bot.services.meeting_invite_handler import MeetingInviteHandler
+        #     handler = MeetingInviteHandler()
+        #     return handler.is_meeting_invite(parsed)
+        # except ImportError:
+        #     logger.debug("meeting_invite_handler not available — skipping invite check")
+        #     return False
 
     # ==================================================================
     # Attachment filing
@@ -1013,6 +1060,66 @@ class EmailPoller:
             )
 
     # ==================================================================
+    # Email Reply Monitor integration (Proactive Follow-Up pipeline)
+    # ==================================================================
+
+    def _spawn_reply_monitoring(self, parsed: dict) -> None:
+        """Spawn a background task to check an email for constraint resolution signals.
+
+        This is part of the Proactive Follow-Up pipeline. After the user sends
+        follow-up emails (copied from the daily PDF), replies may contain signals
+        like "PO submitted" or "delivery confirmed". This service detects those
+        signals and proposes ConstraintsPro updates to the user via Telegram.
+
+        IMPORTANT: This is the EMAIL pipeline — it uses HUMAN-IN-THE-LOOP approval.
+        The transcript pipeline (transcript_processor) has full auto-update authority.
+        """
+        if not self._bot or not self._chat_id:
+            return
+
+        body = (parsed.get("body") or "").strip()
+        if not body:
+            return
+
+        sender = parsed.get("sender", "unknown")
+        subject = parsed.get("subject", "")
+
+        asyncio.create_task(
+            self._run_reply_monitoring(
+                subject=subject,
+                body=body,
+                sender=sender,
+            ),
+            name=f"reply-monitor-{sender[:20]}",
+        )
+
+    async def _run_reply_monitoring(
+        self, subject: str, body: str, sender: str
+    ) -> None:
+        """Background task that checks an email reply for resolution signals."""
+        try:
+            from bot.services.email_reply_monitor import EmailReplyMonitor
+
+            monitor = EmailReplyMonitor()
+            proposals = await monitor.process_reply(
+                bot=self._bot,
+                chat_id=self._chat_id,
+                subject=subject,
+                body=body,
+                sender=sender,
+            )
+
+            if proposals > 0:
+                logger.info(
+                    f"Email reply monitor: {proposals} proposal(s) sent "
+                    f"from {sender}'s reply"
+                )
+        except Exception:
+            logger.exception(
+                f"Email reply monitoring failed for email from {sender}"
+            )
+
+    # ==================================================================
     # Hauger DSC summary processing (Feature #5b)
     # ==================================================================
 
@@ -1091,6 +1198,72 @@ class EmailPoller:
             )
 
     # ==================================================================
+    # Meeting invite processing (Option A — email-based Recall integration)
+    # ==================================================================
+
+    # DISABLED — meeting invite processing disabled to prevent automatic firing.
+    # Code kept dormant for future re-enable. The meeting_invite_handler.py
+    # file is also preserved unchanged.
+    #
+    # def _spawn_meeting_invite_processing(self, parsed: dict) -> None:
+    #     """Spawn a background task to process a meeting invite email.
+    #
+    #     Extracts Teams URL, schedules a Recall.ai bot, and updates project
+    #     contact lists from the attendee list. Fire-and-forget — never blocks
+    #     the polling cycle.
+    #     """
+    #     if not self._bot or not self._chat_id:
+    #         logger.debug(
+    #             "Meeting invite processing skipped — no bot/chat_id configured"
+    #         )
+    #         return
+    #
+    #     sender = parsed.get("sender", "unknown")
+    #     subject = parsed.get("subject", "")
+    #
+    #     logger.info(
+    #         f"Spawning meeting invite processor for email from {sender}: "
+    #         f"{subject!r}"
+    #     )
+    #
+    #     asyncio.create_task(
+    #         self._run_meeting_invite_processing(parsed),
+    #         name=f"meeting-invite-{sender[:20]}",
+    #     )
+    #
+    # async def _run_meeting_invite_processing(self, parsed: dict) -> None:
+    #     """Background task that processes a meeting invite.
+    #
+    #     Catches all exceptions so it never crashes the bot process.
+    #     """
+    #     try:
+    #         from bot.services.meeting_invite_handler import MeetingInviteHandler
+    #
+    #         # Get recall_service from bot_data if available
+    #         recall_service = None
+    #         if self._bot and hasattr(self._bot, "bot_data"):
+    #             recall_service = self._bot.bot_data.get("recall_service")
+    #
+    #         handler = MeetingInviteHandler(recall_service=recall_service)
+    #         result = await handler.process_meeting_invite(
+    #             parsed=parsed,
+    #             chat_id=self._chat_id,
+    #             bot=self._bot,
+    #         )
+    #
+    #         logger.info(
+    #             f"Meeting invite processed — "
+    #             f"bot_scheduled={result.get('bot_scheduled')}, "
+    #             f"contacts_added={result.get('contacts_added', 0)}, "
+    #             f"project={result.get('project_key', 'unknown')}"
+    #         )
+    #     except Exception:
+    #         logger.exception(
+    #             f"Meeting invite processing failed for email: "
+    #             f"{parsed.get('subject', 'unknown')!r}"
+    #         )
+
+    # ==================================================================
     # IMAP operations
     # ==================================================================
 
@@ -1150,9 +1323,11 @@ class EmailPoller:
     # ==================================================================
 
     def _parse_email(self, raw: bytes) -> Optional[dict]:
-        """Parse a raw email and extract sender, subject, body, attachments, and message ID.
+        """Parse a raw email and extract sender, subject, body, CC, attachments, and message ID.
 
         Expects the subject to contain [INBOX: sender@email.com] Original Subject.
+        Optionally parses [CC: addr1, addr2] from the subject (added by PA relay).
+        Also reads the standard Cc header as a fallback for CC recipients.
         Returns None if the subject doesn't match the expected format.
         """
         msg = email.message_from_bytes(raw)
@@ -1177,6 +1352,44 @@ class EmailPoller:
         original_sender = match.group(1).strip()
         original_subject = match.group(2).strip()
 
+        # ── Extract CC recipients ─────────────────────────────────────
+        # Source 1: [CC: addr1, addr2] tag in subject (from PA relay)
+        cc_from_tag = ""
+        cc_tag_match = CC_TAG_PATTERN.match(original_subject)
+        if cc_tag_match:
+            cc_from_tag = cc_tag_match.group(1).strip()
+            # Strip the CC tag from the subject so it doesn't pollute the display
+            original_subject = cc_tag_match.group(2).strip()
+
+        # Source 2: Standard email Cc header (fallback / merge)
+        cc_from_header = ""
+        raw_cc = msg.get("Cc", "") or msg.get("CC", "") or ""
+        if raw_cc:
+            # Decode the CC header (may be RFC 2047 encoded)
+            cc_decoded_parts = email.header.decode_header(raw_cc)
+            cc_header_parts = []
+            for part, charset in cc_decoded_parts:
+                if isinstance(part, bytes):
+                    cc_header_parts.append(part.decode(charset or "utf-8", errors="replace"))
+                else:
+                    cc_header_parts.append(part)
+            cc_from_header = " ".join(cc_header_parts).strip()
+
+        # Build exclusion set: user's own addresses + the original sender
+        # (sender becomes the To: recipient in the reply, so no need to CC them)
+        exclude_addrs: set[str] = set()
+        if self.address:
+            exclude_addrs.add(self.address.lower().strip())
+        relay = RELAY_TO_ADDRESS or ""
+        if relay:
+            exclude_addrs.add(relay.lower().strip())
+        if original_sender:
+            exclude_addrs.add(original_sender.lower().strip())
+
+        # Merge CC from both sources (deduplicated, user/sender excluded)
+        cc = self._merge_cc(cc_from_tag, cc_from_header, exclude=exclude_addrs)
+        # ── End CC extraction ─────────────────────────────────────────
+
         # Extract message ID
         message_id = msg.get("Message-ID", "")
 
@@ -1190,9 +1403,43 @@ class EmailPoller:
             "sender": original_sender,
             "subject": original_subject,
             "body": body,
+            "cc": cc,
             "message_id": message_id,
             "attachments": attachments,
         }
+
+    @staticmethod
+    def _merge_cc(cc_from_tag: str, cc_from_header: str, exclude: set[str] | None = None) -> str:
+        """Merge CC addresses from subject tag and email header, deduplicating.
+
+        Both inputs are comma-separated email address strings (possibly with
+        display names like '"John Doe" <john@example.com>').  We extract bare
+        email addresses, deduplicate case-insensitively, and return a clean
+        comma-separated string of bare addresses (or empty string if none).
+
+        Args:
+            cc_from_tag: CC addresses from [CC: ...] subject tag.
+            cc_from_header: CC addresses from email Cc header.
+            exclude: Optional set of lowercase email addresses to exclude
+                     (e.g., the user's own addresses to avoid CC'ing yourself).
+        """
+        import email.utils as _eu
+
+        all_raw = f"{cc_from_tag}, {cc_from_header}" if (cc_from_tag and cc_from_header) else (cc_from_tag or cc_from_header)
+        if not all_raw.strip():
+            return ""
+
+        exclude = exclude or set()
+
+        seen: set[str] = set()
+        result: list[str] = []
+        for _name, addr in _eu.getaddresses([all_raw]):
+            addr = addr.strip().lower()
+            if addr and addr not in seen and "@" in addr and addr not in exclude:
+                seen.add(addr)
+                result.append(addr)
+
+        return ", ".join(result)
 
     def _extract_body(self, msg: email.message.Message) -> str:
         """Extract the email body, preferring plain text over HTML."""

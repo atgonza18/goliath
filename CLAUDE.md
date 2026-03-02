@@ -59,7 +59,7 @@ All agents (including Nimrod) run with `--dangerously-skip-permissions` for full
 
 ### Key Files
 
-- `Claude.md` (note: lowercase 'laude') — Agent system prompt injected into all Claude CLI calls. **Do not rename or merge with this file.**
+- `Claude.md` (note: lowercase 'laude') — Master system context. Not auto-injected (see "System Prompt Architecture" below). Agents with tool access can read it. **Do not rename, delete, or merge with this file.**
 - `telegram-bot/bot/agents/definitions.py` — All 6 agent system prompts and configurations
 - `telegram-bot/bot/agents/orchestrator.py` — Two-pass orchestration engine, subagent dispatch, memory injection
 - `telegram-bot/bot/agents/runner.py` — Claude CLI subprocess runner (`claude --print`)
@@ -87,6 +87,33 @@ All agent calls are stateless — continuity comes from SQLite memory injection,
 - `.env` contains `TELEGRAM_BOT_TOKEN` and optional `ALLOWED_CHAT_IDS` / `REPORT_CHAT_ID`
 - Python paths auto-detect the root via `Path(__file__).resolve()` -- no hardcoded base path
 - Telegram messages use HTML formatting (`<b>`, `<i>`, `<code>`), not Markdown
+
+### System Prompt Architecture (investigated 2026-02-27)
+
+Both agent runners (`runner.py` CLI and `runner_sdk.py` SDK) pass each agent's
+`system_prompt` via `--system-prompt`, which **replaces** Claude Code's default
+system prompt entirely. This means:
+
+- `Claude.md` is **NOT** auto-injected into agent sessions. The `--system-prompt`
+  flag overrides the default prompt that would normally include it.
+- `.claude/rules/` files would **NOT** be auto-loaded either. The SDK sends
+  `--setting-sources ""` by default (when `setting_sources` is `None`), which
+  disables all setting sources (user, project, local).
+- `.claude/settings.json` is likewise not loaded by agent subprocesses — MCP
+  servers are passed explicitly via `--mcp-config` when needed.
+- Each agent's full instructions live in `agent_definitions/<agent>.py`. The
+  comments referencing "shared rules in Claude.md" are hints for agents WITH
+  tool access to read the file if needed, not auto-injection.
+
+**Do NOT move shared content to `.claude/rules/`** — it would not be picked up
+unless `setting_sources=["project"]` is set on every `ClaudeAgentOptions`, which
+would also load `.claude/settings.json` and potentially cause side effects.
+
+To add rules that ALL agents see, either:
+1. Embed them directly in each agent's `system_prompt` string, or
+2. Use `SystemPromptPreset(type="preset", preset="claude_code", append="...")`
+   which keeps the default system prompt (including CLAUDE.md) and appends
+   custom content — but this changes the base prompt significantly.
 
 ### Resolved Pitfalls
 

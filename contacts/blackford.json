@@ -1,0 +1,23 @@
+{
+  "project": "blackford",
+  "project_name": "Blackford",
+  "last_updated": "2026-02-28",
+  "contacts": [
+    {
+      "name": "Mason Merkel",
+      "email": "Mason.Merkel@mastec.com",
+      "role": "POD Coordinator",
+      "company": "MasTec",
+      "source": "email_history",
+      "added": "2026-02-28"
+    },
+    {
+      "name": "Salam Rawi",
+      "email": "Salam.Rawi@mastec.com",
+      "role": "Project Executive",
+      "company": "MasTec",
+      "source": "user_confirmed",
+      "added": "2026-02-28"
+    }
+  ]
+}

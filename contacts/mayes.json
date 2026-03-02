@@ -1,0 +1,31 @@
+{
+  "project": "mayes",
+  "project_name": "Mayes",
+  "last_updated": "2026-02-28",
+  "contacts": [
+    {
+      "name": "Juan Soto",
+      "email": "Juan.Soto@mastec.com",
+      "role": "Project Manager (PM)",
+      "company": "MasTec",
+      "source": "email_history",
+      "added": "2026-02-28"
+    },
+    {
+      "name": "Mason McDonald",
+      "email": "mason.mcdonald@mastec.com",
+      "role": "Assistant Project Manager (APM)",
+      "company": "MasTec",
+      "source": "email_history",
+      "added": "2026-02-28"
+    },
+    {
+      "name": "Dyami Roman-Sosa",
+      "email": "Dyami.roman-sosa@mastec.com",
+      "role": "Field Engineer 3 (FE3)",
+      "company": "MasTec",
+      "source": "email_history",
+      "added": "2026-02-28"
+    }
+  ]
+}

@@ -1,4 +1,4 @@
-from telegram.ext import Application, CommandHandler, MessageHandler, filters
+from telegram.ext import Application, CallbackQueryHandler, CommandHandler, MessageHandler, filters
 
 from bot.handlers.basic import start_handler, help_handler, status_handler, project_handler
 from bot.handlers.files import files_handler, read_handler
@@ -13,6 +13,7 @@ from bot.handlers.orchestration import (
 )
 from bot.handlers.approval import build_approval_conversation_handler
 from bot.handlers.meeting import join_handler, meetings_handler
+from bot.services.email_reply_monitor import handle_constraint_proposal_callback
 from bot.config import ALLOWED_CHAT_IDS
 
 
@@ -51,6 +52,13 @@ def register_all_handlers(app: Application) -> None:
     # Approval inline buttons + edit conversation flow (must be before catch-all)
     approval_handler = build_approval_conversation_handler(user_filter)
     app.add_handler(approval_handler)
+
+    # Constraint proposal callbacks (from email reply monitor)
+    # These handle the "Yes, push it" / "No, skip" buttons for ConstraintsPro updates
+    app.add_handler(CallbackQueryHandler(
+        handle_constraint_proposal_callback,
+        pattern=r"^cp_(approve|reject):",
+    ))
 
     # Photos and documents
     app.add_handler(MessageHandler(filters.PHOTO & user_filter, photo_message_handler))

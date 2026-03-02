@@ -1,0 +1,23 @@
+DSC Constraints & Production Reports — 2026-03-02
+==================================================
+
+This folder was auto-created by the daily cron job.
+
+Expected contents:
+  - Constraint reports (PDF/TXT) per project
+  - Action item lists for APM follow-up
+  - Production (POD) analysis if available
+
+Projects in portfolio:
+  - union-ridge
+  - duff
+  - salt-branch
+  - blackford
+  - delta-bobcat
+  - tehuacana
+  - three-rivers
+  - scioto-ridge
+  - mayes
+  - graceland
+  - pecan-prairie
+  - duffy-bess

@@ -1,0 +1,37 @@
+[Unit]
+Description=GOLIATH Web Platform — Frontend + API Server
+After=network-online.target goliath-bot.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=goliath
+Group=goliath
+WorkingDirectory=/opt/goliath/web-platform/backend
+ExecStart=/usr/bin/node dist/index.js
+ExecStop=/bin/kill -SIGTERM $MAINPID
+
+# Environment
+EnvironmentFile=/opt/goliath/.env
+Environment=PORT=80
+Environment=NODE_ENV=production
+
+# Auto-restart on crash
+Restart=always
+RestartSec=5
+
+# Logging
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=goliath-web
+
+# Security — allow binding to port 80
+AmbientCapabilities=CAP_NET_BIND_SERVICE
+NoNewPrivileges=no
+
+# Resource limits
+MemoryMax=512M
+CPUQuota=40%
+
+[Install]
+WantedBy=multi-user.target

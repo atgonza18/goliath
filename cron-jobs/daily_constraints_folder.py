@@ -4,13 +4,16 @@ Daily Constraints Folder Creator — Midnight CT
 Crontab: 0 0 * * * cd /opt/goliath && python cron-jobs/daily_constraints_folder.py
 
 Creates a new date-stamped subfolder under dsc-constraints-production-reports/
-each day so constraint logs, reports, and snapshots have a home before
-the analyst or agents start their work.
+each day so constraint logs and reports have a home before the analyst
+or agents start their work.
 """
 
 import sys
 from datetime import datetime
 from pathlib import Path
+from zoneinfo import ZoneInfo
+
+CT = ZoneInfo("America/Chicago")
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 DSC_REPORTS_DIR = REPO_ROOT / "dsc-constraints-production-reports"
@@ -24,7 +27,7 @@ PROJECTS = [
 
 def create_daily_folder() -> Path:
     """Create today's date folder with a standard structure."""
-    today = datetime.now().strftime("%Y-%m-%d")
+    today = datetime.now(CT).strftime("%Y-%m-%d")
     day_folder = DSC_REPORTS_DIR / today
 
     # Create the main date folder
@@ -40,7 +43,6 @@ def create_daily_folder() -> Path:
             f"Expected contents:\n"
             f"  - Constraint reports (PDF/TXT) per project\n"
             f"  - Action item lists for APM follow-up\n"
-            f"  - Schedule risk snapshots\n"
             f"  - Production (POD) analysis if available\n\n"
             f"Projects in portfolio:\n"
             + "\n".join(f"  - {p}" for p in PROJECTS)
@@ -54,8 +56,8 @@ def main():
     # Ensure the parent DSC reports directory exists
     DSC_REPORTS_DIR.mkdir(parents=True, exist_ok=True)
 
-    today = datetime.now().strftime("%Y-%m-%d")
-    print(f"[{datetime.now().isoformat()}] Creating daily constraints folder for {today}...")
+    today = datetime.now(CT).strftime("%Y-%m-%d")
+    print(f"[{datetime.now(CT).isoformat()}] Creating daily constraints folder for {today}...")
 
     day_folder = create_daily_folder()
 

@@ -2,164 +2,49 @@
 Daily Trend Analysis — Constraint movement and follow-up queue summary for morning report.
 
 Generates two sections for the morning report:
-  1. "Constraint Movement (24h)" — what changed overnight (new, resolved, status changes,
-     priority changes) based on heartbeat snapshot comparison.
+  1. "Constraint Movement (24h)" — placeholder (constraint snapshot functionality removed;
+     constraint data is now accessed live via Convex API / MCP server).
   2. "Follow-Up Queue" — what's due/overdue today from the follow-up queue.
 
 Can also be run standalone via the scheduler or called directly by the morning report.
 """
 
-import json
 import logging
 import time
 from datetime import datetime, timedelta
 from html import escape
 from pathlib import Path
 from typing import Optional
+from zoneinfo import ZoneInfo
 
-from bot.config import REPO_ROOT, FOLLOWUP_DB_PATH, HEARTBEAT_SNAPSHOT_DIR
+CT = ZoneInfo("America/Chicago")
+
+from bot.config import REPO_ROOT, FOLLOWUP_DB_PATH
 
 logger = logging.getLogger(__name__)
-
-# Snapshot paths (mirrors heartbeat.py)
-SNAPSHOT_DIR = HEARTBEAT_SNAPSHOT_DIR
-LATEST_SNAPSHOT_PATH = SNAPSHOT_DIR / "latest.json"
-PREVIOUS_SNAPSHOT_PATH = SNAPSHOT_DIR / "previous.json"
 
 
 class TrendAnalyzer:
     """Generates trend analysis sections for the morning report."""
 
     # ------------------------------------------------------------------
-    # Constraint movement (24h) — heartbeat snapshot comparison
+    # Constraint movement (24h)
     # ------------------------------------------------------------------
 
     def get_constraint_changes_24h(self) -> dict:
-        """Load heartbeat snapshots and summarize changes from the last 24 hours.
+        """Return constraint change data for the last 24 hours.
 
-        Returns a dict with keys:
-          - new: list of new constraints (HIGH/MEDIUM)
-          - resolved: list of constraints that changed to resolved/closed
-          - status_changed: list of other status changes
-          - priority_changed: list of priority elevations
-          - total_current: total constraint count in latest snapshot
-          - snapshot_age_hours: how old the latest snapshot is (for staleness check)
+        NOTE: The local constraint snapshot functionality has been removed.
+        Constraint data is now accessed live via the Convex API / MCP server.
+        This method returns an empty structure for backward compatibility.
         """
-        result = {
+        return {
             "new": [],
             "resolved": [],
             "status_changed": [],
             "priority_changed": [],
             "total_current": 0,
-            "snapshot_age_hours": None,
         }
-
-        # Load latest snapshot
-        latest = self._load_snapshot(LATEST_SNAPSHOT_PATH)
-        if latest is None:
-            logger.info("Trend analysis: no latest snapshot available")
-            return result
-
-        result["total_current"] = len(latest.get("constraints", []))
-
-        # Check snapshot age
-        try:
-            ts = latest.get("timestamp", "")
-            snapshot_dt = datetime.fromisoformat(ts)
-            age_hours = (datetime.utcnow() - snapshot_dt).total_seconds() / 3600
-            result["snapshot_age_hours"] = round(age_hours, 1)
-        except (ValueError, TypeError):
-            pass
-
-        # Load previous snapshot
-        previous = self._load_snapshot(PREVIOUS_SNAPSHOT_PATH)
-        if previous is None:
-            logger.info("Trend analysis: no previous snapshot for comparison")
-            return result
-
-        # Compare
-        old_constraints = previous.get("constraints", [])
-        new_constraints = latest.get("constraints", [])
-
-        old_by_id = {}
-        for c in old_constraints:
-            cid = c.get("id")
-            if cid:
-                old_by_id[cid] = c
-
-        new_by_id = {}
-        for c in new_constraints:
-            cid = c.get("id")
-            if cid:
-                new_by_id[cid] = c
-
-        now_str = datetime.utcnow().strftime("%Y-%m-%d")
-
-        # Check for new constraints and changes
-        for cid, constraint in new_by_id.items():
-            priority = (constraint.get("priority") or "").upper()
-            status = (constraint.get("status") or "").lower()
-            project = constraint.get("project", "Unknown")
-            desc = constraint.get("description", "")[:120]
-
-            if cid not in old_by_id:
-                # New constraint
-                if priority in ("HIGH", "MEDIUM"):
-                    result["new"].append({
-                        "project": project,
-                        "description": desc,
-                        "priority": priority,
-                        "owner": constraint.get("owner", "?"),
-                    })
-                continue
-
-            old_c = old_by_id[cid]
-            old_status = (old_c.get("status") or "").lower()
-            old_priority = (old_c.get("priority") or "").upper()
-
-            # Status changed
-            if status != old_status:
-                if status in ("resolved", "closed", "completed"):
-                    result["resolved"].append({
-                        "project": project,
-                        "description": desc,
-                        "old_status": old_status,
-                        "new_status": status,
-                    })
-                else:
-                    result["status_changed"].append({
-                        "project": project,
-                        "description": desc,
-                        "old_status": old_status,
-                        "new_status": status,
-                    })
-
-            # Priority elevated
-            priority_rank = {"LOW": 0, "MEDIUM": 1, "HIGH": 2, "CRITICAL": 3}
-            new_rank = priority_rank.get(priority, -1)
-            old_rank = priority_rank.get(old_priority, -1)
-            if new_rank != old_rank:
-                result["priority_changed"].append({
-                    "project": project,
-                    "description": desc,
-                    "old_priority": old_priority,
-                    "new_priority": priority,
-                    "direction": "elevated" if new_rank > old_rank else "lowered",
-                })
-
-        return result
-
-    @staticmethod
-    def _load_snapshot(path: Path) -> Optional[dict]:
-        """Load a heartbeat snapshot JSON file."""
-        if not path.exists():
-            return None
-        try:
-            data = json.loads(path.read_text())
-            return data
-        except (json.JSONDecodeError, OSError) as e:
-            logger.warning(f"Failed to load snapshot {path}: {e}")
-            return None
 
     # ------------------------------------------------------------------
     # Follow-up queue summary
@@ -226,14 +111,7 @@ class TrendAnalyzer:
         lines = ["<b>Constraint Movement (24h)</b>"]
 
         total = changes.get("total_current", 0)
-        age = changes.get("snapshot_age_hours")
-
-        if age is not None:
-            lines.append(
-                f"<i>{total} total constraints tracked | "
-                f"Snapshot age: {age}h</i>"
-            )
-        elif total > 0:
+        if total > 0:
             lines.append(f"<i>{total} total constraints tracked</i>")
 
         new = changes.get("new", [])

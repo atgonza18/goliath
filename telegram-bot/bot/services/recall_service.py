@@ -16,6 +16,9 @@ import re
 from datetime import datetime
 from pathlib import Path
 from typing import Optional
+from zoneinfo import ZoneInfo
+
+CT = ZoneInfo("America/Chicago")
 
 import aiohttp
 import aiosqlite
@@ -369,7 +372,7 @@ class RecallService:
                     transcript_text = await self.get_transcript(bot_id)
                     if transcript_text:
                         # Save transcript to file
-                        date_str = datetime.now().strftime("%Y-%m-%d")
+                        date_str = datetime.now(CT).strftime("%Y-%m-%d")
                         transcript_dir = REPO_ROOT / "transcripts" / "recall"
                         transcript_dir.mkdir(parents=True, exist_ok=True)
                         transcript_file = transcript_dir / f"{date_str}-{bot_id[:8]}.txt"

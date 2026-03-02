@@ -1,0 +1,534 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+@import "shadcn/tailwind.css";
+
+@custom-variant dark (&:is(.dark *));
+
+@theme inline {
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+  --radius-2xl: calc(var(--radius) + 8px);
+  --radius-3xl: calc(var(--radius) + 12px);
+  --radius-4xl: calc(var(--radius) + 16px);
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-chart-1: var(--chart-1);
+  --color-chart-2: var(--chart-2);
+  --color-chart-3: var(--chart-3);
+  --color-chart-4: var(--chart-4);
+  --color-chart-5: var(--chart-5);
+  --color-sidebar: var(--sidebar);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-ring: var(--sidebar-ring);
+  --font-sans: 'Inter', ui-sans-serif, system-ui, -apple-system, sans-serif;
+}
+
+:root {
+  --radius: 0.625rem;
+  --background: oklch(1 0 0);
+  --foreground: oklch(0.141 0.005 285.823);
+  --card: oklch(1 0 0);
+  --card-foreground: oklch(0.141 0.005 285.823);
+  --popover: oklch(1 0 0);
+  --popover-foreground: oklch(0.141 0.005 285.823);
+  --primary: oklch(0.21 0.006 285.885);
+  --primary-foreground: oklch(0.985 0.002 247.858);
+  --secondary: oklch(0.967 0.001 286.375);
+  --secondary-foreground: oklch(0.21 0.006 285.885);
+  --muted: oklch(0.967 0.001 286.375);
+  --muted-foreground: oklch(0.552 0.016 285.938);
+  --accent: oklch(0.967 0.001 286.375);
+  --accent-foreground: oklch(0.21 0.006 285.885);
+  --destructive: oklch(0.577 0.245 27.325);
+  --border: oklch(0.92 0.004 286.32);
+  --input: oklch(0.92 0.004 286.32);
+  --ring: oklch(0.705 0.015 286.067);
+  --chart-1: oklch(0.646 0.222 41.116);
+  --chart-2: oklch(0.6 0.118 184.704);
+  --chart-3: oklch(0.398 0.07 227.392);
+  --chart-4: oklch(0.828 0.189 84.429);
+  --chart-5: oklch(0.769 0.188 70.08);
+  --sidebar: oklch(0.985 0.002 247.858);
+  --sidebar-foreground: oklch(0.141 0.005 285.823);
+  --sidebar-primary: oklch(0.21 0.006 285.885);
+  --sidebar-primary-foreground: oklch(0.985 0.002 247.858);
+  --sidebar-accent: oklch(0.967 0.001 286.375);
+  --sidebar-accent-foreground: oklch(0.21 0.006 285.885);
+  --sidebar-border: oklch(0.92 0.004 286.32);
+  --sidebar-ring: oklch(0.705 0.015 286.067);
+}
+
+.dark {
+  --background: oklch(0.141 0.005 285.823);
+  --foreground: oklch(0.985 0.002 247.858);
+  --card: oklch(0.17 0.005 285.823);
+  --card-foreground: oklch(0.985 0.002 247.858);
+  --popover: oklch(0.17 0.005 285.823);
+  --popover-foreground: oklch(0.985 0.002 247.858);
+  --primary: oklch(0.985 0.002 247.858);
+  --primary-foreground: oklch(0.21 0.006 285.885);
+  --secondary: oklch(0.274 0.006 286.033);
+  --secondary-foreground: oklch(0.985 0.002 247.858);
+  --muted: oklch(0.274 0.006 286.033);
+  --muted-foreground: oklch(0.705 0.015 286.067);
+  --accent: oklch(0.274 0.006 286.033);
+  --accent-foreground: oklch(0.985 0.002 247.858);
+  --destructive: oklch(0.704 0.191 22.216);
+  --border: oklch(0.274 0.006 286.033);
+  --input: oklch(0.274 0.006 286.033);
+  --ring: oklch(0.442 0.017 285.786);
+  --chart-1: oklch(0.488 0.243 264.376);
+  --chart-2: oklch(0.696 0.17 162.48);
+  --chart-3: oklch(0.769 0.188 70.08);
+  --chart-4: oklch(0.627 0.265 303.9);
+  --chart-5: oklch(0.645 0.246 16.439);
+  --sidebar: oklch(0.15 0.005 285.823);
+  --sidebar-foreground: oklch(0.985 0.002 247.858);
+  --sidebar-primary: oklch(0.488 0.243 264.376);
+  --sidebar-primary-foreground: oklch(0.985 0.002 247.858);
+  --sidebar-accent: oklch(0.274 0.006 286.033);
+  --sidebar-accent-foreground: oklch(0.985 0.002 247.858);
+  --sidebar-border: oklch(0.274 0.006 286.033);
+  --sidebar-ring: oklch(0.442 0.017 285.786);
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+  body {
+    @apply bg-background text-foreground;
+  }
+}
+
+/* ---- Global resets ---- */
+html, body, #root {
+  height: 100dvh;  /* dynamic viewport height — adapts to mobile URL bar */
+  height: 100vh;   /* fallback for browsers without dvh */
+  width: 100%;
+  overflow: hidden;
+}
+
+@supports (height: 100dvh) {
+  html, body, #root {
+    height: 100dvh;
+  }
+}
+
+/* Mobile: allow touch scrolling within scroll containers */
+.mobile-scroll-container,
+[data-scroll-container] {
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior-y: contain;
+}
+
+body {
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* ---- Selection ---- */
+::selection {
+  background: oklch(0.488 0.243 264.376 / 0.3);
+  color: oklch(0.985 0.002 247.858);
+}
+
+/* ---- Scrollbar ---- */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: oklch(0.274 0.006 286.033);
+  border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: oklch(0.37 0.013 285.805);
+}
+
+/* ---- Animations ---- */
+@keyframes fade-in {
+  from { opacity: 0; transform: translateY(4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.animate-fade-in {
+  animation: fade-in 0.2s ease-out;
+}
+
+@keyframes shimmer {
+  0% { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+
+.thinking-shimmer {
+  background: linear-gradient(
+    90deg,
+    oklch(0.274 0.006 286.033) 0%,
+    oklch(0.37 0.013 285.805) 50%,
+    oklch(0.274 0.006 286.033) 100%
+  );
+  background-size: 200% 100%;
+  animation: shimmer 2s ease-in-out infinite;
+}
+
+/* Expand/collapse animation */
+@keyframes expand-down {
+  from { opacity: 0; max-height: 0; }
+  to { opacity: 1; max-height: 500px; }
+}
+
+.animate-expand {
+  animation: expand-down 0.2s ease-out;
+  overflow: hidden;
+}
+
+/* ===========================================================================
+   Message content styling (markdown from AI) — ChatGPT-quality rendering
+   Supports: headers, bold, italic, code, code blocks, tables, lists,
+   blockquotes, horizontal rules, links, images, strikethrough, task lists
+   =========================================================================== */
+
+/* ---- Base ---- */
+.message-content {
+  word-wrap: break-word;
+  overflow-wrap: break-word;
+  /* Prevent layout thrashing during streaming — browser can skip recalculating
+     siblings when this element's content changes */
+  contain: layout style;
+}
+
+.message-content > *:first-child {
+  margin-top: 0;
+}
+
+.message-content > *:last-child {
+  margin-bottom: 0;
+}
+
+/* ---- Paragraphs ---- */
+.message-content p {
+  margin: 8px 0;
+  line-height: 1.7;
+}
+
+/* ---- Headers ---- */
+.message-content h1 {
+  font-size: 1.375rem;
+  font-weight: 700;
+  color: var(--foreground);
+  margin: 20px 0 10px;
+  line-height: 1.3;
+  letter-spacing: -0.01em;
+}
+
+.message-content h2 {
+  font-size: 1.15rem;
+  font-weight: 650;
+  color: var(--foreground);
+  margin: 18px 0 8px;
+  line-height: 1.35;
+  letter-spacing: -0.005em;
+}
+
+.message-content h3 {
+  font-size: 1rem;
+  font-weight: 620;
+  color: var(--foreground);
+  margin: 14px 0 6px;
+  line-height: 1.4;
+}
+
+.message-content h4,
+.message-content h5,
+.message-content h6 {
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: var(--foreground);
+  margin: 12px 0 4px;
+  line-height: 1.4;
+}
+
+/* ---- Bold / Italic / Strikethrough ---- */
+.message-content b,
+.message-content strong {
+  font-weight: 600;
+  color: var(--foreground);
+}
+
+.message-content i,
+.message-content em {
+  font-style: italic;
+}
+
+.message-content del,
+.message-content s {
+  text-decoration: line-through;
+  opacity: 0.7;
+}
+
+/* ---- Links ---- */
+.message-content a {
+  color: oklch(0.65 0.19 250);
+  text-decoration: none;
+  border-bottom: 1px solid oklch(0.65 0.19 250 / 0.3);
+  transition: border-color 0.15s ease, color 0.15s ease;
+}
+
+.message-content a:hover {
+  color: oklch(0.72 0.19 250);
+  border-bottom-color: oklch(0.72 0.19 250);
+}
+
+/* ---- Inline code ---- */
+.message-content code {
+  background: oklch(0.94 0.002 286);
+  border: 1px solid oklch(0.88 0.004 286);
+  border-radius: 5px;
+  padding: 1.5px 5px;
+  font-size: 0.8125rem;
+  font-family: 'JetBrains Mono', 'Fira Code', ui-monospace, SFMono-Regular, monospace;
+  color: oklch(0.45 0.1 340);
+  white-space: nowrap;
+}
+
+.dark .message-content code {
+  background: oklch(0.22 0.006 286);
+  border-color: oklch(0.3 0.006 286);
+  color: oklch(0.85 0.06 340);
+}
+
+/* ---- Code blocks ---- */
+.message-content pre {
+  background: oklch(0.16 0.005 286);
+  border: 1px solid oklch(0.26 0.006 286);
+  border-radius: 10px;
+  padding: 16px 18px;
+  overflow-x: auto;
+  margin: 12px 0;
+  font-size: 0.8125rem;
+  line-height: 1.65;
+  tab-size: 2;
+}
+
+.message-content pre code {
+  background: transparent;
+  border: none;
+  padding: 0;
+  font-size: inherit;
+  color: oklch(0.88 0.003 286);
+  white-space: pre;
+}
+
+/* ---- Lists ---- */
+.message-content ul {
+  list-style: disc;
+  padding-left: 1.5rem;
+  margin: 8px 0;
+}
+
+.message-content ol {
+  list-style: decimal;
+  padding-left: 1.5rem;
+  margin: 8px 0;
+}
+
+.message-content li {
+  margin: 3px 0;
+  line-height: 1.65;
+  padding-left: 2px;
+}
+
+.message-content li > ul,
+.message-content li > ol {
+  margin: 2px 0;
+}
+
+/* Nested list indent */
+.message-content ul ul,
+.message-content ol ul {
+  list-style: circle;
+}
+
+.message-content ul ul ul,
+.message-content ol ul ul {
+  list-style: square;
+}
+
+/* Task lists (GitHub-flavored) */
+.message-content li input[type="checkbox"] {
+  margin-right: 6px;
+  accent-color: oklch(0.65 0.19 250);
+}
+
+/* ---- Tables ---- */
+.message-content table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 14px 0;
+  font-size: 0.8125rem;
+  line-height: 1.5;
+  overflow-x: auto;
+  display: block;
+}
+
+.message-content thead {
+  display: table;
+  width: 100%;
+  table-layout: fixed;
+}
+
+.message-content tbody {
+  display: table;
+  width: 100%;
+  table-layout: fixed;
+}
+
+.message-content table {
+  display: table;
+  width: 100%;
+  table-layout: auto;
+}
+
+.message-content thead th {
+  background: oklch(0.95 0.002 286);
+  font-weight: 600;
+  color: var(--foreground);
+  text-align: left;
+  padding: 10px 14px;
+  border-bottom: 2px solid oklch(0.88 0.004 286);
+  white-space: nowrap;
+}
+
+.dark .message-content thead th {
+  background: oklch(0.22 0.006 286);
+  border-bottom-color: oklch(0.32 0.006 286);
+}
+
+.message-content tbody td {
+  padding: 8px 14px;
+  border-bottom: 1px solid oklch(0.92 0.003 286);
+  vertical-align: top;
+}
+
+.dark .message-content tbody td {
+  border-bottom-color: oklch(0.26 0.006 286);
+}
+
+.message-content tbody tr:last-child td {
+  border-bottom: none;
+}
+
+.message-content tbody tr:hover {
+  background: oklch(0.97 0.001 286);
+}
+
+.dark .message-content tbody tr:hover {
+  background: oklch(0.19 0.005 286);
+}
+
+/* Alternating row colors for better readability */
+.message-content tbody tr:nth-child(even) {
+  background: oklch(0.98 0.001 286);
+}
+
+.dark .message-content tbody tr:nth-child(even) {
+  background: oklch(0.175 0.005 286);
+}
+
+.message-content tbody tr:nth-child(even):hover {
+  background: oklch(0.96 0.001 286);
+}
+
+.dark .message-content tbody tr:nth-child(even):hover {
+  background: oklch(0.19 0.005 286);
+}
+
+/* Table container for horizontal scroll on small screens */
+.message-content .table-wrapper {
+  overflow-x: auto;
+  margin: 14px 0;
+  border: 1px solid oklch(0.92 0.003 286);
+  border-radius: 8px;
+}
+
+.dark .message-content .table-wrapper {
+  border-color: oklch(0.26 0.006 286);
+}
+
+/* ---- Blockquotes ---- */
+.message-content blockquote {
+  border-left: 3px solid oklch(0.65 0.19 250 / 0.5);
+  margin: 12px 0;
+  padding: 8px 16px;
+  color: var(--muted-foreground);
+  background: oklch(0.97 0.001 286);
+  border-radius: 0 6px 6px 0;
+}
+
+.dark .message-content blockquote {
+  background: oklch(0.18 0.005 286);
+}
+
+.message-content blockquote p {
+  margin: 4px 0;
+}
+
+/* ---- Horizontal rules ---- */
+.message-content hr {
+  border: none;
+  border-top: 1px solid oklch(0.9 0.003 286);
+  margin: 18px 0;
+}
+
+.dark .message-content hr {
+  border-top-color: oklch(0.28 0.006 286);
+}
+
+/* ---- Images ---- */
+.message-content img {
+  max-width: 100%;
+  height: auto;
+  border-radius: 8px;
+  margin: 10px 0;
+}
+
+/* ---- Cursor blink for streaming ---- */
+@keyframes cursor-blink {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0; }
+}
+
+.message-content + .animate-pulse {
+  animation: cursor-blink 1s step-end infinite;
+}

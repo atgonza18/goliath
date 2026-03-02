@@ -1,0 +1,15 @@
+{
+  "project": "salt-branch",
+  "project_name": "Salt Branch",
+  "last_updated": "2026-02-28",
+  "contacts": [
+    {
+      "name": "Mike Reynolds",
+      "email": "mike.reynolds@sunpowerconstruction.com",
+      "role": "External Contractor",
+      "company": "SunPower Construction",
+      "source": "email_history",
+      "added": "2026-02-28"
+    }
+  ]
+}

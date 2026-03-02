@@ -1,0 +1,31 @@
+{
+  "project": null,
+  "project_name": "Portfolio-Wide (All Projects)",
+  "last_updated": "2026-02-28",
+  "contacts": [
+    {
+      "name": "Aaron Gonzalez",
+      "email": "Aaron.Gonzalez2@mastec.com",
+      "role": "DSC — Constraints Lead / Portfolio Oversight",
+      "company": "MasTec DSC",
+      "source": "user_confirmed",
+      "added": "2026-02-28"
+    },
+    {
+      "name": "Tyler Wilcox",
+      "email": null,
+      "role": "DSC — Project Support",
+      "company": "MasTec DSC",
+      "source": "user_confirmed",
+      "added": "2026-02-28"
+    },
+    {
+      "name": "Joshua Hauger",
+      "email": "joshua.hauger@mastec.com",
+      "role": "DSC Manager — Weekly Summaries, Constraints Oversight",
+      "company": "MasTec DSC",
+      "source": "email_history",
+      "added": "2026-02-28"
+    },
+  ]
+}

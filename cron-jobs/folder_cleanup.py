@@ -18,6 +18,9 @@ import re
 import subprocess
 import sys
 from datetime import datetime
+from zoneinfo import ZoneInfo
+
+CT = ZoneInfo("America/Chicago")
 from pathlib import Path
 
 from dotenv import load_dotenv
@@ -190,7 +193,7 @@ def extract_section(report: str, section_name: str) -> str:
 
 def format_telegram_message(report: str, counts: dict) -> str:
     """Format the scan results as an HTML Telegram message."""
-    now = datetime.now()
+    now = datetime.now(CT)
     timestamp = now.strftime("%Y-%m-%d %H:%M CT")
 
     total = counts.get("total", 0)
@@ -356,7 +359,7 @@ def main():
     # Use the first chat ID if multiple are configured
     chat_id = TELEGRAM_CHAT_ID.split(",")[0].strip()
 
-    print(f"[{datetime.now().isoformat()}] Starting folder cleanup scan...")
+    print(f"[{datetime.now(CT).isoformat()}] Starting folder cleanup scan...")
 
     # Run the scan
     report = run_folder_scan()
@@ -365,7 +368,7 @@ def main():
         print("Scan returned empty response")
         msg = (
             "<b>GOLIATH Folder Cleanup Report</b>\n"
-            f"<i>{datetime.now().strftime('%Y-%m-%d %H:%M CT')}</i>\n\n"
+            f"<i>{datetime.now(CT).strftime('%Y-%m-%d %H:%M CT')}</i>\n\n"
             "Scan returned empty response. Claude CLI may be unavailable."
         )
         send_telegram_message(chat_id, msg)
@@ -376,7 +379,7 @@ def main():
         error_detail = report.replace("SCAN_FAILED\n", "")[:500]
         msg = (
             "<b>GOLIATH Folder Cleanup Report</b>\n"
-            f"<i>{datetime.now().strftime('%Y-%m-%d %H:%M CT')}</i>\n\n"
+            f"<i>{datetime.now(CT).strftime('%Y-%m-%d %H:%M CT')}</i>\n\n"
             f"<b>Scan failed</b>\n"
             f"<pre>{error_detail}</pre>"
         )
@@ -386,7 +389,7 @@ def main():
     # Save raw report to file
     reports_dir = REPO_ROOT / "cron-jobs" / "reports"
     reports_dir.mkdir(parents=True, exist_ok=True)
-    today = datetime.now().strftime("%Y-%m-%d")
+    today = datetime.now(CT).strftime("%Y-%m-%d")
     report_path = reports_dir / f"{today}_folder_cleanup.txt"
     report_path.write_text(report)
     print(f"Raw report saved: {report_path}")

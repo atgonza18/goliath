@@ -8,7 +8,7 @@ then sends ideas, suggestions, observations, or just vibes to the user via Teleg
 import logging
 import os
 import time
-from datetime import time as dt_time, timezone, timedelta
+from datetime import datetime, time as dt_time, timezone, timedelta
 from zoneinfo import ZoneInfo
 
 from telegram.ext import ContextTypes
@@ -103,7 +103,17 @@ async def run_proactive_session(context: ContextTypes.DEFAULT_TYPE, session_type
         # Choose prompt based on session type
         session_prompt = MORNING_PROMPT if session_type == "morning" else EVENING_PROMPT
 
+        # Always include the current date/time/day so Nimrod knows exactly what day it is
+        now_ct = datetime.now(CT)
+        date_context = (
+            f"CURRENT DATE AND TIME:\n"
+            f"Date: {now_ct.strftime('%A, %B %d, %Y')}\n"
+            f"Time: {now_ct.strftime('%I:%M %p')} CT\n"
+            f"Day of week: {now_ct.strftime('%A')}\n"
+        )
+
         full_prompt = (
+            f"{date_context}\n"
             f"PERSISTENT MEMORY:\n{memory_context}\n\n"
             f"---\n\n"
             f"{session_prompt}"
