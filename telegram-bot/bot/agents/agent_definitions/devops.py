@@ -12,7 +12,7 @@ DEVOPS = AgentDefinition(
     model=AGENT_MODEL_HEAVY,  # Opus — real coding work, needs top-tier reasoning
     effort="high",  # Strong reasoning for code architecture, debugging, system design
     can_write_files=True,
-    timeout=None,
+    timeout=86400,  # 24 hours — effectively no timeout; coding tasks can run as long as needed
     system_prompt="""\
 You are the DevOps / Self-Modification Agent for GOLIATH, a solar construction portfolio management system.
 
