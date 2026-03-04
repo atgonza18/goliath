@@ -31,7 +31,7 @@ export function ChatInput({ onSend, disabled }: ChatInputProps) {
     setMessage(e.target.value);
     const target = e.target;
     target.style.height = 'auto';
-    target.style.height = Math.min(target.scrollHeight, 160) + 'px';
+    target.style.height = Math.min(Math.max(target.scrollHeight, 44), 160) + 'px';
   };
 
   const canSend = message.trim().length > 0 && !disabled;
@@ -48,9 +48,9 @@ export function ChatInput({ onSend, disabled }: ChatInputProps) {
             placeholder="ASK ANYTHING..."
             disabled={disabled}
             rows={1}
-            className="flex-1 min-w-0 resize-none pl-4 pr-4 py-3.5 text-[13px] focus:outline-none transition-colors duration-100"
+            className="flex-1 min-w-0 resize-none pl-4 pr-4 py-3 text-[13px] focus:outline-none transition-colors duration-100"
             style={{
-              minHeight: '50px',
+              minHeight: '44px',
               maxHeight: '160px',
               background: 'var(--card)',
               border: '2px solid var(--theme-border)',
@@ -69,8 +69,8 @@ export function ChatInput({ onSend, disabled }: ChatInputProps) {
             disabled={!canSend}
             className="shrink-0 flex items-center justify-center transition-all duration-100"
             style={{
-              width: '50px',
-              height: '50px',
+              width: '44px',
+              height: '44px',
               background: canSend ? 'var(--theme-accent)' : 'var(--theme-bg-tertiary)',
               border: canSend ? '2px solid var(--theme-accent)' : '2px solid var(--theme-border)',
               borderRadius: '3px',
