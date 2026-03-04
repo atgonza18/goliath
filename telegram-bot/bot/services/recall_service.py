@@ -361,6 +361,20 @@ class RecallService:
 
                 if status_code == "done":
                     logger.info(f"Bot {bot_id} done — fetching transcript")
+
+                    # ── Idempotency gate: check if the persistent poller
+                    # already handled this bot while we were sleeping ──
+                    try:
+                        from bot.services.recall_transcript_poller import RecallTranscriptPoller
+                        if bot_id in RecallTranscriptPoller._load_tracker().get("processed", {}):
+                            logger.info(
+                                f"Bot {bot_id[:8]} already in dedup tracker "
+                                f"(persistent poller handled it) — skipping"
+                            )
+                            return
+                    except Exception as e:
+                        logger.warning(f"Dedup tracker check failed for {bot_id[:8]}: {e}")
+
                     await self._db.execute(
                         """UPDATE recall_bots
                            SET completed_at = strftime('%Y-%m-%dT%H:%M:%S','now')
@@ -393,26 +407,29 @@ class RecallService:
                             f"({len(transcript_text)} chars)"
                         )
 
-                        # Queue for transcript processing
-                        await self._queue_transcript_for_processing(
-                            chat_id, transcript_file, transcript_text
-                        )
-
-                        # Mark in persistent tracker so the cron poller
-                        # doesn't reprocess this bot on restart
+                        # Mark in persistent tracker BEFORE queuing so
+                        # the persistent poller can't also queue it
+                        # during the race window.
                         try:
-                            from bot.services.recall_transcript_poller import RecallTranscriptPoller
+                            from bot.services.recall_transcript_poller import RecallTranscriptPoller, TRACKER_FILE
                             tracker = RecallTranscriptPoller._load_tracker()
                             tracker["processed"][bot_id] = {
                                 "processed_at": datetime.now(CT).isoformat(),
                                 "transcript_file": str(transcript_file),
                             }
-                            from bot.services.recall_transcript_poller import TRACKER_FILE
                             TRACKER_FILE.parent.mkdir(parents=True, exist_ok=True)
-                            TRACKER_FILE.write_text(json.dumps(tracker, indent=2) + "\n")
+                            tmp = TRACKER_FILE.with_suffix(".tmp")
+                            tmp.write_text(json.dumps(tracker, indent=2) + "\n")
+                            tmp.replace(TRACKER_FILE)
                             logger.info(f"Marked bot {bot_id[:8]} in persistent dedup tracker")
                         except Exception as e:
                             logger.warning(f"Failed to update dedup tracker for {bot_id[:8]}: {e}")
+
+                        # Queue for transcript processing (after tracker
+                        # is marked, so the persistent poller will skip it)
+                        await self._queue_transcript_for_processing(
+                            chat_id, transcript_file, transcript_text
+                        )
                     else:
                         await self._queue_notification(
                             chat_id,
