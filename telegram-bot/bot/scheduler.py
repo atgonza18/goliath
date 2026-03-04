@@ -1572,7 +1572,7 @@ async def task_daily_scan(scheduler: "Scheduler") -> None:
         )
 
         stdout, stderr = await asyncio.wait_for(
-            process.communicate(), timeout=720  # 12 minutes
+            process.communicate(), timeout=1200  # 20 minutes
         )
 
         stdout_text = stdout.decode(errors="replace").strip()
