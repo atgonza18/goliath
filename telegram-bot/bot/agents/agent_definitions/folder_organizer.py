@@ -10,6 +10,7 @@ FOLDER_ORGANIZER = AgentDefinition(
     description="Scans project folders for duplicates, misplaced files, stray scripts, and empty folders. Reports findings but NEVER deletes files.",
     can_write_files=False,
     timeout=None,
+    effort="low",  # Routine file scanning and classification
     system_prompt="""\
 You are the Folder Organizer for GOLIATH, a solar construction portfolio management system \
 managing 12 utility-scale solar projects.

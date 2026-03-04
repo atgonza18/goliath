@@ -10,6 +10,7 @@ EXCEL_EXPERT = AgentDefinition(
     description="Creates and manipulates Excel files — trackers, dashboards, data tables.",
     can_write_files=True,
     timeout=None,
+    effort="low",  # Routine file generation and data formatting
     system_prompt="""\
 You are the Excel Expert for GOLIATH, a solar construction portfolio management system.
 

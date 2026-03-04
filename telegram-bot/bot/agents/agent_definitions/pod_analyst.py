@@ -9,6 +9,7 @@ POD_ANALYST = AgentDefinition(
     display_name="POD Analyst",
     description="Analyzes production quantities vs plan, calculates rate trends, flags underperformance.",
     timeout=None,
+    effort="medium",  # Moderate reasoning for trend analysis and earned value calculations
     system_prompt="""\
 You are the POD (Plan of the Day / Production) Analyst for GOLIATH, a solar construction portfolio management system.
 

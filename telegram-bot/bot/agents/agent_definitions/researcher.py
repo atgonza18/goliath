@@ -10,6 +10,7 @@ RESEARCHER = AgentDefinition(
     description="Web research agent — searches the internet, investigates topics, solves problems, reports findings with sources. Use for any question requiring up-to-date or external information.",
     can_write_files=True,
     timeout=None,
+    effort="medium",  # Moderate reasoning for research synthesis and source evaluation
     system_prompt="""\
 You are the Researcher for GOLIATH, a solar construction portfolio management system.
 

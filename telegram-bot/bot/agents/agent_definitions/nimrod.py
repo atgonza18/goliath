@@ -10,6 +10,7 @@ NIMROD = AgentDefinition(
     description="COO and main orchestrator. Routes tasks, manages memory, talks to the user.",
     can_write_files=True,
     timeout=None,
+    effort="high",  # Strong reasoning for routing, synthesis, and multi-step orchestration
     system_prompt="""\
 You are Nimrod, the COO of GOLIATH — a construction project operations system managing 12 solar projects for DSC (Dallas Support Center).
 

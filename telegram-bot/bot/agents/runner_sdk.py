@@ -19,6 +19,7 @@ import time
 from claude_agent_sdk import (
     query,
     ClaudeAgentOptions,
+    HookMatcher,
     ResultMessage,
     AssistantMessage,
     TextBlock,
@@ -44,9 +45,67 @@ from bot.memory.token_tracker import TokenUsage
 
 logger = logging.getLogger(__name__)
 
+# Dedicated logger for structured tool-call events — writes to bot.log in JSON.
+# Consumers can filter on logger name "goliath.tool_events" to get a clean
+# stream of every tool invocation across all agent runs.
+_tool_event_logger = logging.getLogger("goliath.tool_events")
+
 # Module-level token tracker instance, set by main.py at startup.
 # When None, token logging is silently skipped (never blocks agent work).
 _token_tracker = None
+
+
+def _build_tool_hooks(agent_name: str) -> dict:
+    """Build PreToolUse / PostToolUse hook matchers for real-time observability.
+
+    Returns a hooks dict ready for ClaudeAgentOptions.  Each hook callback
+    logs a structured JSON event via the goliath.tool_events logger so that
+    tool calls are visible in real-time in bot.log (not just in the final
+    ResultMessage summary).
+
+    The hooks are observation-only — they always return ``continue_: True``
+    and never block execution.
+    """
+
+    async def _pre_tool_hook(hook_input, tool_use_id, context):
+        """Log tool invocation just before Claude executes it."""
+        try:
+            tool_name = hook_input.get("tool_name", "unknown") if isinstance(hook_input, dict) else getattr(hook_input, "tool_name", "unknown")
+            tool_input = hook_input.get("tool_input", {}) if isinstance(hook_input, dict) else getattr(hook_input, "tool_input", {})
+            _tool_event_logger.info(
+                f"tool_start agent={agent_name} tool={tool_name}",
+                extra={
+                    "agent": agent_name,
+                    "operation": "tool_start",
+                    "tool_name": tool_name,
+                    # Truncate large inputs (e.g. file content writes) to keep logs readable
+                    "tool_input_preview": str(tool_input)[:300] if tool_input else None,
+                },
+            )
+        except Exception:
+            pass  # Never let hook logging crash the agent
+        return {"continue_": True}
+
+    async def _post_tool_hook(hook_input, tool_use_id, context):
+        """Log tool completion after Claude receives the result."""
+        try:
+            tool_name = hook_input.get("tool_name", "unknown") if isinstance(hook_input, dict) else getattr(hook_input, "tool_name", "unknown")
+            _tool_event_logger.info(
+                f"tool_done agent={agent_name} tool={tool_name}",
+                extra={
+                    "agent": agent_name,
+                    "operation": "tool_done",
+                    "tool_name": tool_name,
+                },
+            )
+        except Exception:
+            pass  # Never let hook logging crash the agent
+        return {"continue_": True}
+
+    return {
+        "PreToolUse": [HookMatcher(matcher=None, hooks=[_pre_tool_hook])],
+        "PostToolUse": [HookMatcher(matcher=None, hooks=[_post_tool_hook])],
+    }
 
 
 def set_token_tracker(tracker) -> None:
@@ -208,6 +267,12 @@ class SubagentRunnerSDK:
         else:
             # Full tool access -- equivalent to --dangerously-skip-permissions
             options.permission_mode = "bypassPermissions"
+
+        # Wire up real-time tool observability hooks.
+        # PreToolUse + PostToolUse callbacks log every tool call to the
+        # "goliath.tool_events" structured logger.  They are observation-only
+        # and never block execution.
+        options.hooks = _build_tool_hooks(agent.name)
 
         logger.info(
             f"Running subagent '{agent.name}' via SDK "

@@ -9,6 +9,7 @@ SCHEDULE_ANALYST = AgentDefinition(
     display_name="Schedule Analyst",
     description="Reads/analyzes schedules, tracks float, identifies critical path risks, compares baseline vs current.",
     timeout=None,
+    effort="medium",  # Moderate reasoning for float analysis and schedule comparison
     system_prompt="""\
 You are the Schedule Analyst for GOLIATH, a solar construction portfolio management system.
 

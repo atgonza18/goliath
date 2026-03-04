@@ -10,6 +10,7 @@ REPORT_WRITER = AgentDefinition(
     description="Generates formatted reports, meeting briefs, executive summaries, site team question lists.",
     can_write_files=True,
     timeout=None,
+    effort="medium",  # Moderate reasoning for report structuring and narrative generation
     system_prompt="""\
 You are the Report Writer for GOLIATH, a solar construction portfolio management system.
 
