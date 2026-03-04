@@ -39,7 +39,7 @@ export function ChatInput({ onSend, disabled }: ChatInputProps) {
   return (
     <div className="px-4 pb-5 pt-2 shrink-0">
       <div className="max-w-[720px] mx-auto">
-        <div className="flex items-center gap-0">
+        <div className="flex items-end gap-3">
           <textarea
             ref={textareaRef}
             value={message}
@@ -54,6 +54,7 @@ export function ChatInput({ onSend, disabled }: ChatInputProps) {
               maxHeight: '160px',
               background: 'var(--card)',
               border: '2px solid var(--theme-border)',
+              borderRadius: '3px',
               color: 'var(--foreground)',
             }}
             onFocus={(e) => {
@@ -68,14 +69,13 @@ export function ChatInput({ onSend, disabled }: ChatInputProps) {
             disabled={!canSend}
             className="shrink-0 flex items-center justify-center transition-all duration-100"
             style={{
-              width: '48px',
-              height: '48px',
-              marginLeft: '-2px',
+              width: '50px',
+              height: '50px',
               background: canSend ? 'var(--theme-accent)' : 'var(--theme-bg-tertiary)',
               border: canSend ? '2px solid var(--theme-accent)' : '2px solid var(--theme-border)',
+              borderRadius: '3px',
               color: canSend ? 'var(--primary-foreground)' : 'var(--theme-border)',
               cursor: canSend ? 'pointer' : 'not-allowed',
-              borderRadius: '0',
             }}
           >
             <ArrowUp className="h-5 w-5" strokeWidth={3} />
