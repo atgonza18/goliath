@@ -134,6 +134,11 @@ class MemoryStore:
         await self._db.execute(f"PRAGMA busy_timeout = {_BUSY_TIMEOUT_MS}")
         # WAL mode improves concurrency (readers don't block writers)
         await self._db.execute("PRAGMA journal_mode = WAL")
+        # Performance pragmas — safe with WAL mode
+        await self._db.execute("PRAGMA synchronous = NORMAL")  # ~2x faster writes, safe with WAL
+        await self._db.execute("PRAGMA cache_size = -8000")    # 8MB page cache (default ~2MB)
+        await self._db.execute("PRAGMA mmap_size = 67108864")  # 64MB memory-mapped I/O
+        await self._db.execute("PRAGMA temp_store = MEMORY")   # Temp tables in RAM
         await self._db.executescript(SCHEMA_SQL)
         await self._db.commit()
         logger.info(f"Memory store initialized at {self.db_path}")

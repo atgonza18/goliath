@@ -13,6 +13,7 @@ from bot.handlers.orchestration import (
 )
 from bot.handlers.approval import build_approval_conversation_handler
 from bot.handlers.meeting import join_handler, meetings_handler
+from bot.handlers.auth import build_reauth_conversation_handler, tokenhealth_handler
 from bot.services.email_reply_monitor import handle_constraint_proposal_callback
 from bot.config import ALLOWED_CHAT_IDS
 
@@ -48,6 +49,11 @@ def register_all_handlers(app: Application) -> None:
     # Meeting bot commands (Recall.ai integration)
     app.add_handler(CommandHandler("join", join_handler, filters=user_filter))
     app.add_handler(CommandHandler("meetings", meetings_handler, filters=user_filter))
+
+    # Token health and re-auth commands
+    app.add_handler(CommandHandler("tokenhealth", tokenhealth_handler, filters=user_filter))
+    reauth_handler = build_reauth_conversation_handler(user_filter)
+    app.add_handler(reauth_handler)  # ConversationHandler — must be before catch-all
 
     # Approval inline buttons + edit conversation flow (must be before catch-all)
     approval_handler = build_approval_conversation_handler(user_filter)

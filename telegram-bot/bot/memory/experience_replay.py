@@ -660,6 +660,11 @@ async def run_experience_replay(db_path: Optional[str] = None) -> list[dict]:
             db.row_factory = aiosqlite.Row
             await db.execute("PRAGMA busy_timeout = 5000")
             await db.execute("PRAGMA journal_mode = WAL")
+            # Performance pragmas — safe with WAL mode
+            await db.execute("PRAGMA synchronous = NORMAL")
+            await db.execute("PRAGMA cache_size = -8000")
+            await db.execute("PRAGMA mmap_size = 67108864")
+            await db.execute("PRAGMA temp_store = MEMORY")
 
             store = ExperienceReplayStore(db)
             await store.initialize()

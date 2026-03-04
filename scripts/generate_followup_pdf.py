@@ -37,7 +37,7 @@ import sys
 import tempfile
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
@@ -53,6 +53,46 @@ from reportlab.platypus import (
 )
 
 CT = ZoneInfo("America/Chicago")
+
+# Reply log path (same file as written by email_reply_monitor via reply_log.py)
+REPLY_LOG_PATH = Path("/opt/goliath/telegram-bot/data/email_reply_log.json")
+REPLY_LOG_AWARENESS_HOURS = int(os.environ.get("REPLY_LOG_AWARENESS_HOURS", "48"))
+
+
+def load_reply_lookup() -> dict[str, list[dict]]:
+    """Load the email reply log and build a constraint_id -> replies lookup.
+
+    Returns an empty dict if the log is missing or unreadable.
+    """
+    if not REPLY_LOG_PATH.exists():
+        return {}
+    try:
+        text = REPLY_LOG_PATH.read_text(encoding="utf-8")
+        if not text.strip():
+            return {}
+        entries = json.loads(text)
+        if not isinstance(entries, list):
+            return {}
+
+        cutoff = datetime.now(CT) - timedelta(hours=REPLY_LOG_AWARENESS_HOURS)
+        cutoff_str = cutoff.strftime("%Y-%m-%dT%H:%M:%S")
+        recent = [e for e in entries if e.get("timestamp", "") >= cutoff_str]
+
+        lookup: dict[str, list[dict]] = {}
+        for e in recent:
+            cid = e.get("constraint_id", "")
+            if cid:
+                lookup.setdefault(cid, []).append(e)
+
+        # Sort each list most-recent-first
+        for cid in lookup:
+            lookup[cid].sort(key=lambda x: x.get("timestamp", ""), reverse=True)
+
+        return lookup
+    except Exception as e:
+        print(f"Warning: could not read reply log: {e}")
+        return {}
+
 
 # ---------------------------------------------------------------------------
 # Constraint categorization
@@ -505,6 +545,19 @@ def build_pdf(constraints, output_path):
                              textColor=WHITE, leading=10)
     STYLE_TABLE_CELL = _s("TC", fontName="Helvetica", fontSize=8,
                            textColor=BLACK, leading=10)
+    # Reply-awareness banner
+    STYLE_REPLY_BANNER = _s(
+        "ReplyBanner", fontName="Helvetica-Bold", fontSize=8.5,
+        textColor=colors.HexColor("#2E7D32"), leading=12,
+        leftIndent=8, rightIndent=8, spaceBefore=4, spaceAfter=4,
+        backColor=colors.HexColor("#E8F5E9"),
+        borderWidth=0.5, borderColor=colors.HexColor("#4CAF50"), borderPadding=6,
+    )
+    STYLE_REPLY_DETAIL = _s(
+        "ReplyDetail", fontName="Helvetica", fontSize=8,
+        textColor=colors.HexColor("#37474F"), leading=11,
+        leftIndent=12, rightIndent=8, spaceBefore=1, spaceAfter=2,
+    )
 
     today = datetime.now(CT)
     date_str = today.strftime("%B %d, %Y")
@@ -704,6 +757,26 @@ def build_pdf(constraints, output_path):
                 notes_safe = notes[:300].replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
                 elements.append(Paragraph(f"<i>Latest note: {notes_safe}</i>", STYLE_SMALL))
 
+            # Reply-awareness banner
+            recent_replies = item.get("recent_replies", [])
+            if recent_replies:
+                latest = recent_replies[0]
+                ts = latest.get("timestamp", "")[:10]
+                reply_sender = latest.get("sender_name") or latest.get("sender", "someone")
+                reply_sender_safe = reply_sender.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+                elements.append(Paragraph(
+                    f'REPLY RECEIVED {ts} from {reply_sender_safe} '
+                    f'-- review before following up',
+                    STYLE_REPLY_BANNER,
+                ))
+                reply_summary = latest.get("reply_summary", "")
+                if reply_summary:
+                    summary_safe = reply_summary[:250].replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+                    elements.append(Paragraph(
+                        f'<i>"{summary_safe}"</i>',
+                        STYLE_REPLY_DETAIL,
+                    ))
+
             # Draft
             draft = item.get("draft", "")
             if draft:
@@ -732,15 +805,22 @@ def main():
     print(f"Processing {len(raw_constraints)} constraints...")
     total_start = time.monotonic()
 
+    # Load email reply log for reply-awareness
+    reply_lookup = load_reply_lookup()
+    if reply_lookup:
+        print(f"Reply-awareness: {len(reply_lookup)} constraint(s) have recent email replies")
+
     # Categorize all constraints
     categorized = []
     for c in raw_constraints:
         cat = categorize(c)
+        cid = c.get("id", "")
         categorized.append({
             "constraint": c,
             "category": cat,
             "draft": None,
             "specialist_generated": False,
+            "recent_replies": reply_lookup.get(cid, []),
         })
 
     if use_templates:

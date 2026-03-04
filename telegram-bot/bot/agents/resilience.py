@@ -60,11 +60,24 @@ _TRANSIENT_ERROR_SUBSTRINGS: tuple[str, ...] = (
     "Check stderr output for details",
 )
 
+# Substrings that indicate auth/token expiry — recoverable via token refresh.
+# These are NOT permanent: a token refresh + retry should fix them.
+_AUTH_ERROR_SUBSTRINGS: tuple[str, ...] = (
+    "authentication_error",
+    "authentication_failed",
+    "OAuth token has expired",
+    "token has expired",
+    "401",
+    "unauthorized",
+    "Unauthorized",
+    "invalid_token",
+    "token_expired",
+)
+
 # Substrings that indicate permanent failures (never retry)
 _PERMANENT_ERROR_SUBSTRINGS: tuple[str, ...] = (
     "CLI not found",
     "not found in PATH",
-    "authentication_failed",
     "billing_error",
     "invalid_request",
     "Unknown agent",
@@ -101,15 +114,64 @@ def is_transient_error(error_msg: str | None, exception: Exception | None = None
             if substr in error_msg:
                 return True
 
+    # Auth errors are transient IF we can refresh the token
+    if error_msg:
+        for substr in _AUTH_ERROR_SUBSTRINGS:
+            if substr in error_msg:
+                logger.info(f"Auth error detected — will attempt token refresh before retry: {error_msg[:200]}")
+                return True
+
     # DEFAULT TO TRANSIENT: If an error doesn't match any permanent pattern,
     # retry it.  The cost of a wasted retry is low; the cost of giving up on
     # a transient failure and bricking the bot for 5 min is high.  Only
-    # explicitly-permanent errors (auth, billing, CLI-not-found) skip retry.
+    # explicitly-permanent errors (billing, CLI-not-found) skip retry.
     if error_msg:
         logger.info(f"Unknown error pattern — defaulting to TRANSIENT (will retry): {error_msg[:200]}")
         return True
 
     return False
+
+
+def is_auth_error(error_msg: str | None) -> bool:
+    """Check if an error is specifically an auth/token error.
+
+    Used by runners to trigger token refresh before retrying.
+    """
+    if not error_msg:
+        return False
+    for substr in _AUTH_ERROR_SUBSTRINGS:
+        if substr in error_msg:
+            return True
+    return False
+
+
+async def attempt_auth_recovery(error_msg: str) -> bool:
+    """Attempt to recover from an auth error by refreshing the OAuth token.
+
+    Called by runners between retries when an auth error is detected.
+    If refresh succeeds, the next retry should work with the new token.
+
+    Returns:
+        True if recovery succeeded (caller should retry).
+        False if recovery failed (caller may still retry — the token
+        refresh might succeed on a later attempt).
+    """
+    if not is_auth_error(error_msg):
+        return False
+
+    try:
+        from bot.services.token_health import get_token_health_monitor
+        monitor = get_token_health_monitor()
+        logger.warning("Auth error detected — triggering reactive token refresh")
+        success = await monitor.try_refresh_now(reason="reactive_401")
+        if success:
+            logger.info("Reactive token refresh succeeded — retry should work")
+        else:
+            logger.warning("Reactive token refresh failed — retry may still fail")
+        return success
+    except Exception as e:
+        logger.error(f"Auth recovery failed: {e}")
+        return False
 
 
 # ---------------------------------------------------------------------------

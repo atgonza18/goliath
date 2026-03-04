@@ -11,7 +11,9 @@ Usage:
 import asyncio
 import json
 import logging
+import mimetypes
 import os
+import stat
 import time
 import uuid
 from pathlib import Path
@@ -234,23 +236,18 @@ async def _run_web_orchestration(
         # Create orchestrator (same brain as Telegram)
         orchestrator = NimrodOrchestrator(memory=memory_store, token_tracker=token_tracker)
 
-        # Run the pipeline
+        # Live agent event callback — streams events to SSE as they happen
+        async def agent_callback(event):
+            await queue.put({"type": "subagent", "data": json.dumps(event)})
+
+        # Run the pipeline with live event streaming
         result = await asyncio.wait_for(
-            orchestrator.handle_message(user_message, conv_history),
+            orchestrator.handle_message(user_message, conv_history, on_agent_event=agent_callback),
             timeout=7200,  # Same 2-hour zombie safety net as Telegram
         )
 
-        # Emit subagent dispatches if any occurred
+        # Collect subagent log for metadata (still useful for message storage)
         subagent_log = getattr(orchestrator, "_subagent_log", None) or []
-        for entry in subagent_log:
-            await queue.put({
-                "type": "subagent",
-                "data": json.dumps({
-                    "agent": entry["agent"],
-                    "success": entry["success"],
-                    "duration": entry["duration"],
-                }),
-            })
 
         response_text = result.text
 
@@ -282,6 +279,7 @@ async def _run_web_orchestration(
                 "text": response_text,
                 "file_paths": result.file_paths,
                 "subagents": subagent_log,
+                "token_summary": result.token_summary,
             }),
         })
 
@@ -663,6 +661,271 @@ async def handle_search_memories(request: web.Request) -> web.Response:
 
 
 # ---------------------------------------------------------------------------
+# File Browser Endpoints
+# ---------------------------------------------------------------------------
+
+_FILES_ROOT = Path("/opt/goliath/")
+
+_BLACKLIST_PATTERNS = [".env", ".secrets", ".git/objects", "node_modules", "venv", "__pycache__"]
+
+
+def _is_safe_path(path: Path) -> bool:
+    """Validate that path is within root and not blacklisted."""
+    try:
+        resolved = path.resolve()
+    except (OSError, ValueError):
+        return False
+    # Must be within root
+    if not str(resolved).startswith(str(_FILES_ROOT.resolve())):
+        return False
+    # Reject blacklisted patterns
+    rel = str(resolved.relative_to(_FILES_ROOT.resolve()))
+    for pattern in _BLACKLIST_PATTERNS:
+        if pattern in rel.split(os.sep) or rel.endswith(pattern):
+            return False
+    return True
+
+
+def _format_size(size: int) -> str:
+    """Format bytes into human-readable size."""
+    for unit in ("B", "KB", "MB", "GB"):
+        if size < 1024:
+            return f"{size:.1f} {unit}" if unit != "B" else f"{size} B"
+        size /= 1024
+    return f"{size:.1f} TB"
+
+
+async def handle_list_files(request: web.Request) -> web.Response:
+    """GET /api/files?path= — List directory contents."""
+    if not _check_web_auth(request):
+        return _error("unauthorized", status=401)
+
+    rel_path = request.query.get("path", "")
+    if ".." in rel_path:
+        return _error("path traversal not allowed", status=403)
+
+    target = _FILES_ROOT / rel_path if rel_path else _FILES_ROOT
+    if not _is_safe_path(target):
+        return _error("access denied", status=403)
+    if not target.is_dir():
+        return _error("not a directory", status=404)
+
+    items = []
+    try:
+        for entry in sorted(target.iterdir(), key=lambda e: (not e.is_dir(), e.name.lower())):
+            if not _is_safe_path(entry):
+                continue
+            try:
+                st = entry.stat()
+                is_dir = entry.is_dir()
+                size = 0 if is_dir else st.st_size
+                items.append({
+                    "name": entry.name,
+                    "type": "directory" if is_dir else "file",
+                    "size": size,
+                    "sizeFormatted": _format_size(size),
+                    "modified": time.strftime("%Y-%m-%dT%H:%M:%S", time.gmtime(st.st_mtime)),
+                    "extension": entry.suffix.lstrip(".") if not is_dir else "",
+                    "path": str(entry.relative_to(_FILES_ROOT)),
+                })
+            except OSError:
+                continue
+    except PermissionError:
+        return _error("permission denied", status=403)
+
+    return _json(items)
+
+
+async def handle_download_file(request: web.Request) -> web.Response:
+    """GET /api/files/download?path= — Download a file."""
+    if not _check_web_auth(request):
+        return _error("unauthorized", status=401)
+
+    rel_path = request.query.get("path", "")
+    if not rel_path or ".." in rel_path:
+        return _error("invalid path", status=400)
+
+    target = _FILES_ROOT / rel_path
+    if not _is_safe_path(target):
+        return _error("access denied", status=403)
+    if not target.is_file():
+        return _error("file not found", status=404)
+
+    content_type = mimetypes.guess_type(str(target))[0] or "application/octet-stream"
+    return web.FileResponse(
+        target,
+        headers={
+            **_cors_headers(),
+            "Content-Disposition": f'attachment; filename="{target.name}"',
+            "Content-Type": content_type,
+        },
+    )
+
+
+async def handle_upload_files(request: web.Request) -> web.Response:
+    """POST /api/files/upload — Upload files (multipart)."""
+    if not _check_web_auth(request):
+        return _error("unauthorized", status=401)
+
+    reader = await request.multipart()
+    target_path = ""
+    uploaded = []
+
+    while True:
+        part = await reader.next()
+        if part is None:
+            break
+        if part.name == "path":
+            target_path = (await part.text()).strip()
+            if ".." in target_path:
+                return _error("path traversal not allowed", status=403)
+        elif part.name == "files":
+            if not target_path and not uploaded:
+                target_path = ""
+            dest_dir = _FILES_ROOT / target_path if target_path else _FILES_ROOT
+            if not _is_safe_path(dest_dir):
+                return _error("access denied", status=403)
+            dest_dir.mkdir(parents=True, exist_ok=True)
+
+            filename = part.filename or "unnamed"
+            dest_file = dest_dir / filename
+            if not _is_safe_path(dest_file):
+                continue
+
+            size = 0
+            with open(dest_file, "wb") as f:
+                while True:
+                    chunk = await part.read_chunk()
+                    if not chunk:
+                        break
+                    f.write(chunk)
+                    size += len(chunk)
+
+            uploaded.append({
+                "name": filename,
+                "size": size,
+                "sizeFormatted": _format_size(size),
+                "path": str(dest_file.relative_to(_FILES_ROOT)),
+            })
+
+    return _json({"uploaded": uploaded})
+
+
+async def handle_upload_folder(request: web.Request) -> web.Response:
+    """POST /api/files/upload-folder — Upload folder (multipart with relative paths)."""
+    if not _check_web_auth(request):
+        return _error("unauthorized", status=401)
+
+    reader = await request.multipart()
+    target_path = ""
+    uploaded = []
+
+    while True:
+        part = await reader.next()
+        if part is None:
+            break
+        if part.name == "path":
+            target_path = (await part.text()).strip()
+            if ".." in target_path:
+                return _error("path traversal not allowed", status=403)
+        elif part.name == "files":
+            # The relative path within the folder is sent as the filename header
+            relative_name = part.filename or "unnamed"
+            if ".." in relative_name:
+                continue
+
+            dest_dir = _FILES_ROOT / target_path if target_path else _FILES_ROOT
+            dest_file = dest_dir / relative_name
+            if not _is_safe_path(dest_file):
+                continue
+
+            dest_file.parent.mkdir(parents=True, exist_ok=True)
+
+            size = 0
+            with open(dest_file, "wb") as f:
+                while True:
+                    chunk = await part.read_chunk()
+                    if not chunk:
+                        break
+                    f.write(chunk)
+                    size += len(chunk)
+
+            uploaded.append({
+                "name": relative_name,
+                "size": size,
+                "sizeFormatted": _format_size(size),
+                "path": str(dest_file.relative_to(_FILES_ROOT)),
+            })
+
+    return _json({"uploaded": uploaded})
+
+
+async def handle_mkdir(request: web.Request) -> web.Response:
+    """POST /api/files/mkdir — Create directory."""
+    if not _check_web_auth(request):
+        return _error("unauthorized", status=401)
+
+    try:
+        data = await request.json()
+    except Exception:
+        return _error("invalid JSON body")
+
+    dir_path = data.get("path", "").strip()
+    if not dir_path or ".." in dir_path:
+        return _error("invalid path", status=400)
+
+    target = _FILES_ROOT / dir_path
+    if not _is_safe_path(target):
+        return _error("access denied", status=403)
+
+    try:
+        target.mkdir(parents=True, exist_ok=True)
+    except OSError as e:
+        return _error(f"failed to create directory: {e}", status=500)
+
+    return _json({"success": True, "path": str(target.relative_to(_FILES_ROOT))})
+
+
+async def handle_preview_file(request: web.Request) -> web.Response:
+    """GET /api/files/preview?path= — Preview text file content (first 100KB)."""
+    if not _check_web_auth(request):
+        return _error("unauthorized", status=401)
+
+    rel_path = request.query.get("path", "")
+    if not rel_path or ".." in rel_path:
+        return _error("invalid path", status=400)
+
+    target = _FILES_ROOT / rel_path
+    if not _is_safe_path(target):
+        return _error("access denied", status=403)
+    if not target.is_file():
+        return _error("file not found", status=404)
+
+    # Check file size — refuse to preview very large files
+    try:
+        file_size = target.stat().st_size
+    except OSError:
+        return _error("cannot read file", status=500)
+
+    max_preview = 100 * 1024  # 100KB
+    truncated = file_size > max_preview
+
+    try:
+        with open(target, "r", errors="replace") as f:
+            content = f.read(max_preview)
+    except (OSError, UnicodeDecodeError):
+        return _error("cannot read file as text", status=400)
+
+    return _json({
+        "content": content,
+        "size": file_size,
+        "truncated": truncated,
+        "name": target.name,
+        "path": rel_path,
+    })
+
+
+# ---------------------------------------------------------------------------
 # Route registration
 # ---------------------------------------------------------------------------
 
@@ -700,13 +963,21 @@ def setup_web_routes(app: web.Application) -> None:
     # Memory search
     app.router.add_get("/api/memories/search", handle_search_memories)
 
+    # Files
+    app.router.add_get("/api/files", handle_list_files)
+    app.router.add_get("/api/files/download", handle_download_file)
+    app.router.add_post("/api/files/upload", handle_upload_files)
+    app.router.add_post("/api/files/upload-folder", handle_upload_folder)
+    app.router.add_post("/api/files/mkdir", handle_mkdir)
+    app.router.add_get("/api/files/preview", handle_preview_file)
+
     # --- Static file serving for frontend (SPA) ---
     _setup_static_serving(app)
 
     logger.info(
         "Web API routes registered: /api/health, /api/chat, /api/chat/stream, "
         "/api/conversations, /api/projects, /api/action-items, /api/agents, "
-        "/api/memories/search + static frontend serving"
+        "/api/memories/search, /api/files + static frontend serving"
     )
 
 

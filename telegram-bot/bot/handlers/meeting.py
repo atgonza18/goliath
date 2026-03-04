@@ -18,9 +18,9 @@ from bot.services.recall_service import RecallService
 
 logger = logging.getLogger(__name__)
 
-# Regex to detect Teams meeting URLs
+# Regex to detect Teams meeting URLs (both /l/meetup-join/ and /meet/ styles)
 TEAMS_URL_PATTERN = re.compile(
-    r'https?://teams\.microsoft\.com/l/meetup-join/[^\s<>"\']+',
+    r'https?://(?:teams\.microsoft\.com/(?:l/meetup-join|meet)/|teams\.live\.com/meet/)[^\s<>"\']+',
     re.IGNORECASE,
 )
 

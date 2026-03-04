@@ -35,9 +35,11 @@ from bot.agents.resilience import (
     compute_backoff,
     get_circuit_breaker,
     is_transient_error,
+    is_auth_error,
+    attempt_auth_recovery,
 )
 from bot.agents.runner import AgentResult  # Reuse the exact same dataclass
-from bot.config import REPO_ROOT
+from bot.config import REPO_ROOT, AGENT_MODEL
 from bot.memory.token_tracker import TokenUsage
 
 logger = logging.getLogger(__name__)
@@ -132,6 +134,15 @@ class SubagentRunnerSDK:
                 await self._circuit_breaker.record_failure(agent.name)
                 return result
 
+            # If this is an auth error, attempt token refresh before retry.
+            # This handles the case where the access token expired mid-operation.
+            if is_auth_error(result.error):
+                logger.warning(
+                    f"Subagent '{agent.name}' hit auth error — "
+                    f"attempting token refresh before retry"
+                )
+                await attempt_auth_recovery(result.error)
+
             # Transient error -- retry if attempts remain
             if attempt + 1 < rc.max_attempts:
                 delay = compute_backoff(
@@ -178,6 +189,19 @@ class SubagentRunnerSDK:
             env=self._env,
         )
 
+        # Model selection: per-agent override > global default
+        # Heavy agents (constraints, construction, scheduling, cost, transcript)
+        # use Opus; everything else uses Sonnet.
+        effective_model = agent.model or AGENT_MODEL
+        if effective_model:
+            options.model = effective_model
+
+        # Effort level: controls extended thinking depth per agent.
+        # "max" for deep analytical work, "high" for coding/extraction,
+        # None lets the SDK use its default.
+        if agent.effort:
+            options.effort = agent.effort
+
         if no_tools:
             # No tool access -- give the agent an empty tool list.
             options.tools = []
@@ -187,7 +211,8 @@ class SubagentRunnerSDK:
 
         logger.info(
             f"Running subagent '{agent.name}' via SDK "
-            f"(no_tools={no_tools}, safety-net={timeout}s)"
+            f"(model={effective_model or 'default'}, effort={agent.effort or 'default'}, "
+            f"no_tools={no_tools}, safety-net={timeout}s)"
         )
         start = time.monotonic()
 

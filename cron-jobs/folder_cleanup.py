@@ -70,40 +70,44 @@ List projects with no real data files (only .gitkeep or empty).
 ### OVERSIZED_FILES
 Flag files over 50 MB.
 
-## Output Format
+## CRITICAL: ACTIONABLE ITEMS ONLY
+Only report items that actually need human action. IGNORE and DO NOT REPORT:
+- Small image files (PNG, JPG, GIF) that repeat across dated folders — these are email \
+header/logo images from POD processing and are harmless. Not actionable.
+- .gitkeep files — these are intentional placeholders.
+- Any file under 100 KB that appears duplicated across date-stamped subfolders — \
+these are almost certainly email artifacts (logos, signatures, etc.)
+
+Focus on REAL issues only:
+- Duplicate spreadsheets, PDFs, or large data files (same content, wasted space)
+- Files genuinely in the wrong project folder
+- Scripts mixed into data/report folders
+- Oversized files that shouldn't be here
+- Project folders with zero data that should have data
+
+## Output Format — PLAIN ENGLISH
+Write the report in plain, human-readable English. No technical jargon. \
+Describe each issue like you're telling a coworker what needs fixing.
+
 Use EXACTLY this structure:
 
-=== FOLDER ORGANIZATION REPORT ===
+=== FOLDER CLEANUP REPORT ===
 Scan date: <today>
 
---- DUPLICATES ---
-<findings or "(none found)">
+--- ACTION ITEMS ---
+<Numbered list of items that need attention. For each one, write:
+  1. WHAT the issue is (plain English)
+  2. WHERE (file paths)
+  3. RECOMMENDATION (what to do about it)
 
---- MISPLACED_FILES ---
-<findings or "(none found)">
-
---- SCRIPTS_IN_WRONG_PLACE ---
-<findings or "(none found)">
-
---- STRAY_FILES ---
-<findings or "(none found)">
-
---- EMPTY_PROJECT_FOLDERS ---
-<findings or "(none found)">
-
---- OVERSIZED_FILES ---
-<findings or "(none found)">
+If nothing needs attention, write: "All clean — no action needed."
+>
 
 --- SUMMARY ---
-Total issues found: <count>
-  Duplicates: <count>
-  Misplaced files: <count>
-  Scripts in wrong place: <count>
-  Stray files: <count>
-  Empty projects: <count>
-  Oversized files: <count>
+Action items: <count>
 
-CRITICAL: Only report what your tools actually find. Never fabricate results.
+CRITICAL: Only report what your tools actually find. Never fabricate results. \
+Only include items that genuinely need human attention.
 """
 
 
@@ -137,62 +141,33 @@ def run_folder_scan() -> str:
 
 def parse_summary(report: str) -> dict:
     """Extract the SUMMARY section counts from the report."""
-    counts = {
-        "duplicates": 0,
-        "misplaced": 0,
-        "scripts": 0,
-        "stray": 0,
-        "empty": 0,
-        "oversized": 0,
-    }
+    counts = {"total": 0}
 
-    # Try to extract total from the summary
-    total_match = re.search(r"Total issues found:\s*(\d+)", report)
+    total_match = re.search(r"Action items:\s*(\d+)", report)
     if total_match:
         counts["total"] = int(total_match.group(1))
     else:
-        counts["total"] = 0
-
-    # Extract individual counts
-    dup_match = re.search(r"Duplicates:\s*(\d+)", report)
-    if dup_match:
-        counts["duplicates"] = int(dup_match.group(1))
-
-    mis_match = re.search(r"Misplaced files:\s*(\d+)", report)
-    if mis_match:
-        counts["misplaced"] = int(mis_match.group(1))
-
-    scr_match = re.search(r"Scripts in wrong place:\s*(\d+)", report)
-    if scr_match:
-        counts["scripts"] = int(scr_match.group(1))
-
-    str_match = re.search(r"Stray files:\s*(\d+)", report)
-    if str_match:
-        counts["stray"] = int(str_match.group(1))
-
-    emp_match = re.search(r"Empty projects:\s*(\d+)", report)
-    if emp_match:
-        counts["empty"] = int(emp_match.group(1))
-
-    ovr_match = re.search(r"Oversized files:\s*(\d+)", report)
-    if ovr_match:
-        counts["oversized"] = int(ovr_match.group(1))
+        # Fallback to old format
+        total_match = re.search(r"Total issues found:\s*(\d+)", report)
+        if total_match:
+            counts["total"] = int(total_match.group(1))
 
     return counts
 
 
-def extract_section(report: str, section_name: str) -> str:
-    """Extract a section from the report by header."""
-    pattern = rf"---\s*{re.escape(section_name)}\s*---\s*\n(.*?)(?=---|\Z)"
+def extract_action_items(report: str) -> str:
+    """Extract the ACTION ITEMS section from the report."""
+    pattern = r"---\s*ACTION ITEMS\s*---\s*\n(.*?)(?=---|\Z)"
     match = re.search(pattern, report, re.DOTALL)
     if match:
         content = match.group(1).strip()
-        return content if content else "(none found)"
-    return "(none found)"
+        return content if content else "All clean — no action needed."
+    # Fallback: try to extract everything between report header and summary
+    return "All clean — no action needed."
 
 
 def format_telegram_message(report: str, counts: dict) -> str:
-    """Format the scan results as an HTML Telegram message."""
+    """Format the scan results as a plain-English HTML Telegram message."""
     now = datetime.now(CT)
     timestamp = now.strftime("%Y-%m-%d %H:%M CT")
 
@@ -201,88 +176,29 @@ def format_telegram_message(report: str, counts: dict) -> str:
     # If no issues found, send a short clean message
     if total == 0:
         return (
-            f"<b>GOLIATH Folder Cleanup Report</b>\n"
+            f"<b>🧹 Goliath Cleanup Report</b>\n"
             f"<i>{timestamp}</i>\n\n"
-            f"All clean! No file organization issues found.\n\n"
+            f"All clean — nothing needs attention.\n\n"
             f"<i>Next scan: tomorrow 7 PM CT</i>"
         )
 
-    # Build detailed report
-    sections = []
+    # Extract the plain-English action items
+    action_items = extract_action_items(report)
 
-    sections.append(
-        f"<b>GOLIATH Folder Cleanup Report</b>\n"
+    # Truncate if extremely long, but these should be short now
+    if len(action_items) > 3000:
+        action_items = action_items[:2900] + "\n\n(truncated — reply for full details)"
+
+    msg = (
+        f"<b>🧹 Goliath Cleanup Report</b>\n"
         f"<i>{timestamp}</i>\n\n"
-        f"<b>Issues found: {total}</b>"
-    )
-
-    # Duplicates
-    if counts.get("duplicates", 0) > 0:
-        dup_content = extract_section(report, "DUPLICATES")
-        # Wrap file paths in <code> tags, truncate if too long
-        if len(dup_content) > 600:
-            dup_content = dup_content[:580] + "\n  ..."
-        sections.append(
-            f"<b>Duplicates ({counts['duplicates']})</b>\n"
-            f"<pre>{dup_content}</pre>"
-        )
-
-    # Misplaced files
-    if counts.get("misplaced", 0) > 0:
-        mis_content = extract_section(report, "MISPLACED_FILES")
-        if len(mis_content) > 600:
-            mis_content = mis_content[:580] + "\n  ..."
-        sections.append(
-            f"<b>Misplaced Files ({counts['misplaced']})</b>\n"
-            f"<pre>{mis_content}</pre>"
-        )
-
-    # Scripts in wrong place
-    if counts.get("scripts", 0) > 0:
-        scr_content = extract_section(report, "SCRIPTS_IN_WRONG_PLACE")
-        if len(scr_content) > 600:
-            scr_content = scr_content[:580] + "\n  ..."
-        sections.append(
-            f"<b>Scripts in Wrong Place ({counts['scripts']})</b>\n"
-            f"<pre>{scr_content}</pre>"
-        )
-
-    # Stray files
-    if counts.get("stray", 0) > 0:
-        str_content = extract_section(report, "STRAY_FILES")
-        if len(str_content) > 600:
-            str_content = str_content[:580] + "\n  ..."
-        sections.append(
-            f"<b>Stray Files ({counts['stray']})</b>\n"
-            f"<pre>{str_content}</pre>"
-        )
-
-    # Empty project folders
-    if counts.get("empty", 0) > 0:
-        emp_content = extract_section(report, "EMPTY_PROJECT_FOLDERS")
-        if len(emp_content) > 600:
-            emp_content = emp_content[:580] + "\n  ..."
-        sections.append(
-            f"<b>Empty Project Folders ({counts['empty']})</b>\n"
-            f"<pre>{emp_content}</pre>"
-        )
-
-    # Oversized files
-    if counts.get("oversized", 0) > 0:
-        ovr_content = extract_section(report, "OVERSIZED_FILES")
-        if len(ovr_content) > 600:
-            ovr_content = ovr_content[:580] + "\n  ..."
-        sections.append(
-            f"<b>Oversized Files ({counts['oversized']})</b>\n"
-            f"<pre>{ovr_content}</pre>"
-        )
-
-    sections.append(
-        f"<i>Review findings and reply to Nimrod with actions to take.\n"
+        f"<b>{total} item{'s' if total != 1 else ''} need{'s' if total == 1 else ''} attention:</b>\n\n"
+        f"{action_items}\n\n"
+        f"<i>Reply to Nimrod if you want any of these cleaned up.\n"
         f"Next scan: tomorrow 7 PM CT</i>"
     )
 
-    return "\n\n".join(sections)
+    return msg
 
 
 # ------------------------------------------------------------------

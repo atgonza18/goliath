@@ -191,10 +191,70 @@ async def _periodic_working_updates(working_msg, interval: int = 60, initial_del
 
 
 async def claude_message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Handle free-form text by routing through Nimrod orchestrator."""
+    """Handle free-form text by routing through Nimrod orchestrator.
+
+    Includes auto-detection of Teams meeting invites: if a Teams URL is found,
+    the Recall.ai bot is scheduled automatically BEFORE the orchestrator runs.
+    The confirmation is sent immediately and context is injected into the message
+    so the orchestrator knows a bot was already scheduled.
+    """
     user_message = update.message.text
     chat_id = update.effective_chat.id
     logger.info(f"Message from chat_id={chat_id}: {user_message[:100]}...")
+
+    # ── Teams Meeting Auto-Detection ─────────────────────────────────────
+    # Run BEFORE the orchestrator so the bot is scheduled immediately when
+    # Josh pastes a Teams invite, without waiting for the full orchestration.
+    meeting_detector = context.bot_data.get("meeting_detector")
+    if meeting_detector:
+        try:
+            detect_result = await meeting_detector.process_message(user_message, chat_id)
+            if detect_result:
+                # Send confirmation immediately (non-blocking, before orchestrator)
+                confirmation = detect_result.get("confirmation_message", "")
+                if confirmation:
+                    try:
+                        await update.message.reply_text(
+                            confirmation,
+                            parse_mode="HTML",
+                            disable_web_page_preview=True,
+                        )
+                    except Exception:
+                        # Fall back to plain text if HTML fails
+                        await update.message.reply_text(
+                            confirmation.replace("<b>", "").replace("</b>", "")
+                            .replace("<i>", "").replace("</i>", "")
+                            .replace("<code>", "").replace("</code>", ""),
+                            disable_web_page_preview=True,
+                        )
+
+                # Inject context so the orchestrator knows what happened
+                if detect_result.get("scheduled"):
+                    user_message = (
+                        f"{user_message}\n\n"
+                        f"[SYSTEM: A Recall.ai meeting bot was auto-scheduled for this Teams meeting. "
+                        f"Bot ID: {detect_result.get('bot_id', 'unknown')[:8]}. "
+                        f"Meeting: {detect_result.get('meeting_name', 'Unknown')}. "
+                        f"The user does NOT need to do anything else — acknowledge that "
+                        f"the bot is scheduled and will record/transcribe automatically.]"
+                    )
+                elif detect_result.get("already_scheduled"):
+                    user_message = (
+                        f"{user_message}\n\n"
+                        f"[SYSTEM: A Recall.ai meeting bot was already scheduled for this "
+                        f"Teams meeting (Bot ID: {detect_result.get('bot_id', 'unknown')[:8]}). "
+                        f"No action needed — just acknowledge.]"
+                    )
+                elif detect_result.get("error"):
+                    user_message = (
+                        f"{user_message}\n\n"
+                        f"[SYSTEM: Teams meeting URL detected but bot scheduling "
+                        f"failed: {detect_result.get('error')}. "
+                        f"The user has been notified. Acknowledge the issue.]"
+                    )
+        except Exception:
+            # Never let meeting detection failure block the message pipeline
+            logger.exception("Teams meeting auto-detection failed (non-fatal)")
 
     await _enqueue_or_run(update, context, user_message)
 
@@ -286,6 +346,7 @@ async def _run_orchestrator(
     conversation = context.bot_data.get("conversation")
     activity_log = context.bot_data.get("activity_log")
     token_tracker = context.bot_data.get("token_tracker")
+    experience_replay = context.bot_data.get("experience_replay")
     preferences = context.bot_data.get("preferences")
     chat_id = update.effective_chat.id
 
@@ -302,7 +363,7 @@ async def _run_orchestrator(
     if conversation:
         conv_history = await conversation.format_for_prompt(chat_id)
 
-    orchestrator = NimrodOrchestrator(memory=memory, token_tracker=token_tracker)
+    orchestrator = NimrodOrchestrator(memory=memory, token_tracker=token_tracker, experience_replay=experience_replay)
 
     working_msg = await update.message.reply_text(
         random.choice(STATUS_MESSAGES)

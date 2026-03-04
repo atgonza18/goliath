@@ -5,6 +5,7 @@ import {
   FileSpreadsheet,
   FileImage,
   Download,
+  Eye,
   MoreVertical,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -20,6 +21,7 @@ interface FileRowProps {
   item: FileItem;
   onNavigate: (path: string) => void;
   onDownload: (path: string) => void;
+  onPreview?: () => void;
 }
 
 const ICON_MAP: Record<string, typeof File> = {
@@ -68,7 +70,7 @@ function formatDate(iso: string): string {
   });
 }
 
-export function FileRow({ item, onNavigate, onDownload }: FileRowProps) {
+export function FileRow({ item, onNavigate, onDownload, onPreview }: FileRowProps) {
   const handleClick = () => {
     if (item.type === 'directory') {
       onNavigate(item.path);
@@ -114,6 +116,12 @@ export function FileRow({ item, onNavigate, onDownload }: FileRowProps) {
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end" className="w-40">
+              {onPreview && (
+                <DropdownMenuItem onClick={onPreview}>
+                  <Eye className="h-3.5 w-3.5 mr-2" />
+                  Preview
+                </DropdownMenuItem>
+              )}
               <DropdownMenuItem onClick={() => onDownload(item.path)}>
                 <Download className="h-3.5 w-3.5 mr-2" />
                 Download

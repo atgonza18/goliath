@@ -1,4 +1,5 @@
 from bot.agents.agent_definitions.base import AgentDefinition
+from bot.config import AGENT_MODEL_HEAVY
 
 
 # ---------------------------------------------------------------------------
@@ -8,6 +9,8 @@ SCHEDULING_EXPERT = AgentDefinition(
     name="scheduling_expert",
     display_name="Scheduling Expert",
     description="CPM scheduling guru — logic ties, float analysis, resource leveling, schedule recovery, what-if scenarios, P6 expertise.",
+    model=AGENT_MODEL_HEAVY,  # Opus — CPM logic, what-if scenarios, schedule recovery
+    effort="max",  # Deep reasoning for CPM analysis, what-if scenarios, schedule recovery
     can_write_files=True,
     timeout=None,
     system_prompt="""\

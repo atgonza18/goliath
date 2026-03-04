@@ -159,7 +159,7 @@ class ConstraintLogger:
             - category (str): CONSTRUCTION / PROCUREMENT / ENGINEERING / PERMITTING / OTHER
         """
         from bot.agents.definitions import CONSTRAINTS_MANAGER
-        from bot.agents.runner import SubagentRunner
+        from bot.agents.runner import get_runner
 
         # Build the project list for the agent to match against
         project_list = "\n".join(
@@ -226,7 +226,7 @@ Example output:
 ```
 """
 
-        runner = SubagentRunner()
+        runner = get_runner()
         result = await runner.run(
             agent=CONSTRAINTS_MANAGER,
             task_prompt=prompt,
@@ -291,7 +291,7 @@ Example output:
         gets an added 'created' key with True/False and optional 'constraint_id').
         """
         from bot.agents.definitions import CONSTRAINTS_MANAGER
-        from bot.agents.runner import SubagentRunner
+        from bot.agents.runner import get_runner
 
         if not constraints_list:
             return []
@@ -351,7 +351,7 @@ code fences:
 ```
 """
 
-        runner = SubagentRunner()
+        runner = get_runner()
         result = await runner.run(
             agent=CONSTRAINTS_MANAGER,
             task_prompt=prompt,
@@ -651,7 +651,7 @@ code fences:
             }
         """
         from bot.agents.definitions import CONSTRAINTS_MANAGER
-        from bot.agents.runner import SubagentRunner
+        from bot.agents.runner import get_runner
 
         project_list = "\n".join(
             f"  - key={k}, name={v['name']}" for k, v in PROJECTS.items()
@@ -736,7 +736,7 @@ Example:
 ```
 """
 
-        runner = SubagentRunner()
+        runner = get_runner()
         result = await runner.run(
             agent=CONSTRAINTS_MANAGER,
             task_prompt=prompt,
@@ -810,7 +810,7 @@ Example:
             {"notes_added": int, "flagged": [{"description": ..., "project_name": ...}, ...]}
         """
         from bot.agents.definitions import CONSTRAINTS_MANAGER
-        from bot.agents.runner import SubagentRunner
+        from bot.agents.runner import get_runner
 
         if not constraint_items:
             return {"notes_added": 0, "flagged": []}
@@ -875,7 +875,7 @@ After processing, output a JSON summary wrapped in ```json ... ``` code fences:
 ```
 """
 
-        runner = SubagentRunner()
+        runner = get_runner()
         result = await runner.run(
             agent=CONSTRAINTS_MANAGER,
             task_prompt=prompt,

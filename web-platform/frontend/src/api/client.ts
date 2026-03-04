@@ -2,9 +2,7 @@ import type {
   ActionItem,
   Agent,
   ChatResponse,
-  ChatSession,
-  ChatSessionDetail,
-  ChatMessageResponse,
+  SubagentEvent,
   ConstraintStats,
   Conversation,
   ConvexConstraint,
@@ -16,6 +14,14 @@ import type {
   ProjectDetail,
   UploadResult,
 } from '../types';
+
+export interface SSECallbacks {
+  onThinking?: (message: string) => void;
+  onSubagent?: (event: SubagentEvent) => void;
+  onChunk?: (chunk: string) => void;
+  onComplete?: (data: { text: string; file_paths?: string[]; subagents?: any[] }) => void;
+  onError?: (error: string) => void;
+}
 
 class ApiClient {
   private baseUrl = '/api';
@@ -46,35 +52,15 @@ class ApiClient {
     return this.request<HealthResponse>('/health');
   }
 
-  // ---- Chat Sessions (Claude CLI-backed) ----
+  // ---- Chat (Nimrod Orchestration) ----
 
-  async createChatSession(): Promise<ChatSession> {
-    return this.request<ChatSession>('/chat/sessions', {
+  async sendMessage(
+    message: string,
+    conversationId?: string
+  ): Promise<ChatResponse> {
+    return this.request<ChatResponse>('/chat', {
       method: 'POST',
-    });
-  }
-
-  async getChatSessions(): Promise<ChatSession[]> {
-    return this.request<ChatSession[]>('/chat/sessions');
-  }
-
-  async getChatSession(id: string): Promise<ChatSessionDetail> {
-    return this.request<ChatSessionDetail>(`/chat/sessions/${id}`);
-  }
-
-  async deleteChatSession(id: string): Promise<{ success: boolean }> {
-    return this.request<{ success: boolean }>(`/chat/sessions/${id}`, {
-      method: 'DELETE',
-    });
-  }
-
-  async sendChatMessage(
-    sessionId: string,
-    message: string
-  ): Promise<ChatMessageResponse> {
-    return this.request<ChatMessageResponse>('/chat/message', {
-      method: 'POST',
-      body: JSON.stringify({ sessionId, message }),
+      body: JSON.stringify({ message, conversation_id: conversationId }),
     });
   }
 
@@ -82,34 +68,32 @@ class ApiClient {
    * SSE-based streaming using fetch() + ReadableStream.
    *
    * Flow:
-   *   1. POST /api/chat/message → get streamUrl
-   *   2. GET streamUrl with fetch() → ReadableStream of SSE events
-   *   3. Parse SSE events and call onDelta for each text delta
+   *   1. POST /api/chat → get conversation_id + stream_url
+   *   2. GET stream_url → ReadableStream of SSE events
+   *   3. Parse SSE events with typed callbacks
    *
-   * Uses fetch+ReadableStream instead of EventSource because:
-   *   - EventSource has browser-level buffering that delays SSE events
-   *   - ReadableStream gives byte-level control — no browser buffering
-   *   - Works reliably through Cloudflare tunnel (WebSocket drops connections)
+   * Bot emits: data: {"type": "thinking|subagent|chunk|complete|error", "data": "..."}\n\n
    *
    * Returns a cleanup function to abort the stream.
    */
   createSSEStream(
-    sessionId: string,
+    conversationId: string | null,
     message: string,
-    onDelta: (delta: string) => void,
-    onDone: (resolvedSessionId?: string) => void,
-    onError: (error: Error) => void,
+    callbacks: SSECallbacks,
   ): () => void {
     const abortController = new AbortController();
     let done = false;
 
     const run = async () => {
       try {
-        // Step 1: POST the message to get the stream URL
-        const postResponse = await fetch(`${this.baseUrl}/chat/message`, {
+        // Step 1: POST the message
+        const postResponse = await fetch(`${this.baseUrl}/chat`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ sessionId, message }),
+          body: JSON.stringify({
+            message,
+            conversation_id: conversationId,
+          }),
           signal: abortController.signal,
         });
 
@@ -118,10 +102,10 @@ class ApiClient {
           throw new Error(`Failed to send message: ${errText}`);
         }
 
-        const { sessionId: resolvedSessionId, streamUrl } = await postResponse.json();
+        const { conversation_id, stream_url } = await postResponse.json();
 
-        // Step 2: Connect to the SSE stream using fetch + ReadableStream
-        const sseResponse = await fetch(streamUrl, {
+        // Step 2: Connect to the SSE stream
+        const sseResponse = await fetch(stream_url, {
           signal: abortController.signal,
           headers: {
             'Accept': 'text/event-stream',
@@ -133,7 +117,7 @@ class ApiClient {
           throw new Error(`SSE connection failed: ${sseResponse.status}`);
         }
 
-        // Step 3: Read the stream byte-by-byte and parse SSE events
+        // Step 3: Parse SSE events
         const reader = sseResponse.body.getReader();
         const decoder = new TextDecoder();
         let buffer = '';
@@ -144,35 +128,55 @@ class ApiClient {
 
           buffer += decoder.decode(value, { stream: true });
 
-          // Process complete SSE events (double newline separated)
           const parts = buffer.split('\n');
           buffer = parts.pop() || '';
 
           for (const line of parts) {
-            // Skip SSE comments (heartbeats, padding)
             if (line.startsWith(':') || !line.trim()) continue;
-
             if (!line.startsWith('data: ')) continue;
             const data = line.slice(6).trim();
 
-            // Check for stream end marker
-            if (data === '[DONE]') {
-              done = true;
-              onDone(resolvedSessionId);
-              return;
-            }
-
             try {
               const event = JSON.parse(data);
-              if (event.type === 'delta' && event.text) {
-                onDelta(event.text);
-              } else if (event.type === 'snapshot' && event.text) {
-                // Full snapshot (for late-joining clients) — treat as one big delta
-                onDelta(event.text);
-              } else if (event.type === 'error' && event.text) {
-                done = true;
-                onError(new Error(event.text));
-                return;
+              const eventType = event.type as string;
+              const eventData = event.data;
+
+              switch (eventType) {
+                case 'thinking':
+                  callbacks.onThinking?.(eventData);
+                  break;
+                case 'subagent': {
+                  try {
+                    const parsed = typeof eventData === 'string' ? JSON.parse(eventData) : eventData;
+                    callbacks.onSubagent?.(parsed as SubagentEvent);
+                  } catch {
+                    // Skip malformed subagent events
+                  }
+                  break;
+                }
+                case 'chunk':
+                  callbacks.onChunk?.(eventData);
+                  break;
+                case 'complete': {
+                  done = true;
+                  try {
+                    const parsed = typeof eventData === 'string' ? JSON.parse(eventData) : eventData;
+                    callbacks.onComplete?.({
+                      text: parsed.text || '',
+                      file_paths: parsed.file_paths,
+                      subagents: parsed.subagents,
+                    });
+                  } catch {
+                    callbacks.onComplete?.({ text: eventData || '' });
+                  }
+                  // Return conversation_id for the caller
+                  (callbacks as any)._resolvedConversationId = conversation_id;
+                  return;
+                }
+                case 'error':
+                  done = true;
+                  callbacks.onError?.(eventData);
+                  return;
               }
             } catch {
               // Non-JSON SSE data — skip
@@ -180,40 +184,27 @@ class ApiClient {
           }
         }
 
-        // Stream ended without explicit [DONE]
+        // Stream ended without complete event
         if (!done) {
           done = true;
-          onDone(resolvedSessionId);
+          callbacks.onComplete?.({ text: '' });
         }
       } catch (err) {
         if (done) return;
         if ((err as Error).name === 'AbortError') return;
         done = true;
-        onError(err instanceof Error ? err : new Error(String(err)));
+        callbacks.onError?.(err instanceof Error ? err.message : String(err));
       }
     };
 
     run();
 
-    // Return cleanup function
     return () => {
       if (!done) {
         done = true;
         abortController.abort();
       }
     };
-  }
-
-  // ---- Legacy chat (backward compat) ----
-
-  async sendMessage(
-    message: string,
-    conversationId?: string
-  ): Promise<ChatResponse> {
-    return this.request<ChatResponse>('/chat', {
-      method: 'POST',
-      body: JSON.stringify({ message, conversationId }),
-    });
   }
 
   // Conversations
@@ -286,11 +277,41 @@ class ApiClient {
     return response.json() as Promise<UploadResult>;
   }
 
+  async uploadFolder(targetPath: string, files: File[]): Promise<UploadResult> {
+    const formData = new FormData();
+    formData.append('path', targetPath);
+    for (const file of files) {
+      // Use webkitRelativePath for folder structure preservation
+      const relativePath = (file as any).webkitRelativePath || file.name;
+      formData.append('files', file, relativePath);
+    }
+    const url = `${this.baseUrl}/files/upload-folder`;
+    const response = await fetch(url, {
+      method: 'POST',
+      body: formData,
+    });
+    if (!response.ok) {
+      const errorBody = await response.text().catch(() => 'Unknown error');
+      throw new Error(`Folder upload failed: ${errorBody}`);
+    }
+    return response.json() as Promise<UploadResult>;
+  }
+
   async createDirectory(dirPath: string): Promise<{ success: boolean; path: string }> {
     return this.request<{ success: boolean; path: string }>('/files/mkdir', {
       method: 'POST',
       body: JSON.stringify({ path: dirPath }),
     });
+  }
+
+  async previewFile(filePath: string): Promise<{
+    content: string;
+    size: number;
+    truncated: boolean;
+    name: string;
+    path: string;
+  }> {
+    return this.request(`/files/preview?path=${encodeURIComponent(filePath)}`);
   }
 
   // Constraints (from ConstraintsPro/Convex)

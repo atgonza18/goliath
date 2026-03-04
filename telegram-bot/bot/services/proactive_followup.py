@@ -41,7 +41,7 @@ from zoneinfo import ZoneInfo
 
 import aiosqlite
 
-from bot.config import REPO_ROOT, MEMORY_DB_PATH, PROJECTS, FOLLOWUP_DB_PATH
+from bot.config import REPO_ROOT, MEMORY_DB_PATH, PROJECTS, FOLLOWUP_DB_PATH, REPLY_LOG_AWARENESS_HOURS
 
 logger = logging.getLogger(__name__)
 
@@ -332,6 +332,13 @@ class ProactiveFollowUpEngine:
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
         self._db = await aiosqlite.connect(str(self.db_path))
         self._db.row_factory = aiosqlite.Row
+        # Concurrency and performance pragmas (previously missing)
+        await self._db.execute("PRAGMA busy_timeout = 5000")
+        await self._db.execute("PRAGMA journal_mode = WAL")
+        await self._db.execute("PRAGMA synchronous = NORMAL")
+        await self._db.execute("PRAGMA cache_size = -8000")
+        await self._db.execute("PRAGMA mmap_size = 67108864")
+        await self._db.execute("PRAGMA temp_store = MEMORY")
         await self._db.executescript(FOLLOWUP_STATE_SCHEMA)
         await self._db.commit()
         logger.info(f"Proactive follow-up engine initialized at {self.db_path}")
@@ -403,7 +410,7 @@ class ProactiveFollowUpEngine:
         Typically completes in 15-30 seconds instead of 240+ seconds for all projects.
         """
         from bot.agents.definitions import CONSTRAINTS_MANAGER
-        from bot.agents.runner import SubagentRunner
+        from bot.agents.runner import get_runner
 
         prompt = (
             f"Pull all OPEN constraints for the project '{project_name}' "
@@ -423,7 +430,7 @@ class ProactiveFollowUpEngine:
             "Wrap the JSON in ```json ... ``` code fences."
         )
 
-        runner = SubagentRunner()
+        runner = get_runner()
         result = await runner.run(
             agent=CONSTRAINTS_MANAGER,
             task_prompt=prompt,
@@ -557,7 +564,7 @@ class ProactiveFollowUpEngine:
         from bot.agents.definitions import (
             CONSTRUCTION_MANAGER, SCHEDULING_EXPERT, COST_ANALYST, NIMROD,
         )
-        from bot.agents.runner import SubagentRunner
+        from bot.agents.runner import get_runner
 
         # Select the specialist agent
         agent_map = {
@@ -610,7 +617,7 @@ class ProactiveFollowUpEngine:
         prompt_template = SPECIALIST_PROMPTS.get(category, SPECIALIST_PROMPTS["CONSTRUCTION"])
         prompt = prompt_template.format(**ctx)
 
-        runner = SubagentRunner()
+        runner = get_runner()
         result = await runner.run(
             agent=agent,
             task_prompt=prompt,
@@ -650,7 +657,7 @@ class ProactiveFollowUpEngine:
         from bot.agents.definitions import (
             CONSTRUCTION_MANAGER, SCHEDULING_EXPERT, COST_ANALYST, NIMROD,
         )
-        from bot.agents.runner import SubagentRunner
+        from bot.agents.runner import get_runner
 
         # Select the specialist agent
         agent_map = {
@@ -708,7 +715,7 @@ class ProactiveFollowUpEngine:
             f"{''.join(constraint_blocks)}"
         )
 
-        runner = SubagentRunner()
+        runner = get_runner()
         result = await runner.run(
             agent=agent,
             task_prompt=batch_prompt,
@@ -927,6 +934,22 @@ class ProactiveFollowUpEngine:
                                     textColor=WHITE, leading=10)
         STYLE_TABLE_CELL = _style("PFTC", fontName="Helvetica", fontSize=8,
                                   textColor=BLACK, leading=10)
+        # Reply-awareness banner style — green-tinted box to flag constraints
+        # that already received email replies (so the user reviews before following up)
+        REPLY_BANNER_BG = colors.HexColor("#E8F5E9")
+        REPLY_BANNER_BORDER = colors.HexColor("#4CAF50")
+        STYLE_REPLY_BANNER = _style(
+            "PFReplyBanner", fontName="Helvetica-Bold", fontSize=8.5,
+            textColor=colors.HexColor("#2E7D32"), leading=12,
+            leftIndent=8, rightIndent=8, spaceBefore=4, spaceAfter=4,
+            backColor=REPLY_BANNER_BG,
+            borderWidth=0.5, borderColor=REPLY_BANNER_BORDER, borderPadding=6,
+        )
+        STYLE_REPLY_DETAIL = _style(
+            "PFReplyDetail", fontName="Helvetica", fontSize=8,
+            textColor=colors.HexColor("#37474F"), leading=11,
+            leftIndent=12, rightIndent=8, spaceBefore=1, spaceAfter=2,
+        )
 
         today = datetime.now(CT)
         date_str = today.strftime("%B %d, %Y")
@@ -1046,31 +1069,36 @@ class ProactiveFollowUpEngine:
         low_count = total - high_count - medium_count
 
         tier_counts = {1: 0, 2: 0, 3: 0}
+        replied_count = 0
         for item in constraints_with_drafts:
             t = item.get("tier", 1)
             tier_counts[t] = tier_counts.get(t, 0) + 1
+            if item.get("recent_replies"):
+                replied_count += 1
 
         elements.append(Paragraph("EXECUTIVE SUMMARY", STYLE_H1))
         elements.append(HRFlowable(width="100%", thickness=0.5, color=MID_GREY,
                                    spaceBefore=2, spaceAfter=6))
 
         summary_data = [
-            [Paragraph("<b>Total Constraints</b>", STYLE_TABLE_HEADER),
+            [Paragraph("<b>Total</b>", STYLE_TABLE_HEADER),
              Paragraph("<b>HIGH</b>", STYLE_TABLE_HEADER),
              Paragraph("<b>MEDIUM</b>", STYLE_TABLE_HEADER),
              Paragraph("<b>LOW</b>", STYLE_TABLE_HEADER),
              Paragraph("<b>Tier 1</b>", STYLE_TABLE_HEADER),
              Paragraph("<b>Tier 2</b>", STYLE_TABLE_HEADER),
-             Paragraph("<b>Tier 3</b>", STYLE_TABLE_HEADER)],
+             Paragraph("<b>Tier 3</b>", STYLE_TABLE_HEADER),
+             Paragraph("<b>Replies</b>", STYLE_TABLE_HEADER)],
             [Paragraph(str(total), STYLE_TABLE_CELL),
              Paragraph(str(high_count), STYLE_TABLE_CELL),
              Paragraph(str(medium_count), STYLE_TABLE_CELL),
              Paragraph(str(low_count), STYLE_TABLE_CELL),
              Paragraph(str(tier_counts.get(1, 0)), STYLE_TABLE_CELL),
              Paragraph(str(tier_counts.get(2, 0)), STYLE_TABLE_CELL),
-             Paragraph(str(tier_counts.get(3, 0)), STYLE_TABLE_CELL)],
+             Paragraph(str(tier_counts.get(3, 0)), STYLE_TABLE_CELL),
+             Paragraph(str(replied_count), STYLE_TABLE_CELL)],
         ]
-        summary_table = Table(summary_data, colWidths=[1.1*inch, 0.8*inch, 0.9*inch, 0.7*inch, 0.7*inch, 0.7*inch, 0.7*inch])
+        summary_table = Table(summary_data, colWidths=[0.9*inch, 0.7*inch, 0.85*inch, 0.65*inch, 0.65*inch, 0.65*inch, 0.65*inch, 0.75*inch])
         summary_table.setStyle(TableStyle([
             ("BACKGROUND", (0, 0), (-1, 0), TABLE_HEADER_BG),
             ("TEXTCOLOR", (0, 0), (-1, 0), WHITE),
@@ -1083,13 +1111,20 @@ class ProactiveFollowUpEngine:
         elements.append(Spacer(1, 8))
 
         # Tier legend
-        elements.append(Paragraph(
+        legend_parts = [
             "<b>Tier Legend:</b> "
             '<font color="#2E86AB">Tier 1 = Helpful suggestion</font> | '
             '<font color="#CC8800">Tier 2 = Firmer with alternatives</font> | '
             '<font color="#CC0000">Tier 3 = Loop in leadership</font>',
-            STYLE_SMALL,
-        ))
+        ]
+        elements.append(Paragraph(legend_parts[0], STYLE_SMALL))
+        if replied_count:
+            elements.append(Paragraph(
+                f'<font color="#2E7D32"><b>Replies:</b> {replied_count} constraint(s) '
+                f'received email replies in the last {REPLY_LOG_AWARENESS_HOURS}h '
+                f'-- flagged with green banners below. Review before following up.</font>',
+                STYLE_SMALL,
+            ))
         elements.append(Spacer(1, 6))
 
         elements.append(NextPageTemplate("Later"))
@@ -1148,10 +1183,44 @@ class ProactiveFollowUpEngine:
                         STYLE_SMALL,
                     ))
 
+                # Reply-awareness banner — if this constraint received an
+                # email reply recently, flag it prominently so the user
+                # reviews the reply before sending a follow-up
+                recent_replies = item.get("recent_replies", [])
+                if recent_replies:
+                    elements.append(Spacer(1, 4))
+                    # Primary banner
+                    latest = recent_replies[0]
+                    ts = latest.get("timestamp", "")[:10]
+                    reply_sender = latest.get("sender_name") or latest.get("sender", "someone")
+                    reply_sender_safe = reply_sender.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+                    elements.append(Paragraph(
+                        f'REPLY RECEIVED {ts} from {reply_sender_safe} '
+                        f'-- review before following up',
+                        STYLE_REPLY_BANNER,
+                    ))
+                    # Reply summary detail
+                    reply_summary = latest.get("reply_summary", "")
+                    if reply_summary:
+                        summary_safe = reply_summary[:250].replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+                        elements.append(Paragraph(
+                            f'<i>"{summary_safe}"</i>',
+                            STYLE_REPLY_DETAIL,
+                        ))
+                    # If multiple replies, note that
+                    if len(recent_replies) > 1:
+                        elements.append(Paragraph(
+                            f'<i>({len(recent_replies)} replies in the last {REPLY_LOG_AWARENESS_HOURS}h)</i>',
+                            STYLE_REPLY_DETAIL,
+                        ))
+
                 # Draft (copy-paste ready)
                 elements.append(Spacer(1, 4))
+                draft_label_prefix = ""
+                if recent_replies:
+                    draft_label_prefix = "DRAFT (may be unnecessary) -- "
                 elements.append(Paragraph(
-                    "<b>COPY-PASTE FOLLOW-UP DRAFT:</b>",
+                    f"<b>{draft_label_prefix}COPY-PASTE FOLLOW-UP DRAFT:</b>",
                     _style(f"DraftLabel{idx}", fontName="Helvetica-Bold", fontSize=8,
                            textColor=NAVY, leading=10, spaceBefore=2, spaceAfter=2),
                 ))
@@ -1258,6 +1327,21 @@ class ProactiveFollowUpEngine:
             # 1b. Pull pending commitment follow-ups from the followup queue DB
             commitment_items = self.get_pending_commitments()
 
+            # 1c. Build reply-awareness lookup — check which constraints
+            #     already received email replies in the last 48 hours so
+            #     the PDF can annotate them instead of generating blind drafts
+            reply_lookup: dict[str, list[dict]] = {}
+            try:
+                from bot.services.reply_log import build_reply_lookup
+                reply_lookup = build_reply_lookup()
+                if reply_lookup:
+                    logger.info(
+                        f"Reply-awareness: {len(reply_lookup)} constraint(s) have "
+                        f"recent email replies in the log"
+                    )
+            except Exception:
+                logger.debug("Reply log unavailable — proceeding without reply-awareness", exc_info=True)
+
             if not constraints and not commitment_items:
                 logger.info("No open constraints or commitment items — skipping report")
                 await _send_telegram_message(
@@ -1274,11 +1358,15 @@ class ProactiveFollowUpEngine:
                 constraint["_category"] = category
 
                 tier = await self.determine_tier(constraint)
+                # Check for recent email replies to this constraint
+                cid = constraint.get("id", "")
+                recent_replies = reply_lookup.get(cid, [])
+
                 if tier is None:
                     # In cooldown or maxed out — still include in report with current tier
                     cursor = await self._db.execute(
                         "SELECT followup_tier, last_draft FROM proactive_followup_state WHERE constraint_id = ?",
-                        (constraint.get("id", ""),),
+                        (cid,),
                     )
                     row = await cursor.fetchone()
                     if row and row["last_draft"]:
@@ -1289,6 +1377,7 @@ class ProactiveFollowUpEngine:
                             "category": category,
                             "draft": row["last_draft"],
                             "cached": True,
+                            "recent_replies": recent_replies,
                         })
                     continue
 
@@ -1298,6 +1387,7 @@ class ProactiveFollowUpEngine:
                     "category": category,
                     "draft": None,
                     "cached": False,
+                    "recent_replies": recent_replies,
                 })
 
             if not items_to_draft and not commitment_items:
@@ -1396,10 +1486,21 @@ class ProactiveFollowUpEngine:
             # 5. Send the PDF to Telegram
             from bot.scheduler import _send_telegram_document, _send_telegram
 
-            # Build caption including commitment count if any
+            # Build caption including commitment count and reply-awareness info
             commitment_note = ""
             if commitment_items:
                 commitment_note = f"\n{len(commitment_items)} commitment follow-up(s) included"
+
+            # Count constraints that have recent replies
+            replied_count = sum(
+                1 for i in items_with_drafts if i.get("recent_replies")
+            )
+            reply_note = ""
+            if replied_count:
+                reply_note = (
+                    f"\n{replied_count} constraint(s) have recent email replies "
+                    f"-- flagged in report"
+                )
 
             sent = await _send_telegram_document(
                 bot, chat_id, pdf_path,
@@ -1407,7 +1508,7 @@ class ProactiveFollowUpEngine:
                     f"<b>End-of-Day Follow-Up Report</b>\n"
                     f"{len(items_with_drafts)} constraints across "
                     f"{len(set(i['constraint'].get('project', '') for i in items_with_drafts))} projects"
-                    f"{commitment_note}\n"
+                    f"{commitment_note}{reply_note}\n"
                     f"<i>Copy-paste drafts are ready inside. What to chase tomorrow.</i>"
                 ),
             )

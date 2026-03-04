@@ -5,45 +5,75 @@ export interface Message {
   content: string;
   timestamp: string;
   streaming?: boolean;
+  metadata?: MessageMetadata | null;
+}
+
+export interface MessageMetadata {
+  subagents?: SubagentLogEntry[];
+  file_paths?: string[];
+  token_summary?: TokenSummary | null;
+}
+
+export interface SubagentLogEntry {
+  agent: string;
+  success: boolean;
+  duration: number;
+  error?: string | null;
+}
+
+export interface TokenSummary {
+  total_input: number;
+  total_output: number;
+  total_tokens: number;
+  total_cost_usd: number;
+  agents: Array<{
+    name: string;
+    input_tokens: number;
+    output_tokens: number;
+    cost_usd: number;
+    duration_ms: number;
+  }>;
 }
 
 export interface Conversation {
   id: string;
   title: string;
-  lastMessage: string;
-  timestamp: string;
-  messageCount: number;
+  created_at: string;
+  updated_at: string;
+  message_count: number;
 }
 
 export interface ChatResponse {
-  id: string;
-  message: string;
-  conversationId: string;
-  streamUrl?: string;
+  conversation_id: string;
+  stream_url: string;
 }
 
-// ---- Chat Session types (Claude CLI-backed) ----
-export interface ChatSession {
-  id: string;
-  title: string;
-  createdAt: string;
-  updatedAt?: string;
-  messageCount?: number;
-  lastMessage?: string;
+// ---- Subagent Event types (real-time SSE) ----
+export interface SubagentEvent {
+  type: 'agent_start' | 'agent_complete' | 'pass';
+  agent?: string;
+  task?: string;
+  success?: boolean;
+  duration?: number;
+  pass?: number;
+  status?: 'start' | 'complete';
 }
 
-export interface ChatSessionDetail {
-  id: string;
-  title: string;
-  createdAt: string;
-  updatedAt: string;
-  messages: Message[];
+export interface ActiveAgent {
+  agent: string;
+  task?: string;
+  startTime: number;
+  success?: boolean;
+  duration?: number;
+  completed: boolean;
 }
 
-export interface ChatMessageResponse {
-  id: string;
-  sessionId: string;
-  streamUrl: string;
+export interface AgentActivity {
+  agents: Map<string, ActiveAgent>;
+  isProcessing: boolean;
+  thinkingMessage: string | null;
+  currentPass: number | null;
+  passStatus: string | null;
 }
 
 // ---- Project types ----

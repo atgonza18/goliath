@@ -82,6 +82,11 @@ class PromptReviewStore:
         self._db.row_factory = aiosqlite.Row
         await self._db.execute(f"PRAGMA busy_timeout = {_BUSY_TIMEOUT_MS}")
         await self._db.execute("PRAGMA journal_mode = WAL")
+        # Performance pragmas — safe with WAL mode
+        await self._db.execute("PRAGMA synchronous = NORMAL")
+        await self._db.execute("PRAGMA cache_size = -8000")
+        await self._db.execute("PRAGMA mmap_size = 67108864")
+        await self._db.execute("PRAGMA temp_store = MEMORY")
         await self._db.executescript(PROMPT_REVIEW_SCHEMA)
         await self._db.commit()
         logger.info(f"Prompt review store initialized at {self.db_path}")
@@ -361,18 +366,18 @@ class PromptReviewStore:
             # Check if the experience_replay table exists
             cursor = await self._db.execute(
                 "SELECT name FROM sqlite_master "
-                "WHERE type='table' AND name='experience_lessons'"
+                "WHERE type='table' AND name='lessons_learned'"
             )
             row = await cursor.fetchone()
             if not row:
-                logger.debug("experience_lessons table not found — skipping lesson integration check")
+                logger.debug("lessons_learned table not found — skipping lesson integration check")
                 return findings
 
             # Query high-confidence lessons per agent
             for agent_name in prompts:
                 cursor = await self._db.execute(
-                    "SELECT lesson_text, confidence FROM experience_lessons "
-                    "WHERE agent_name = ? AND confidence > 0.7 AND integrated = 0 "
+                    "SELECT lesson_text, confidence FROM lessons_learned "
+                    "WHERE applicable_agents LIKE '%' || ? || '%' AND confidence > 0.7 AND times_applied = 0 "
                     "ORDER BY confidence DESC LIMIT 5",
                     (agent_name,),
                 )
@@ -397,8 +402,8 @@ class PromptReviewStore:
             # been updated since the lessons were created, flag it
             for agent_name in prompts:
                 cursor = await self._db.execute(
-                    "SELECT COUNT(*) FROM experience_lessons "
-                    "WHERE agent_name = ? AND integrated = 0",
+                    "SELECT COUNT(*) FROM lessons_learned "
+                    "WHERE applicable_agents LIKE '%' || ? || '%' AND times_applied = 0",
                     (agent_name,),
                 )
                 count_row = await cursor.fetchone()
@@ -417,8 +422,8 @@ class PromptReviewStore:
                                 last_mod = datetime.fromisoformat(result.stdout.strip())
                                 # Check if any lessons were created after the last prompt update
                                 cursor = await self._db.execute(
-                                    "SELECT COUNT(*) FROM experience_lessons "
-                                    "WHERE agent_name = ? AND integrated = 0 "
+                                    "SELECT COUNT(*) FROM lessons_learned "
+                                    "WHERE applicable_agents LIKE '%' || ? || '%' AND times_applied = 0 "
                                     "AND created_at > ?",
                                     (agent_name, last_mod.strftime("%Y-%m-%dT%H:%M:%S")),
                                 )
@@ -470,8 +475,8 @@ class PromptReviewStore:
                 # Average score per agent
                 for agent_name in prompts:
                     cursor = await self._db.execute(
-                        "SELECT AVG(score), COUNT(*) FROM reflections "
-                        "WHERE agent_name = ?",
+                        "SELECT AVG(quality_score), COUNT(*) FROM reflections "
+                        "WHERE agents_used LIKE '%' || ? || '%'",
                         (agent_name,),
                     )
                     row = await cursor.fetchone()

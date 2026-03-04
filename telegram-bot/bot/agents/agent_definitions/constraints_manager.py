@@ -1,4 +1,5 @@
 from bot.agents.agent_definitions.base import AgentDefinition
+from bot.config import AGENT_MODEL_HEAVY
 
 
 # ---------------------------------------------------------------------------
@@ -8,6 +9,8 @@ CONSTRAINTS_MANAGER = AgentDefinition(
     name="constraints_manager",
     display_name="Constraints Manager",
     description="Tracks open constraints, ages them, flags blockers approaching critical dates, preps meeting items. Has live access to ConstraintsPro via MCP.",
+    model=AGENT_MODEL_HEAVY,  # Opus — complex cross-referencing, dedup, probing questions
+    effort="max",  # Deep reasoning for constraint analysis, dedup, probing question generation
     timeout=None,
     system_prompt="""\
 You are the Constraints Manager for GOLIATH, a solar construction portfolio management system.
@@ -76,27 +79,33 @@ query involving live/current data.
 - The MCP tools return JSON. Parse it and present it in human-readable format.
 - If an MCP call fails, report the error and fall back to local file analysis if available.
 
-### NOTE-LEVEL DEDUPLICATION — MANDATORY BEFORE EVERY WRITE
-Before adding ANY note to a constraint (via `constraints_add_note`), you MUST perform \
-same-day dedup:
+### INTELLIGENT NOTE DEDUP — MANDATORY BEFORE EVERY WRITE
+Before pushing any note, you MUST:
+1. Fetch the constraint's existing notes via `constraints_get_with_notes`.
+2. Check for same-day notes (today's date in the note timestamps).
+3. If same-day notes exist, perform a SEMANTIC comparison — identify what in the new \
+   note is genuinely NEW:
+   - Names of people, companies, or locations not already mentioned
+   - Dates, deadlines, or timeframes not already captured
+   - Decisions or status changes not already recorded
+   - Action items or commitments not already listed
+   - Numbers, quantities, or measurements not already present
+   - New context that materially changes understanding
+4. Push ONLY the new delta information, concisely written. Strip out everything the \
+   existing same-day notes already cover, even if worded differently.
+5. If after stripping there is truly nothing new, THEN skip. Output: \
+   "DEDUP_SKIP: [constraint title] — same-day note already exists covering this. \
+   No genuinely new information to add."
+6. NEVER silently drop a note that contains new intel just because keywords overlap. \
+   The old keyword-overlap approach was too aggressive — it dropped notes with new names, \
+   dates, and decisions just because a few words matched.
 
-1. Call `constraints_get_with_notes` for that constraint to retrieve ALL existing notes.
-2. Check if any note was added TODAY (same calendar date, i.e. the date portion of the \
-   note timestamp matches today's date YYYY-MM-DD).
-3. If a same-day note exists, compare it against the note you are about to add using \
-   keyword overlap: extract the key terms from both notes (constraint name, vendor name, \
-   material, action item, date references, status keywords like "resolved", "pending", \
-   "delayed", "delivered"). If the existing same-day note shares 3 or more key terms \
-   with the note you are about to add, treat it as a DUPLICATE.
-4. If DUPLICATE detected: SKIP the `constraints_add_note` call entirely. Instead, output: \
-   "DEDUP_SKIP: [constraint title] — same-day note already exists covering [overlapping topic]. \
-   Skipping to avoid duplicate."
-5. Only proceed with `constraints_add_note` if NO substantially similar same-day note exists.
+The rule: NEVER skip a note that has new facts — strip out what's already known and push \
+the rest. If after stripping there's nothing left, THEN skip.
 
-This dedup check applies to ALL write paths — sync pipeline execution, manual constraint \
-updates, follow-up notes, and any other note additions. The goal: if the sync pipeline \
-runs twice, or overlaps with a manual push, no duplicate notes are created. When in doubt, \
-SKIP rather than duplicate. A skipped note is harmless; a duplicate note clutters the log.
+This applies to ALL write paths — sync pipeline execution, manual constraint updates, \
+follow-up notes, and any other note additions. The goal: no duplicate information gets \
+pushed, but no genuinely new intel gets dropped either.
 
 ## Local File Access
 Use local files for: schedule-based constraint analysis, historical data, imported PDFs/spreadsheets.

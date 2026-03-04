@@ -3,12 +3,13 @@
 Morning Report Delivery — standalone version.
 Can be run from cron or manually; the bot scheduler uses its own copy.
 
-Generates three report files (PDF, Excel, Markdown) and sends them as
-Telegram document attachments with a SHORT notification message.
+Generates a PDF report and sends it as a Telegram document attachment
+with a SHORT notification message.
 
-Files are saved to /opt/goliath/reports/YYYY-MM-DD-morning-report.{pdf,xlsx,md}
+Files are saved to /opt/goliath/reports/YYYY-MM-DD-morning-report.pdf
 """
 
+import json
 import os
 import re
 import sqlite3
@@ -27,6 +28,8 @@ REPORTS_DIR = REPO_ROOT / "reports"
 PROJECTS_DIR = REPO_ROOT / "projects"
 MEMORY_DB_PATH = REPO_ROOT / "telegram-bot" / "data" / "memory.db"
 FOLLOWUP_DB_PATH = REPO_ROOT / "telegram-bot" / "data" / "followup.db"
+REPLY_LOG_PATH = REPO_ROOT / "telegram-bot" / "data" / "email_reply_log.json"
+REPLY_LOG_AWARENESS_HOURS = int(os.environ.get("REPLY_LOG_AWARENESS_HOURS", "48"))
 
 load_dotenv(REPO_ROOT / ".env")
 
@@ -51,7 +54,7 @@ PROJECTS = {
 
 
 # ------------------------------------------------------------------
-# Data gathering (structured — for PDF / Excel / Markdown)
+# Data gathering (structured — for PDF)
 # ------------------------------------------------------------------
 
 def gather_open_action_items() -> list[dict]:
@@ -155,6 +158,35 @@ def gather_followup_items() -> dict:
     return result
 
 
+def gather_recent_replies() -> list[dict]:
+    """Read the email reply log and return recent replies (within awareness window).
+
+    The reply log is written by email_reply_monitor.py when it detects email
+    replies matched to constraints. The morning report uses this to show
+    "recent email activity" so the user knows which constraints already
+    received replies before the morning follow-up round.
+    """
+    if not REPLY_LOG_PATH.exists():
+        return []
+    try:
+        text = REPLY_LOG_PATH.read_text(encoding="utf-8")
+        if not text.strip():
+            return []
+        entries = json.loads(text)
+        if not isinstance(entries, list):
+            return []
+
+        # Filter to awareness window
+        cutoff = datetime.now(CT) - timedelta(hours=REPLY_LOG_AWARENESS_HOURS)
+        cutoff_str = cutoff.strftime("%Y-%m-%dT%H:%M:%S")
+        recent = [e for e in entries if e.get("timestamp", "") >= cutoff_str]
+        recent.sort(key=lambda e: e.get("timestamp", ""), reverse=True)
+        return recent
+    except Exception as e:
+        print(f"Warning: could not read reply log: {e}")
+        return []
+
+
 def get_latest_scan_content() -> str | None:
     """Find the most recent daily scan report and return its content."""
     if not CRON_REPORTS_DIR.exists():
@@ -177,6 +209,7 @@ def generate_morning_pdf(
     output_path: Path, date_str: str, action_items: list[dict],
     project_health: list[dict], constraint_movement: dict,
     followup_items: dict, scan_content: str | None,
+    recent_replies: list[dict] | None = None,
 ) -> bool:
     """Generate a professional morning report PDF. Returns True on success."""
     try:
@@ -416,6 +449,59 @@ def generate_morning_pdf(
                     f'{_esc(str(item.get("commitment", ""))[:120])}', S_ACTION))
     elements.append(Spacer(1, 10))
 
+    # ---- Recent Email Replies (reply-awareness) ----
+    if recent_replies:
+        S_REPLY_BANNER = _s("ReplyBanner", fontName="Helvetica-Bold", fontSize=8.5,
+                            textColor=colors.HexColor("#2E7D32"), leading=12,
+                            leftIndent=6, spaceBefore=2, spaceAfter=1)
+        S_REPLY_DETAIL = _s("ReplyDetail", fontName="Helvetica", fontSize=8,
+                            textColor=colors.HexColor("#37474F"), leading=10,
+                            leftIndent=12, spaceBefore=0, spaceAfter=2)
+
+        elements.append(Paragraph(
+            f'RECENT EMAIL REPLIES ({len(recent_replies)} in last {REPLY_LOG_AWARENESS_HOURS}h)',
+            S_H1,
+        ))
+        elements.append(HRFlowable(width="100%", thickness=0.5, color=MID_GREY,
+                                   spaceBefore=2, spaceAfter=6))
+        elements.append(Paragraph(
+            '<i>These constraints received email replies recently. '
+            'Review before sending additional follow-ups.</i>', S_BODY,
+        ))
+
+        # Group by project
+        replies_by_project = {}
+        for r in recent_replies[:20]:  # Cap at 20
+            proj = r.get("project_key") or "unknown"
+            replies_by_project.setdefault(proj, []).append(r)
+
+        for proj_key in sorted(replies_by_project.keys()):
+            proj_name = PROJECTS.get(proj_key, proj_key)
+            proj_replies = replies_by_project[proj_key]
+            elements.append(Paragraph(_esc(proj_name), S_H2))
+
+            for r in proj_replies:
+                ts = r.get("timestamp", "")[:10]
+                sender = r.get("sender_name") or r.get("sender", "?")
+                desc = r.get("constraint_desc", "")
+                signal = r.get("signal_type", "")
+
+                elements.append(Paragraph(
+                    f'<font color="#2E7D32">[{ts}]</font> '
+                    f'Reply from <b>{_esc(sender)}</b>'
+                    f'{" -- " + _esc(desc[:80]) if desc else ""}'
+                    f'{" (" + signal.replace("_", " ") + ")" if signal else ""}',
+                    S_REPLY_BANNER,
+                ))
+                summary = r.get("reply_summary", "")
+                if summary:
+                    elements.append(Paragraph(
+                        f'<i>{_esc(summary[:200])}</i>',
+                        S_REPLY_DETAIL,
+                    ))
+
+        elements.append(Spacer(1, 10))
+
     # ---- Scan Findings ----
     if scan_content:
         elements.append(Paragraph("LATEST DAILY SCAN", S_H1))
@@ -441,255 +527,6 @@ def generate_morning_pdf(
         return False
 
 
-# ------------------------------------------------------------------
-# Excel generation (openpyxl)
-# ------------------------------------------------------------------
-
-def generate_morning_excel(
-    output_path: Path, date_str: str, action_items: list[dict],
-    project_health: list[dict], constraint_movement: dict,
-) -> bool:
-    """Generate morning report Excel workbook. Returns True on success."""
-    try:
-        from openpyxl import Workbook
-        from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
-    except ImportError:
-        print("Error: openpyxl not installed")
-        return False
-
-    wb = Workbook()
-    HEADER_FILL = PatternFill(start_color="003366", end_color="003366", fill_type="solid")
-    HEADER_FONT = Font(name="Calibri", bold=True, color="FFFFFF", size=10)
-    BODY_FONT = Font(name="Calibri", size=10)
-    ALT_ROW_FILL = PatternFill(start_color="F2F6FA", end_color="F2F6FA", fill_type="solid")
-    RED_FONT = Font(name="Calibri", bold=True, color="CC0000", size=10)
-    AMBER_FONT = Font(name="Calibri", bold=True, color="CC8800", size=10)
-    GREEN_FONT = Font(name="Calibri", bold=True, color="228B22", size=10)
-    THIN_BORDER = Border(
-        left=Side(style="thin", color="D0D0D0"), right=Side(style="thin", color="D0D0D0"),
-        top=Side(style="thin", color="D0D0D0"), bottom=Side(style="thin", color="D0D0D0"),
-    )
-
-    def _style_header(ws, row_num, col_count):
-        for col in range(1, col_count + 1):
-            cell = ws.cell(row=row_num, column=col)
-            cell.fill = HEADER_FILL
-            cell.font = HEADER_FONT
-            cell.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
-            cell.border = THIN_BORDER
-
-    def _style_body(ws, start_row, end_row, col_count):
-        for row in range(start_row, end_row + 1):
-            for col in range(1, col_count + 1):
-                cell = ws.cell(row=row, column=col)
-                cell.font = BODY_FONT
-                cell.border = THIN_BORDER
-                cell.alignment = Alignment(vertical="top", wrap_text=True)
-                if (row - start_row) % 2 == 1:
-                    cell.fill = ALT_ROW_FILL
-
-    # Sheet 1: Action Items
-    ws1 = wb.active
-    ws1.title = "Action Items"
-    headers1 = ["ID", "Date", "Description", "Status", "Project"]
-    for col_idx, hdr in enumerate(headers1, 1):
-        ws1.cell(row=1, column=col_idx, value=hdr)
-    _style_header(ws1, 1, len(headers1))
-
-    for row_idx, item in enumerate(action_items, 2):
-        proj_key = item.get("project_key") or "general"
-        proj_name = PROJECTS.get(proj_key, proj_key)
-        ws1.cell(row=row_idx, column=1, value=item.get("id", ""))
-        ws1.cell(row=row_idx, column=2, value=item.get("created_at", "")[:10])
-        ws1.cell(row=row_idx, column=3, value=item.get("summary", ""))
-        ws1.cell(row=row_idx, column=4, value="Open")
-        ws1.cell(row=row_idx, column=5, value=proj_name)
-    if action_items:
-        _style_body(ws1, 2, len(action_items) + 1, len(headers1))
-    ws1.column_dimensions["A"].width = 8
-    ws1.column_dimensions["B"].width = 12
-    ws1.column_dimensions["C"].width = 60
-    ws1.column_dimensions["D"].width = 10
-    ws1.column_dimensions["E"].width = 18
-
-    # Sheet 2: Project Health
-    ws2 = wb.create_sheet("Project Health")
-    headers2 = ["Project", "Constraints Open", "Schedule Status", "Key Risk"]
-    for col_idx, hdr in enumerate(headers2, 1):
-        ws2.cell(row=1, column=col_idx, value=hdr)
-    _style_header(ws2, 1, len(headers2))
-    for row_idx, p in enumerate(project_health, 2):
-        ws2.cell(row=row_idx, column=1, value=p["name"])
-        ws2.cell(row=row_idx, column=2, value=p.get("constraints_open", 0))
-        status = p.get("schedule_status", "On Track")
-        cell = ws2.cell(row=row_idx, column=3, value=status)
-        if status == "At Risk":
-            cell.font = RED_FONT
-        elif status == "Monitor":
-            cell.font = AMBER_FONT
-        else:
-            cell.font = GREEN_FONT
-        ws2.cell(row=row_idx, column=4, value=p.get("key_risk", "None identified"))
-    if project_health:
-        _style_body(ws2, 2, len(project_health) + 1, len(headers2))
-    ws2.column_dimensions["A"].width = 20
-    ws2.column_dimensions["B"].width = 18
-    ws2.column_dimensions["C"].width = 18
-    ws2.column_dimensions["D"].width = 40
-
-    # Sheet 3: Constraint Movement
-    ws3 = wb.create_sheet("Constraint Movement")
-    headers3 = ["Project", "New", "Resolved", "Aging (>14d)", "Critical"]
-    for col_idx, hdr in enumerate(headers3, 1):
-        ws3.cell(row=1, column=col_idx, value=hdr)
-    _style_header(ws3, 1, len(headers3))
-    per_project = constraint_movement.get("per_project", {})
-    row_idx = 2
-    for proj_name in sorted(per_project.keys()):
-        counts = per_project[proj_name]
-        ws3.cell(row=row_idx, column=1, value=proj_name)
-        ws3.cell(row=row_idx, column=2, value=counts.get("new", 0))
-        ws3.cell(row=row_idx, column=3, value=counts.get("resolved", 0))
-        ws3.cell(row=row_idx, column=4, value=counts.get("aging", 0))
-        critical_cell = ws3.cell(row=row_idx, column=5, value=counts.get("critical", 0))
-        if counts.get("critical", 0) > 0:
-            critical_cell.font = RED_FONT
-        row_idx += 1
-    if per_project:
-        _style_body(ws3, 2, row_idx - 1, len(headers3))
-    ws3.column_dimensions["A"].width = 20
-    ws3.column_dimensions["B"].width = 10
-    ws3.column_dimensions["C"].width = 12
-    ws3.column_dimensions["D"].width = 14
-    ws3.column_dimensions["E"].width = 12
-
-    try:
-        output_path.parent.mkdir(parents=True, exist_ok=True)
-        wb.save(str(output_path))
-        print(f"Excel generated: {output_path}")
-        return True
-    except Exception as e:
-        print(f"Excel generation failed: {e}")
-        return False
-
-
-# ------------------------------------------------------------------
-# Markdown file generation
-# ------------------------------------------------------------------
-
-def generate_morning_markdown(
-    output_path: Path, date_str: str, action_items: list[dict],
-    project_health: list[dict], constraint_movement: dict,
-    followup_items: dict, scan_content: str | None,
-) -> bool:
-    """Generate morning report as Markdown file. Returns True on success."""
-    now = datetime.now(CT)
-    formatted_date = now.strftime("%A, %B %d, %Y")
-
-    lines = []
-    lines.append(f"# GOLIATH Morning Report")
-    lines.append(f"**{formatted_date}**\n")
-
-    # Action Items
-    lines.append("---\n")
-    lines.append(f"## Open Action Items ({len(action_items)} pending)\n")
-    if action_items:
-        by_project = {}
-        for item in action_items:
-            key = item.get("project_key") or "general"
-            by_project.setdefault(key, []).append(item)
-        general = by_project.pop("general", [])
-        if general:
-            lines.append("### General / System\n")
-            for item in general:
-                lines.append(f"- **[{item['created_at'][:10]}]** {item.get('summary', '')}")
-            lines.append("")
-        for proj_key in sorted(by_project.keys()):
-            proj_name = PROJECTS.get(proj_key, proj_key)
-            lines.append(f"### {proj_name}\n")
-            for item in by_project[proj_key]:
-                lines.append(f"- **[{item['created_at'][:10]}]** {item.get('summary', '')}")
-            lines.append("")
-    else:
-        lines.append("*No open action items.*\n")
-
-    # Project Health
-    lines.append("---\n")
-    lines.append(f"## Portfolio Health Summary ({len(project_health)} projects)\n")
-    lines.append("| Project | POD | Schedule | Constraints | Open | Status | Key Risk |")
-    lines.append("|---------|-----|----------|-------------|------|--------|----------|")
-    for p in project_health:
-        lines.append(
-            f"| {p['name']} | {p.get('pod', 0)} | {p.get('schedule', 0)} | "
-            f"{p.get('constraints', 0)} | {p.get('constraints_open', 0)} | "
-            f"{p.get('schedule_status', 'On Track')} | {p.get('key_risk', 'None')[:50]} |")
-    lines.append("")
-
-    # Constraint Movement
-    lines.append("---\n")
-    lines.append("## Constraint Movement (24h)\n")
-    total_c = constraint_movement.get("total_current", 0)
-    lines.append(f"*{total_c} constraints tracked*\n")
-    new_items = constraint_movement.get("new", [])
-    resolved_items = constraint_movement.get("resolved", [])
-    total_changes = (len(new_items) + len(resolved_items)
-                     + len(constraint_movement.get("status_changed", []))
-                     + len(constraint_movement.get("priority_changed", [])))
-    if total_changes == 0:
-        lines.append("*No changes in the last 24 hours.*\n")
-    else:
-        lines.append(f"**{total_changes} change(s) detected:**\n")
-        if new_items:
-            lines.append(f"### New ({len(new_items)})\n")
-            for item in new_items[:10]:
-                lines.append(f"- **[{item.get('priority', '?')}]** {item.get('project', '?')}: {item.get('description', '?')}")
-            lines.append("")
-        if resolved_items:
-            lines.append(f"### Resolved ({len(resolved_items)})\n")
-            for item in resolved_items[:10]:
-                lines.append(f"- {item.get('project', '?')}: {item.get('description', '?')}")
-            lines.append("")
-
-    # Follow-Up Queue
-    lines.append("---\n")
-    lines.append("## Follow-Up Queue\n")
-    overdue = followup_items.get("overdue", [])
-    due_today = followup_items.get("due_today", [])
-    if not overdue and not due_today:
-        lines.append("*No follow-ups due or overdue today.*\n")
-    else:
-        if overdue:
-            lines.append(f"### Overdue ({len(overdue)})\n")
-            for item in overdue[:12]:
-                lines.append(f"- **[{item.get('project_key', '?')}]** {str(item.get('commitment', ''))[:120]}")
-            lines.append("")
-        if due_today:
-            lines.append(f"### Due Today ({len(due_today)})\n")
-            for item in due_today[:12]:
-                lines.append(f"- **[{item.get('project_key', '?')}]** {str(item.get('commitment', ''))[:120]}")
-            lines.append("")
-
-    # Scan
-    if scan_content:
-        lines.append("---\n")
-        lines.append("## Latest Daily Scan\n")
-        if len(scan_content) > 5000:
-            lines.append(scan_content[:4800])
-            lines.append("\n*... (truncated)*\n")
-        else:
-            lines.append(scan_content)
-
-    lines.append("---\n")
-    lines.append("*Generated by GOLIATH*")
-
-    try:
-        output_path.parent.mkdir(parents=True, exist_ok=True)
-        output_path.write_text("\n".join(lines))
-        print(f"Markdown generated: {output_path}")
-        return True
-    except Exception as e:
-        print(f"Markdown generation failed: {e}")
-        return False
 
 
 # ------------------------------------------------------------------
@@ -770,12 +607,14 @@ def main():
     constraint_movement = gather_constraint_movement()
     followup_items = gather_followup_items()
     scan_content = get_latest_scan_content()
+    recent_replies = gather_recent_replies()
 
     # ---- Build short notification ----
     n_items = len(action_items)
     n_changes = len(constraint_movement.get("new", [])) + len(constraint_movement.get("resolved", []))
     n_overdue = len(followup_items.get("overdue", []))
     n_due = len(followup_items.get("due_today", []))
+    n_replies = len(recent_replies)
 
     summary_parts = []
     if n_items > 0:
@@ -786,55 +625,42 @@ def main():
         summary_parts.append(f"{n_overdue} overdue follow-ups")
     elif n_due > 0:
         summary_parts.append(f"{n_due} follow-ups due today")
+    if n_replies > 0:
+        summary_parts.append(f"{n_replies} email replies received")
     if not summary_parts:
         summary_parts.append("all clear across the portfolio")
 
     notification = (
         f"\u2600\ufe0f Morning report ready \u2014 {date_display}.\n"
         f"{'; '.join(summary_parts)}.\n"
-        f"Files attached below."
+        f"PDF attached below."
     )
 
-    # ---- Generate files ----
+    # ---- Generate PDF ----
     report_dir = REPORTS_DIR
     report_dir.mkdir(parents=True, exist_ok=True)
 
     pdf_path = report_dir / f"{date_iso}-morning-report.pdf"
-    xlsx_path = report_dir / f"{date_iso}-morning-report.xlsx"
-    md_path = report_dir / f"{date_iso}-morning-report.md"
 
     pdf_ok = generate_morning_pdf(
         pdf_path, date_iso, action_items, project_health,
         constraint_movement, followup_items, scan_content,
-    )
-    xlsx_ok = generate_morning_excel(
-        xlsx_path, date_iso, action_items, project_health, constraint_movement,
-    )
-    md_ok = generate_morning_markdown(
-        md_path, date_iso, action_items, project_health,
-        constraint_movement, followup_items, scan_content,
+        recent_replies=recent_replies,
     )
 
     # ---- Send notification ----
     send_telegram_message(chat_id, notification)
 
-    # ---- Send file attachments ----
-    files_sent = 0
+    # ---- Send PDF attachment ----
+    pdf_sent = False
     if pdf_ok and pdf_path.exists():
-        if send_telegram_document(chat_id, pdf_path,
-                                  caption=f"<b>Morning Report (PDF)</b> \u2014 {date_iso}"):
-            files_sent += 1
-    if xlsx_ok and xlsx_path.exists():
-        if send_telegram_document(chat_id, xlsx_path,
-                                  caption=f"<b>Morning Report (Excel)</b> \u2014 {date_iso}"):
-            files_sent += 1
-    if md_ok and md_path.exists():
-        if send_telegram_document(chat_id, md_path,
-                                  caption=f"<b>Morning Report (Markdown)</b> \u2014 {date_iso}"):
-            files_sent += 1
+        pdf_sent = send_telegram_document(
+            chat_id, pdf_path,
+            caption=f"<b>Morning Report (PDF)</b> \u2014 {date_iso}",
+        )
 
-    print(f"Morning report complete: {files_sent}/3 files sent.")
-    return 0 if files_sent > 0 else 1
+    print(f"Morning report complete: PDF {'sent' if pdf_sent else 'FAILED'}.")
+    return 0 if pdf_sent else 1
 
 
 if __name__ == "__main__":

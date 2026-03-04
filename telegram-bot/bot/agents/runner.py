@@ -11,8 +11,10 @@ from bot.agents.resilience import (
     compute_backoff,
     get_circuit_breaker,
     is_transient_error,
+    is_auth_error,
+    attempt_auth_recovery,
 )
-from bot.config import REPO_ROOT
+from bot.config import REPO_ROOT, AGENT_MODEL
 from bot.memory.token_tracker import TokenUsage
 
 logger = logging.getLogger(__name__)
@@ -35,6 +37,20 @@ class AgentResult:
     output: str
     duration_seconds: float
     error: Optional[str] = None
+
+
+def get_runner():
+    """Get the configured agent runner backend.
+
+    Returns SubagentRunnerSDK when AGENT_RUNNER_BACKEND=sdk,
+    otherwise returns the legacy CLI-based SubagentRunner.
+    Lazy-imports to avoid breaking if the SDK package is absent.
+    """
+    from bot.config import AGENT_RUNNER_BACKEND
+    if AGENT_RUNNER_BACKEND == "sdk":
+        from bot.agents.runner_sdk import SubagentRunnerSDK
+        return SubagentRunnerSDK()
+    return SubagentRunner()
 
 
 class SubagentRunner:
@@ -110,6 +126,14 @@ class SubagentRunner:
                 await self._circuit_breaker.record_failure(agent.name)
                 return result
 
+            # If this is an auth error, attempt token refresh before retry.
+            if is_auth_error(result.error):
+                logger.warning(
+                    f"Subagent '{agent.name}' hit auth error — "
+                    f"attempting token refresh before retry"
+                )
+                await attempt_auth_recovery(result.error)
+
             # Transient error — retry if attempts remain
             if attempt + 1 < rc.max_attempts:
                 delay = compute_backoff(
@@ -156,13 +180,18 @@ class SubagentRunner:
             "--system-prompt", agent.system_prompt,
         ]
 
+        # Model selection: per-agent override > global default
+        effective_model = agent.model or AGENT_MODEL
+        if effective_model:
+            cmd.extend(["--model", effective_model])
+
         # no_tools mode: omit --dangerously-skip-permissions so Claude has no tool access
         if not no_tools:
             cmd.append("--dangerously-skip-permissions")
 
         cmd.append(full_prompt)
 
-        logger.info(f"Running subagent '{agent.name}' (safety-net={timeout}s)")
+        logger.info(f"Running subagent '{agent.name}' (model={effective_model or 'default'}, safety-net={timeout}s)")
         start = time.monotonic()
 
         try:

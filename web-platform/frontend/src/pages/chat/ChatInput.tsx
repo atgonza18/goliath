@@ -1,6 +1,5 @@
 import { useState, useRef, useCallback } from 'react';
 import { ArrowUp } from 'lucide-react';
-import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 
 interface ChatInputProps {
@@ -36,40 +35,46 @@ export function ChatInput({ onSend, disabled }: ChatInputProps) {
     target.style.height = Math.min(target.scrollHeight, 160) + 'px';
   };
 
+  const canSend = message.trim().length > 0 && !disabled;
+
   return (
-    <div className="border-t border-border px-4 py-3 shrink-0">
-      <div className="flex items-end gap-2 max-w-[720px] mx-auto">
-        <div className="flex-1 relative">
+    <div className="px-4 pb-4 pt-2 shrink-0">
+      <div className="max-w-[720px] mx-auto">
+        <div className="relative">
           <textarea
             ref={textareaRef}
             value={message}
             onChange={handleInput}
             onKeyDown={handleKeyDown}
-            placeholder="Message Nimrod..."
+            placeholder="Ask anything..."
             disabled={disabled}
             rows={1}
             className={cn(
-              'w-full resize-none rounded-xl border border-input bg-card px-4 py-3 text-sm text-foreground',
-              'placeholder:text-muted-foreground',
-              'focus:outline-none focus:ring-2 focus:ring-ring/50 focus:border-ring',
-              'transition-[border-color,box-shadow]',
-              'disabled:opacity-50 disabled:cursor-not-allowed'
+              'w-full resize-none rounded-xl border border-zinc-800 bg-zinc-900/50 pl-4 pr-12 py-3 text-[13px] text-foreground',
+              'placeholder:text-zinc-600',
+              'focus:outline-none focus:border-zinc-600',
+              'transition-colors duration-150',
+              'disabled:opacity-40 disabled:cursor-not-allowed'
             )}
             style={{ minHeight: '48px', maxHeight: '160px' }}
           />
+          <button
+            onClick={handleSubmit}
+            disabled={!canSend}
+            className={cn(
+              'absolute right-2 bottom-2 h-8 w-8 rounded-lg flex items-center justify-center transition-all duration-150',
+              canSend
+                ? 'bg-zinc-200 text-zinc-900 hover:bg-white'
+                : 'bg-zinc-800 text-zinc-600 cursor-not-allowed'
+            )}
+          >
+            <ArrowUp className="h-4 w-4" strokeWidth={2.5} />
+          </button>
         </div>
-        <Button
-          onClick={handleSubmit}
-          disabled={disabled || !message.trim()}
-          size="icon"
-          className="shrink-0 h-10 w-10 rounded-xl"
-        >
-          <ArrowUp className="h-4 w-4" />
-        </Button>
+        <p className="text-[10px] text-zinc-700 text-center mt-1.5">
+          Enter to send &middot; Shift+Enter for new line
+        </p>
       </div>
-      <p className="text-[11px] text-muted-foreground/50 text-center mt-2">
-        Enter to send, Shift+Enter for new line
-      </p>
     </div>
   );
 }

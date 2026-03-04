@@ -113,6 +113,13 @@ class FollowUpQueue:
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
         self._db = await aiosqlite.connect(str(self.db_path))
         self._db.row_factory = aiosqlite.Row
+        # Concurrency and performance pragmas (previously missing)
+        await self._db.execute("PRAGMA busy_timeout = 5000")
+        await self._db.execute("PRAGMA journal_mode = WAL")
+        await self._db.execute("PRAGMA synchronous = NORMAL")
+        await self._db.execute("PRAGMA cache_size = -8000")
+        await self._db.execute("PRAGMA mmap_size = 67108864")
+        await self._db.execute("PRAGMA temp_store = MEMORY")
         await self._db.executescript(FOLLOWUP_SCHEMA)
         await self._db.commit()
         logger.info(f"Follow-up queue initialized at {self.db_path}")
@@ -191,7 +198,7 @@ class FollowUpQueue:
     async def _scan_approaching_constraints(self) -> list[dict]:
         """Pull constraints with need-by dates within the horizon window."""
         from bot.agents.definitions import CONSTRAINTS_MANAGER
-        from bot.agents.runner import SubagentRunner
+        from bot.agents.runner import get_runner
 
         horizon_date = (datetime.now(CT) + timedelta(hours=FOLLOWUP_HORIZON_HOURS)).strftime("%Y-%m-%d")
         today = datetime.now(CT).strftime("%Y-%m-%d")
@@ -211,7 +218,7 @@ class FollowUpQueue:
             "Wrap the JSON in ```json ... ``` code fences."
         )
 
-        runner = SubagentRunner()
+        runner = get_runner()
         result = await runner.run(
             agent=CONSTRAINTS_MANAGER,
             task_prompt=prompt,
@@ -326,7 +333,7 @@ class FollowUpQueue:
     async def generate_follow_up_draft(self, item: dict) -> Optional[str]:
         """Use Claude to draft a follow-up message for a queued item."""
         from bot.agents.definitions import NIMROD
-        from bot.agents.runner import SubagentRunner
+        from bot.agents.runner import get_runner
 
         committed_date = item.get("committed_date", "")
         follow_up_date = item.get("follow_up_date", "")
@@ -357,7 +364,7 @@ class FollowUpQueue:
 
         prompt = FOLLOWUP_DRAFT_PROMPT.format(**ctx)
 
-        runner = SubagentRunner()
+        runner = get_runner()
         result = await runner.run(
             agent=NIMROD,
             task_prompt=prompt,

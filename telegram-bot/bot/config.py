@@ -17,7 +17,18 @@ if not TELEGRAM_BOT_TOKEN or TELEGRAM_BOT_TOKEN == "your-token-here":
 
 # Agent runner backend: "sdk" uses Claude Agent SDK (multi-step, full tools)
 #                       "cli" uses claude --print (single-shot, legacy)
-AGENT_RUNNER_BACKEND = os.getenv("AGENT_RUNNER_BACKEND", "cli")
+AGENT_RUNNER_BACKEND = os.getenv("AGENT_RUNNER_BACKEND", "sdk")
+
+# ---------------------------------------------------------------------------
+# Agent model configuration (no cost guardrails — running on Max plan)
+# ---------------------------------------------------------------------------
+# Default model for most subagent calls.  Used when an agent definition
+# doesn't specify its own model override.
+AGENT_MODEL = os.getenv("AGENT_MODEL", "claude-sonnet-4-6")
+
+# Heavy model for agents that need deep reasoning (constraint analysis,
+# construction sequencing, CPM scheduling, cost analysis, transcript parsing).
+AGENT_MODEL_HEAVY = os.getenv("AGENT_MODEL_HEAVY", "claude-opus-4-6")
 
 # Optional security: whitelist of allowed chat IDs
 _raw_ids = os.getenv("ALLOWED_CHAT_IDS", "")
@@ -113,6 +124,17 @@ ESCALATION_SCAN_TIMES = [(7, 0)]  # Single daily report time
 ESCALATION_COOLDOWN_DAYS = PROACTIVE_FOLLOWUP_COOLDOWN_DAYS
 ESCALATION_MAX_LEVEL = PROACTIVE_FOLLOWUP_MAX_TIER
 ESCALATION_MEDIUM_HORIZON_DAYS = int(os.getenv("ESCALATION_MEDIUM_HORIZON_DAYS", "7"))
+
+# ---------------------------------------------------------------------------
+# Email Reply Log config (reply-awareness for follow-up generators)
+# ---------------------------------------------------------------------------
+# JSON file that logs every detected email reply matched to a constraint.
+# The proactive follow-up engine and morning report check this log so they
+# don't generate blind follow-up drafts for constraints that already received
+# a reply. Entries older than REPLY_LOG_RETENTION_HOURS are auto-pruned.
+REPLY_LOG_PATH = DATA_DIR / "email_reply_log.json"
+REPLY_LOG_RETENTION_HOURS = int(os.getenv("REPLY_LOG_RETENTION_HOURS", "72"))
+REPLY_LOG_AWARENESS_HOURS = int(os.getenv("REPLY_LOG_AWARENESS_HOURS", "48"))
 
 # ---------------------------------------------------------------------------
 # Follow-Up Queue config

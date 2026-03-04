@@ -14,7 +14,7 @@ from zoneinfo import ZoneInfo
 from telegram.ext import ContextTypes
 
 from bot.agents.definitions import NIMROD
-from bot.agents.runner import SubagentRunner
+from bot.agents.runner import get_runner
 from bot.utils.formatting import chunk_message
 
 logger = logging.getLogger(__name__)
@@ -120,7 +120,7 @@ async def run_proactive_session(context: ContextTypes.DEFAULT_TYPE, session_type
         )
 
         # Run Nimrod
-        runner = SubagentRunner()
+        runner = get_runner()
         result = await runner.run(
             agent=NIMROD,
             task_prompt=full_prompt,

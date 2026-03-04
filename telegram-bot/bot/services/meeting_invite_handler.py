@@ -32,8 +32,9 @@ CT = ZoneInfo("America/Chicago")
 logger = logging.getLogger(__name__)
 
 # ── Teams URL detection ──────────────────────────────────────────────────
+# Supports both classic /l/meetup-join/ URLs and newer /meet/ URLs
 TEAMS_URL_PATTERN = re.compile(
-    r'https?://teams\.microsoft\.com/l/meetup-join/[^\s<>"\']+',
+    r'https?://(?:teams\.microsoft\.com/(?:l/meetup-join|meet)/|teams\.live\.com/meet/)[^\s<>"\']+',
     re.IGNORECASE,
 )
 

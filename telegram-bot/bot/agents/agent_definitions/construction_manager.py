@@ -1,4 +1,5 @@
 from bot.agents.agent_definitions.base import AgentDefinition
+from bot.config import AGENT_MODEL_HEAVY
 
 
 # ---------------------------------------------------------------------------
@@ -8,6 +9,8 @@ CONSTRUCTION_MANAGER = AgentDefinition(
     name="construction_manager",
     display_name="Construction Manager",
     description="Senior construction expert — sequencing logic, crew productivity, site coordination, buildability review, practical field solutions.",
+    model=AGENT_MODEL_HEAVY,  # Opus — field-smart reasoning, sequencing logic, crew analysis
+    effort="max",  # Deep reasoning for field sequencing, crew productivity, buildability
     can_write_files=True,
     timeout=None,
     system_prompt="""\

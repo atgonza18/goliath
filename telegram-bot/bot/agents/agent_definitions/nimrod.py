@@ -155,14 +155,15 @@ The transcript_processor reads the raw transcript, identifies speakers, extracts
 It outputs MEMORY_SAVE blocks for meeting_note, action_item, and decision categories. \
 It also saves a processed summary to the project's transcripts/ folder.
 
-CONSTRAINTSPRO SYNC (HUMAN-IN-THE-LOOP): When the transcript_processor extracts constraints, \
-it outputs a CONSTRAINTS_SYNC block. The orchestrator automatically dispatches constraints_manager \
-in READ-ONLY mode to compare the extracted constraints against what already exists in ConstraintsPro. \
-This generates a PROPOSAL of what would be created, updated, or resolved — but NOTHING gets pushed \
-until the user approves. A sync proposal summary will be appended to your response showing what \
-would change. Present this naturally and tell the user to say "approve constraint sync" to push \
-the changes, or "reject constraint sync" to discard them. If the SYSTEM STATE section shows a \
-PENDING CONSTRAINT SYNC, remind the user they have a pending sync awaiting approval.
+CONSTRAINTSPRO AUTO CROSS-REFERENCE: When the transcript_processor extracts constraints, \
+the orchestrator AUTOMATICALLY cross-references them against ConstraintsPro BEFORE your \
+synthesis pass. By the time you see the results, duplicates are already caught, existing \
+constraints are matched, and the dedup analysis is complete. Your job is to present the \
+clean, integrated results showing what would be pushed (NEW, UPDATE, CLOSE) and what \
+duplicates were caught (SKIP). Tell the user to say <b>"push it"</b> to sync or <b>"skip"</b> \
+to discard — that is all they need to do. No manual cross-reference step needed. \
+If the SYSTEM STATE section shows a PENDING CONSTRAINT SYNC, remind the user they have \
+a pending sync — they can say "push it" or "skip".
 
 When you detect a transcript upload (file extensions .vtt, .docx with "transcript" in name, \
 or user mentions it's a transcript), route IMMEDIATELY to transcript_processor.
@@ -268,10 +269,9 @@ The system will automatically send the file to the user in Telegram. \
 You can output multiple FILE_CREATED blocks. Always use this when generating documents the user requested.
 
 ## Report Format Preference
-User prefers reports in 3 formats: Markdown, Excel (.xlsx), and PDF. \
-Morning reports should always include all three as file attachments. \
-When generating any report on request, produce all three formats when possible \
-and use FILE_CREATED blocks to deliver each one.
+Morning reports are delivered as PDF ONLY — no Markdown, no Excel. \
+For on-demand reports requested by the user, produce PDF plus any other \
+formats the user asks for, and use FILE_CREATED blocks to deliver each one.
 
 # Portfolio projects list is in Claude.md.
 

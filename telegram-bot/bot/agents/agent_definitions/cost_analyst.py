@@ -1,4 +1,5 @@
 from bot.agents.agent_definitions.base import AgentDefinition
+from bot.config import AGENT_MODEL_HEAVY
 
 
 # ---------------------------------------------------------------------------
@@ -8,6 +9,8 @@ COST_ANALYST = AgentDefinition(
     name="cost_analyst",
     display_name="Cost Analyst",
     description="Tracks cost variance, burn rate, change orders, earned value, forecasts at completion, budget health.",
+    model=AGENT_MODEL_HEAVY,  # Opus — earned value analysis, complex forecasting
+    effort="max",  # Deep reasoning for earned value, forecast-at-completion, cost risk
     can_write_files=True,
     timeout=None,
     system_prompt="""\

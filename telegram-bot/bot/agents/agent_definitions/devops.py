@@ -1,4 +1,5 @@
 from bot.agents.agent_definitions.base import AgentDefinition
+from bot.config import AGENT_MODEL_HEAVY
 
 
 # ---------------------------------------------------------------------------
@@ -8,6 +9,8 @@ DEVOPS = AgentDefinition(
     name="devops",
     display_name="DevOps",
     description="Self-modification agent — edits codebase files, agent prompts, scripts, runs git, triggers bot restart. Use for any changes to Goliath's own code.",
+    model=AGENT_MODEL_HEAVY,  # Opus — real coding work, needs top-tier reasoning
+    effort="high",  # Strong reasoning for code architecture, debugging, system design
     can_write_files=True,
     timeout=None,
     system_prompt="""\

@@ -1,10 +1,11 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { PanelLeftClose, PanelLeft, Bot } from 'lucide-react';
+import { PanelLeftClose, PanelLeft, Square } from 'lucide-react';
 import { api } from '../../api/client';
-import type { Message, ChatSession } from '../../types';
+import type { Message, Conversation, AgentActivity, SubagentEvent } from '../../types';
 import { ConversationList } from './ConversationList';
 import { MessageBubble } from './MessageBubble';
 import { ThinkingIndicator } from './ThinkingIndicator';
+import { AgentActivityPanel } from './AgentActivityPanel';
 import { ChatInput } from './ChatInput';
 import { Button } from '@/components/ui/button';
 import { Separator } from '@/components/ui/separator';
@@ -15,35 +16,35 @@ function generateId(): string {
   return Date.now().toString(36) + Math.random().toString(36).substring(2, 8);
 }
 
-/**
- * Get the streaming content DOM element for a message ID.
- * The MessageBubble component renders a div with data-streaming-content={id}
- * and attaches __appendDelta / __setContent methods to it.
- */
 function getStreamingEl(messageId: string): HTMLDivElement | null {
   return document.querySelector(
     `[data-streaming-content="${messageId}"]`
   ) as HTMLDivElement | null;
 }
 
+const initialAgentActivity: AgentActivity = {
+  agents: new Map(),
+  isProcessing: false,
+  thinkingMessage: null,
+  currentPass: null,
+  passStatus: null,
+};
+
 export function ChatPage() {
   const [messages, setMessages] = useState<Message[]>([]);
-  const [sessions, setSessions] = useState<ChatSession[]>([]);
-  const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
+  const [conversations, setConversations] = useState<Conversation[]>([]);
+  const [activeConversationId, setActiveConversationId] = useState<string | null>(null);
   const [isThinking, setIsThinking] = useState(false);
+  const [agentActivity, setAgentActivity] = useState<AgentActivity>(initialAgentActivity);
   const [showConversations, setShowConversations] = useState(true);
-  const [sessionsLoading, setSessionsLoading] = useState(true);
+  const [conversationsLoading, setConversationsLoading] = useState(true);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const cleanupStreamRef = useRef<(() => void) | null>(null);
-  // Track whether the user has manually scrolled up (to avoid fighting with auto-scroll)
   const userScrolledUpRef = useRef(false);
-  // Track the streaming assistant message ID so we can update it via DOM refs
   const streamingMsgIdRef = useRef<string | null>(null);
-  // Accumulate raw text during streaming (for final React state sync)
   const streamingTextRef = useRef<string>('');
 
-  // Auto-scroll helper: smoothly scroll to bottom during streaming
   const scrollToBottom = useCallback(() => {
     if (userScrolledUpRef.current) return;
     const container = scrollContainerRef.current;
@@ -52,27 +53,22 @@ export function ChatPage() {
     }
   }, []);
 
-  // Detect when user scrolls up manually
   const handleScroll = useCallback(() => {
     const container = scrollContainerRef.current;
     if (!container) return;
-    // If the user is within 100px of the bottom, consider them "at bottom"
     const atBottom = container.scrollHeight - container.scrollTop - container.clientHeight < 100;
     userScrolledUpRef.current = !atBottom;
   }, []);
 
-  // Auto-scroll to bottom when messages change, unless user scrolled up
   useEffect(() => {
     if (userScrolledUpRef.current) return;
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages, isThinking]);
 
-  // Load sessions on mount
   useEffect(() => {
-    loadSessions();
+    loadConversations();
   }, []);
 
-  // Hide sidebar on mobile
   useEffect(() => {
     const mq = window.matchMedia('(max-width: 768px)');
     if (mq.matches) {
@@ -80,68 +76,84 @@ export function ChatPage() {
     }
   }, []);
 
-  const loadSessions = async () => {
-    setSessionsLoading(true);
+  const loadConversations = async () => {
+    setConversationsLoading(true);
     try {
-      const data = await api.getChatSessions();
-      setSessions(data);
+      const data = await api.getConversations();
+      setConversations(data);
     } catch {
-      setSessions([]);
+      setConversations([]);
     } finally {
-      setSessionsLoading(false);
+      setConversationsLoading(false);
     }
   };
 
-  const loadSession = async (id: string) => {
+  const loadConversation = async (id: string) => {
     try {
-      const data = await api.getChatSession(id);
-      setMessages(data.messages || []);
-      setActiveSessionId(id);
+      const data = await api.getConversation(id);
+      const mapped: Message[] = data.map((m: any, i: number) => ({
+        id: `${id}-${i}`,
+        role: m.role,
+        content: m.content,
+        timestamp: m.timestamp || new Date().toISOString(),
+        metadata: m.metadata || null,
+      }));
+      setMessages(mapped);
+      setActiveConversationId(id);
     } catch {
       // Silently fail
     }
   };
 
-  const handleNewChat = useCallback(async () => {
+  const handleNewChat = useCallback(() => {
     if (cleanupStreamRef.current) {
       cleanupStreamRef.current();
       cleanupStreamRef.current = null;
     }
     setMessages([]);
-    setActiveSessionId(null);
+    setActiveConversationId(null);
     setIsThinking(false);
+    setAgentActivity(initialAgentActivity);
     streamingMsgIdRef.current = null;
     streamingTextRef.current = '';
   }, []);
 
-  const handleSelectSession = (id: string) => {
-    if (id === activeSessionId) return;
+  const handleSelectConversation = (id: string) => {
+    if (id === activeConversationId) return;
     if (cleanupStreamRef.current) {
       cleanupStreamRef.current();
       cleanupStreamRef.current = null;
     }
     setIsThinking(false);
+    setAgentActivity(initialAgentActivity);
     streamingMsgIdRef.current = null;
     streamingTextRef.current = '';
-    loadSession(id);
+    loadConversation(id);
   };
 
-  const handleDeleteSession = async (id: string) => {
-    try {
-      await api.deleteChatSession(id);
-      if (id === activeSessionId) {
-        setMessages([]);
-        setActiveSessionId(null);
-      }
-      loadSessions();
-    } catch {
-      // Silently fail
+  const handleStopGenerating = useCallback(() => {
+    if (cleanupStreamRef.current) {
+      cleanupStreamRef.current();
+      cleanupStreamRef.current = null;
     }
-  };
+    setIsThinking(false);
+    setAgentActivity(initialAgentActivity);
+    // Finalize streaming message
+    if (streamingMsgIdRef.current) {
+      const finalText = streamingTextRef.current || '*Generation stopped.*';
+      setMessages(prev =>
+        prev.map(m =>
+          m.id === streamingMsgIdRef.current
+            ? { ...m, content: finalText, streaming: false }
+            : m
+        )
+      );
+      streamingMsgIdRef.current = null;
+    }
+  }, []);
 
   const handleSendMessage = useCallback(
     async (content: string) => {
-      // Reset scroll-lock so auto-scroll works for the new response
       userScrolledUpRef.current = false;
 
       const userMessage: Message = {
@@ -150,32 +162,20 @@ export function ChatPage() {
         content,
         timestamp: new Date().toISOString(),
       };
-      setMessages((prev) => [...prev, userMessage]);
+      setMessages(prev => [...prev, userMessage]);
       setIsThinking(true);
+      setAgentActivity({
+        agents: new Map(),
+        isProcessing: true,
+        thinkingMessage: null,
+        currentPass: null,
+        passStatus: null,
+      });
 
       try {
-        // Use the session ID or let the backend create one
-        const sessionId = activeSessionId || generateId();
-        if (!activeSessionId) {
-          setActiveSessionId(sessionId);
-        }
-
         const assistantId = generateId();
-
-        // Create the assistant message placeholder (React renders it once)
-        const assistantMessage: Message = {
-          id: assistantId,
-          role: 'assistant',
-          content: '',
-          timestamp: new Date().toISOString(),
-          streaming: true,
-        };
-        streamingMsgIdRef.current = assistantId;
         streamingTextRef.current = '';
-        setMessages((prev) => [...prev, assistantMessage]);
-        setIsThinking(false);
 
-        // Set up a throttled scroll during streaming (every ~100ms via rAF)
         let scrollRafId = 0;
         const scheduleScroll = () => {
           if (scrollRafId) return;
@@ -185,67 +185,182 @@ export function ChatPage() {
           });
         };
 
-        // Use SSE streaming via fetch+ReadableStream — works reliably through
-        // Cloudflare tunnel (WebSocket connections were being dropped by the tunnel)
         const cleanup = api.createSSEStream(
-          sessionId,
+          activeConversationId,
           content,
-          // onDelta: append just the new text fragment via DOM ref (no React re-render)
-          (delta: string) => {
-            streamingTextRef.current += delta;
-            const el = getStreamingEl(assistantId);
-            if (el && (el as any).__appendDelta) {
-              (el as any).__appendDelta(delta);
-            }
-            scheduleScroll();
-          },
-          // onDone: sync final text to React state (single re-render)
-          (resolvedSessionId?: string) => {
-            if (scrollRafId) cancelAnimationFrame(scrollRafId);
-            // Update session ID if the backend assigned one
-            if (resolvedSessionId) {
-              setActiveSessionId(resolvedSessionId);
-            }
-            const finalText = streamingTextRef.current;
-            setMessages((prev) =>
-              prev.map((m) =>
-                m.id === assistantId
-                  ? { ...m, content: finalText, streaming: false }
-                  : m
-              )
-            );
-            streamingMsgIdRef.current = null;
-            cleanupStreamRef.current = null;
-            loadSessions();
-          },
-          // onError
-          (error: Error) => {
-            if (scrollRafId) cancelAnimationFrame(scrollRafId);
-            const errorText = streamingTextRef.current || `**Error:** ${error.message}`;
-            setMessages((prev) =>
-              prev.map((m) =>
-                m.id === assistantId
-                  ? { ...m, content: errorText, streaming: false }
-                  : m
-              )
-            );
-            streamingMsgIdRef.current = null;
-            cleanupStreamRef.current = null;
+          {
+            onThinking: (message: string) => {
+              setAgentActivity(prev => ({
+                ...prev,
+                thinkingMessage: message,
+              }));
+            },
+
+            onSubagent: (event: SubagentEvent) => {
+              if (event.type === 'pass') {
+                setAgentActivity(prev => ({
+                  ...prev,
+                  currentPass: event.pass || null,
+                  passStatus: event.status || null,
+                }));
+                return;
+              }
+
+              if (event.type === 'agent_start') {
+                setAgentActivity(prev => {
+                  const agents = new Map(prev.agents);
+                  agents.set(event.agent!, {
+                    agent: event.agent!,
+                    task: event.task,
+                    startTime: Date.now(),
+                    completed: false,
+                  });
+                  return { ...prev, agents };
+                });
+              } else if (event.type === 'agent_complete') {
+                setAgentActivity(prev => {
+                  const agents = new Map(prev.agents);
+                  const existing = agents.get(event.agent!);
+                  if (existing) {
+                    agents.set(event.agent!, {
+                      ...existing,
+                      success: event.success,
+                      duration: event.duration,
+                      completed: true,
+                    });
+                  } else {
+                    agents.set(event.agent!, {
+                      agent: event.agent!,
+                      startTime: Date.now(),
+                      success: event.success,
+                      duration: event.duration,
+                      completed: true,
+                    });
+                  }
+                  return { ...prev, agents };
+                });
+              }
+            },
+
+            onChunk: (chunk: string) => {
+              // Create assistant message on first chunk if not yet created
+              if (!streamingMsgIdRef.current) {
+                streamingMsgIdRef.current = assistantId;
+                const assistantMessage: Message = {
+                  id: assistantId,
+                  role: 'assistant',
+                  content: '',
+                  timestamp: new Date().toISOString(),
+                  streaming: true,
+                };
+                setMessages(prev => [...prev, assistantMessage]);
+                setIsThinking(false);
+              }
+
+              streamingTextRef.current += chunk;
+              const el = getStreamingEl(assistantId);
+              if (el && (el as any).__appendDelta) {
+                (el as any).__appendDelta(chunk);
+              }
+              scheduleScroll();
+            },
+
+            onComplete: (data) => {
+              if (scrollRafId) cancelAnimationFrame(scrollRafId);
+
+              // If we never got chunks, create the message with full text
+              if (!streamingMsgIdRef.current && data.text) {
+                const assistantMessage: Message = {
+                  id: assistantId,
+                  role: 'assistant',
+                  content: data.text,
+                  timestamp: new Date().toISOString(),
+                  metadata: {
+                    subagents: data.subagents,
+                    file_paths: data.file_paths,
+                  },
+                };
+                setMessages(prev => [...prev, assistantMessage]);
+              } else {
+                const finalText = streamingTextRef.current || data.text;
+                setMessages(prev =>
+                  prev.map(m =>
+                    m.id === assistantId
+                      ? {
+                          ...m,
+                          content: finalText,
+                          streaming: false,
+                          metadata: {
+                            subagents: data.subagents,
+                            file_paths: data.file_paths,
+                          },
+                        }
+                      : m
+                  )
+                );
+              }
+
+              // Update conversation ID
+              const resolvedId = (callbacks as any)._resolvedConversationId;
+              if (resolvedId) {
+                setActiveConversationId(resolvedId);
+              }
+
+              setIsThinking(false);
+              setAgentActivity(prev => ({ ...prev, isProcessing: false }));
+              streamingMsgIdRef.current = null;
+              cleanupStreamRef.current = null;
+              loadConversations();
+            },
+
+            onError: (error: string) => {
+              if (scrollRafId) cancelAnimationFrame(scrollRafId);
+              const errorText = streamingTextRef.current || `**Error:** ${error}`;
+
+              if (streamingMsgIdRef.current) {
+                setMessages(prev =>
+                  prev.map(m =>
+                    m.id === assistantId
+                      ? { ...m, content: errorText, streaming: false }
+                      : m
+                  )
+                );
+              } else {
+                setMessages(prev => [
+                  ...prev,
+                  {
+                    id: assistantId,
+                    role: 'assistant' as const,
+                    content: errorText,
+                    timestamp: new Date().toISOString(),
+                  },
+                ]);
+              }
+
+              setIsThinking(false);
+              setAgentActivity(prev => ({ ...prev, isProcessing: false }));
+              streamingMsgIdRef.current = null;
+              cleanupStreamRef.current = null;
+            },
           },
         );
+
+        // Capture callbacks ref for resolvedConversationId
+        const callbacks = (cleanup as any);
         cleanupStreamRef.current = cleanup;
       } catch (err) {
         setIsThinking(false);
+        setAgentActivity(initialAgentActivity);
         const errorMessage: Message = {
           id: generateId(),
           role: 'assistant',
-          content: `**Error:** ${err instanceof Error ? err.message : 'Failed to send message. Please check your connection and try again.'}`,
+          content: `**Error:** ${err instanceof Error ? err.message : 'Failed to send message.'}`,
           timestamp: new Date().toISOString(),
         };
-        setMessages((prev) => [...prev, errorMessage]);
+        setMessages(prev => [...prev, errorMessage]);
       }
     },
-    [activeSessionId, scrollToBottom]
+    [activeConversationId, scrollToBottom]
   );
 
   const suggestedPrompts = [
@@ -255,25 +370,18 @@ export function ChatPage() {
     'Summarize the morning report',
   ];
 
-  // Convert sessions to the format ConversationList expects
-  const conversationItems = sessions.map((s) => ({
-    id: s.id,
-    title: s.title || 'New Chat',
-    lastMessage: s.lastMessage || '',
-    timestamp: s.updatedAt || s.createdAt,
-    messageCount: s.messageCount || 0,
-  }));
+  const isStreaming = !!streamingMsgIdRef.current || isThinking;
 
   return (
     <div className="flex h-full min-h-0" style={{ height: '100%' }}>
       {/* Conversation sidebar */}
       <div
-        className={`border-r border-border bg-card/50 transition-all duration-200 shrink-0 ${
-          showConversations ? 'w-64 min-w-[16rem]' : 'w-0 overflow-hidden'
+        className={`border-r border-zinc-800/60 transition-all duration-200 shrink-0 ${
+          showConversations ? 'w-60 min-w-[15rem]' : 'w-0 overflow-hidden'
         }`}
       >
         {showConversations && (
-          sessionsLoading ? (
+          conversationsLoading ? (
             <div className="p-4 space-y-3">
               <Skeleton className="h-8 w-full rounded-md" />
               <div className="space-y-2 pt-4">
@@ -287,11 +395,10 @@ export function ChatPage() {
             </div>
           ) : (
             <ConversationList
-              conversations={conversationItems}
-              activeId={activeSessionId}
-              onSelect={handleSelectSession}
+              conversations={conversations}
+              activeId={activeConversationId}
+              onSelect={handleSelectConversation}
               onNewChat={handleNewChat}
-              onDelete={handleDeleteSession}
             />
           )
         )}
@@ -299,10 +406,10 @@ export function ChatPage() {
 
       {/* Main chat area */}
       <div className="flex-1 flex flex-col min-w-0 min-h-0">
-        {/* Chat header */}
-        <div className="flex items-center gap-3 px-4 h-12 border-b border-border shrink-0">
+        {/* Chat header — minimal */}
+        <div className="flex items-center gap-3 px-4 h-11 border-b border-zinc-800/60 shrink-0">
           <SidebarTrigger className="-ml-1" />
-          <Separator orientation="vertical" className="h-4" />
+          <Separator orientation="vertical" className="h-3.5" />
           <Button
             variant="ghost"
             size="icon-xs"
@@ -310,21 +417,18 @@ export function ChatPage() {
             title={showConversations ? 'Hide conversations' : 'Show conversations'}
           >
             {showConversations ? (
-              <PanelLeftClose className="h-4 w-4" />
+              <PanelLeftClose className="h-3.5 w-3.5" />
             ) : (
-              <PanelLeft className="h-4 w-4" />
+              <PanelLeft className="h-3.5 w-3.5" />
             )}
           </Button>
-          <div className="flex items-center gap-2">
-            <div className="flex h-6 w-6 items-center justify-center rounded-md border border-border bg-card">
-              <Bot className="h-3 w-3 text-muted-foreground" />
-            </div>
-            <span className="text-sm font-semibold text-foreground">Nimrod</span>
-            <span className="text-[10px] text-muted-foreground font-mono">Claude CLI</span>
+          <div className="flex items-center gap-1.5">
+            <span className="text-[13px] font-medium text-zinc-300">Nimrod</span>
+            <span className="text-[10px] text-zinc-600 font-mono">orchestrator</span>
           </div>
         </div>
 
-        {/* Messages area — scrollable container */}
+        {/* Messages area */}
         <div
           ref={scrollContainerRef}
           onScroll={handleScroll}
@@ -332,31 +436,29 @@ export function ChatPage() {
           data-scroll-container
           style={{ WebkitOverflowScrolling: 'touch', overscrollBehaviorY: 'contain' }}
         >
-          <div className="max-w-[720px] mx-auto px-4 py-6 space-y-6">
+          <div className="max-w-[700px] mx-auto px-4 py-6 space-y-5">
             {messages.length === 0 && !isThinking ? (
-              <div className="flex flex-col items-center justify-center min-h-[60vh] gap-6">
-                <div className="flex h-14 w-14 items-center justify-center rounded-2xl border border-border bg-card">
-                  <Bot className="h-7 w-7 text-muted-foreground" />
+              <div className="flex flex-col items-center justify-center min-h-[60vh] gap-5">
+                <div className="flex h-10 w-10 items-center justify-center rounded-full bg-zinc-800">
+                  <span className="text-sm font-semibold text-zinc-400">N</span>
                 </div>
-                <div className="text-center max-w-md">
-                  <h2 className="text-base font-semibold text-foreground mb-1.5">
+                <div className="text-center max-w-sm">
+                  <h2 className="text-[15px] font-medium text-zinc-200 mb-1">
                     How can I help?
                   </h2>
-                  <p className="text-sm text-muted-foreground leading-relaxed">
-                    Ask about project statuses, constraints, schedules, or any operational question.
-                    Powered by Claude CLI with full access to Goliath project data.
+                  <p className="text-[13px] text-zinc-600 leading-relaxed">
+                    Ask about projects, constraints, schedules, or anything operational.
                   </p>
                 </div>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 w-full max-w-md">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 w-full max-w-md mt-2">
                   {suggestedPrompts.map((suggestion) => (
-                    <Button
+                    <button
                       key={suggestion}
-                      variant="outline"
-                      className="h-auto px-3 py-2.5 text-xs text-muted-foreground hover:text-foreground justify-start whitespace-normal text-left"
+                      className="px-3 py-2.5 text-[12px] text-zinc-500 hover:text-zinc-300 border border-zinc-800 hover:border-zinc-700 rounded-lg text-left transition-colors"
                       onClick={() => handleSendMessage(suggestion)}
                     >
                       {suggestion}
-                    </Button>
+                    </button>
                   ))}
                 </div>
               </div>
@@ -365,15 +467,42 @@ export function ChatPage() {
                 {messages.map((msg) => (
                   <MessageBubble key={msg.id} message={msg} />
                 ))}
-                {isThinking && <ThinkingIndicator />}
+
+                {(agentActivity.isProcessing || agentActivity.agents.size > 0) && (
+                  <AgentActivityPanel
+                    agents={agentActivity.agents}
+                    isProcessing={agentActivity.isProcessing}
+                    currentPass={agentActivity.currentPass}
+                    passStatus={agentActivity.passStatus}
+                    thinkingMessage={agentActivity.thinkingMessage}
+                  />
+                )}
+
+                {isThinking && !agentActivity.thinkingMessage && (
+                  <ThinkingIndicator />
+                )}
+
                 <div ref={messagesEndRef} />
               </>
             )}
           </div>
         </div>
 
-        {/* Input */}
-        <ChatInput onSend={handleSendMessage} disabled={isThinking} />
+        {/* Input area */}
+        <div className="shrink-0">
+          {isStreaming && (
+            <div className="flex justify-center pb-2">
+              <button
+                className="flex items-center gap-1.5 h-7 px-3 text-[11px] text-zinc-500 border border-zinc-800 rounded-lg hover:border-zinc-700 hover:text-zinc-400 transition-colors"
+                onClick={handleStopGenerating}
+              >
+                <Square className="h-2.5 w-2.5 fill-current" />
+                Stop
+              </button>
+            </div>
+          )}
+          <ChatInput onSend={handleSendMessage} disabled={isThinking} />
+        </div>
       </div>
     </div>
   );

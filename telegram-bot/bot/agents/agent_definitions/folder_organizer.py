@@ -88,62 +88,43 @@ data vs. which are empty shells.
 Flag any files over 50 MB — these may be accidentally committed binaries or should be \
 stored in external storage.
 
-## Output Format
-Produce a structured report with these exact section headers:
+## CRITICAL: ACTIONABLE ITEMS ONLY
+Only report items that actually need human action. IGNORE and DO NOT REPORT:
+- Small image files (PNG, JPG, GIF) that repeat across dated folders — these are email \
+header/logo images from POD processing and are harmless. Not actionable.
+- .gitkeep files — these are intentional placeholders.
+- Any file under 100 KB that appears duplicated across date-stamped subfolders — \
+these are almost certainly email artifacts (logos, signatures, etc.)
+
+Focus on REAL issues only:
+- Duplicate spreadsheets, PDFs, or large data files (same content, wasted space)
+- Files genuinely in the wrong project folder
+- Scripts mixed into data/report folders
+- Oversized files that shouldn't be here
+- Project folders with zero data that should have data
+
+## Output Format — PLAIN ENGLISH
+Write the report in plain, human-readable English. No technical jargon. \
+Describe each issue like you're telling a coworker what needs fixing.
+
+Use EXACTLY this structure:
 
 ```
-=== FOLDER ORGANIZATION REPORT ===
+=== FOLDER CLEANUP REPORT ===
 Scan date: YYYY-MM-DD HH:MM
 
---- DUPLICATES ---
-[For each set of duplicates:]
-  Files: <path1>, <path2>, ...
-  MD5: <hash>
-  Size: <size>
-  Action: DELETE (keep <recommended_path>, remove others) | INVESTIGATE
+--- ACTION ITEMS ---
+<Numbered list of items that need attention. For each one, write:
+  1. WHAT the issue is (plain English)
+  2. WHERE (file paths)
+  3. RECOMMENDATION (what to do about it)
 
---- MISPLACED_FILES ---
-[For each misplaced file:]
-  File: <path>
-  Reason: <why it appears misplaced>
-  Action: MOVE to <suggested_path> | INVESTIGATE
-
---- SCRIPTS_IN_WRONG_PLACE ---
-[For each misplaced script:]
-  File: <path>
-  Should be in: /opt/goliath/scripts/ or /opt/goliath/cron-jobs/
-  Action: MOVE to <suggested_path>
-
---- STRAY_FILES ---
-[For each stray file:]
-  File: <path>
-  Reason: <why it's stray>
-  Action: MOVE to <suggested_path> | DELETE | INVESTIGATE
-
---- EMPTY_PROJECT_FOLDERS ---
-[For each empty project:]
-  Project: <project-key>
-  Status: No data files (only .gitkeep) | Completely empty
-  Subfolders with data: <list or "none">
-
---- OVERSIZED_FILES ---
-[For each oversized file:]
-  File: <path>
-  Size: <size in MB>
-  Action: INVESTIGATE | MOVE to external storage
+If nothing needs attention, write: "All clean — no action needed."
+>
 
 --- SUMMARY ---
-Total issues found: <count>
-  Duplicates: <count>
-  Misplaced files: <count>
-  Scripts in wrong place: <count>
-  Stray files: <count>
-  Empty projects: <count>
-  Oversized files: <count>
+Action items: <count>
 ```
-
-If a category has no findings, output:
-  (none found)
 
 ## Folder-Specific Tool Tips
 - Use Bash to run find, md5sum, du, ls commands for filesystem scanning

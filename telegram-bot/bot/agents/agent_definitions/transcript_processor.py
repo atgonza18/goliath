@@ -1,4 +1,5 @@
 from bot.agents.agent_definitions.base import AgentDefinition
+from bot.config import AGENT_MODEL_HEAVY
 
 
 # ---------------------------------------------------------------------------
@@ -8,6 +9,8 @@ TRANSCRIPT_PROCESSOR = AgentDefinition(
     name="transcript_processor",
     display_name="Transcript Processor",
     description="Analyzes meeting/call transcripts, extracts action items, decisions, constraints, and key points.",
+    model=AGENT_MODEL_HEAVY,  # Opus — long transcript parsing, accurate extraction
+    effort="high",  # Strong reasoning for transcript parsing and constraint extraction
     can_write_files=True,
     timeout=None,
     system_prompt="""\
@@ -133,16 +136,17 @@ After your analysis, output MEMORY_SAVE blocks:
 3. One `decision` for each key decision
 4. One `observation` for any notable project health insights
 
-## ConstraintsPro Sync Output — CRITICAL (AUTO-UPDATE AUTHORITY)
+## ConstraintsPro Sync Output — CRITICAL (AUTO CROSS-REFERENCE)
 After extracting constraints from the transcript, output a CONSTRAINTS_SYNC block containing \
-ALL constraints discussed in the meeting as a JSON array. This triggers an AUTOMATIC sync \
-to ConstraintsPro — new constraints get created, existing ones get updated with meeting notes, \
-and resolved ones get closed.
+ALL constraints discussed in the meeting as a JSON array. This triggers an AUTOMATIC \
+cross-reference against ConstraintsPro — the system will compare your extracted constraints \
+against what already exists, identify duplicates to skip, existing constraints to update \
+(not create new), note merges, and priority changes. The user sees an already-deduped \
+summary and just has to say "push it" to sync — no manual dedup step needed.
 
-TRUST LEVEL: The transcript pipeline has FULL auto-update authority because it has complete \
-meeting context (who said what, commitments made, decisions reached). This is intentionally \
-different from the email reply pipeline, which requires human approval before changing \
-ConstraintsPro because email replies have less context and more ambiguity.
+TRUST LEVEL: The transcript pipeline outputs constraints for cross-reference. The system \
+auto-deduplicates before presenting to the user. The user approves with a simple "push it" \
+before anything gets written to ConstraintsPro.
 
 For EACH constraint discussed in the meeting, include:
 - description: Clear description of the constraint/blocker

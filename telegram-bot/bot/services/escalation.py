@@ -143,6 +143,13 @@ class EscalationTracker:
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
         self._db = await aiosqlite.connect(str(self.db_path))
         self._db.row_factory = aiosqlite.Row
+        # Concurrency and performance pragmas (previously missing)
+        await self._db.execute("PRAGMA busy_timeout = 5000")
+        await self._db.execute("PRAGMA journal_mode = WAL")
+        await self._db.execute("PRAGMA synchronous = NORMAL")
+        await self._db.execute("PRAGMA cache_size = -8000")
+        await self._db.execute("PRAGMA mmap_size = 67108864")
+        await self._db.execute("PRAGMA temp_store = MEMORY")
         await self._db.executescript(ESCALATION_SCHEMA)
         await self._db.commit()
         logger.info(f"Escalation tracker initialized at {self.db_path}")
@@ -162,7 +169,7 @@ class EscalationTracker:
           id, project, description, owner, priority, status, need_by_date, days_open
         """
         from bot.agents.definitions import CONSTRAINTS_MANAGER
-        from bot.agents.runner import SubagentRunner
+        from bot.agents.runner import get_runner
 
         prompt = (
             "Pull ALL open HIGH and MEDIUM priority constraints from ConstraintsPro.\n\n"
@@ -179,7 +186,7 @@ class EscalationTracker:
             "Wrap the JSON in ```json ... ``` code fences."
         )
 
-        runner = SubagentRunner()
+        runner = get_runner()
         result = await runner.run(
             agent=CONSTRAINTS_MANAGER,
             task_prompt=prompt,
@@ -281,7 +288,7 @@ class EscalationTracker:
         Returns the email body text, or None on failure.
         """
         from bot.agents.definitions import NIMROD
-        from bot.agents.runner import SubagentRunner
+        from bot.agents.runner import get_runner
 
         # Build the template context
         ctx = {
@@ -307,7 +314,7 @@ class EscalationTracker:
         else:
             prompt = LEVEL_3_PROMPT.format(**ctx)
 
-        runner = SubagentRunner()
+        runner = get_runner()
         result = await runner.run(
             agent=NIMROD,
             task_prompt=prompt,

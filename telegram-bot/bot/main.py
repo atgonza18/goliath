@@ -16,6 +16,7 @@ from bot.memory.conversation import ConversationStore
 from bot.memory.activity_log import ActivityLogStore
 from bot.memory.token_tracker import TokenTracker
 from bot.memory.reflection import ReflectionStore, set_reflection_store
+from bot.memory.experience_replay import ExperienceReplayStore
 from bot.services.message_queue import MessageQueue
 from bot.services.preferences import PreferenceStore
 from bot.services.webhook_server import start_webhook_server
@@ -23,6 +24,8 @@ from bot.services.queue_processor import run_queue_processor
 from bot.web_api import WebConversationStore
 from bot.services.email_service import EmailService
 from bot.services.recall_service import RecallService
+from bot.services.teams_meeting_detector import TeamsMeetingDetector
+from bot.services.token_health import TokenHealthMonitor, set_token_health_monitor
 from bot.scheduler import create_scheduler
 from bot.utils.logging_config import setup_logging
 from bot.utils.formatting import chunk_message
@@ -68,6 +71,12 @@ async def post_init(application) -> None:
     set_reflection_store(reflection)
     logger.info("Reflection store initialized (post-interaction self-scoring active)")
 
+    # Experience replay store shares the same DB connection
+    experience_replay = ExperienceReplayStore(memory._db)
+    await experience_replay.initialize()
+    application.bot_data["experience_replay"] = experience_replay
+    logger.info("Experience replay store initialized (lesson extraction + prompt injection ready)")
+
     # User preferences shares the same DB connection
     preferences = PreferenceStore(memory._db)
     await preferences.initialize()
@@ -98,8 +107,41 @@ async def post_init(application) -> None:
     application.bot_data["recall_service"] = recall_service
     if recall_service.is_configured:
         logger.info("Recall.ai meeting bot service initialized")
+
+        # Seed the persistent dedup tracker with already-processed bots
+        # so the cron poller doesn't reprocess them after restart
+        try:
+            from bot.services.recall_transcript_poller import RecallTranscriptPoller
+            poller = RecallTranscriptPoller(recall_service, memory._db)
+            await _seed_recall_tracker(poller, memory._db)
+        except Exception as e:
+            logger.warning(f"Failed to seed recall transcript tracker: {e}")
     else:
         logger.warning("Recall.ai not configured — RECALL_API_KEY missing from .env")
+
+    # Teams Meeting Auto-Detector (intercepts pasted Teams invites in Telegram)
+    meeting_detector = TeamsMeetingDetector(recall_service)
+    application.bot_data["meeting_detector"] = meeting_detector
+    logger.info("Teams meeting auto-detector initialized")
+
+    # Token health monitor — proactive OAuth token refresh and /reauth support
+    token_health = TokenHealthMonitor()
+    chat_id_for_alerts = int(REPORT_CHAT_ID) if REPORT_CHAT_ID else None
+    token_health.set_bot(application.bot, chat_id_for_alerts)
+    set_token_health_monitor(token_health)
+    application.bot_data["token_health"] = token_health
+    # Run an initial token health check on startup
+    try:
+        status = token_health.get_token_status()
+        logger.info(
+            f"Token health on startup: {status.get('status', 'unknown')} "
+            f"(expires in: {status.get('expires_in_human', 'unknown')})"
+        )
+        if status.get("status") in ("expiring_soon", "critical", "expired"):
+            logger.warning("Token needs refresh — attempting now")
+            asyncio.create_task(token_health.try_refresh_now(reason="startup"))
+    except Exception as e:
+        logger.warning(f"Startup token health check failed: {e}")
 
     # Expose bot_data on the bot instance so scheduler tasks and approval
     # handlers can access services (queue, email_service) without holding
@@ -199,6 +241,50 @@ async def post_init(application) -> None:
 
         except Exception as e:
             logger.warning(f"Failed to send startup notification: {e}")
+
+
+async def _seed_recall_tracker(poller, db) -> None:
+    """Seed the persistent dedup tracker with bots that already have transcripts.
+
+    On startup, any bot in the recall_bots table that has a transcript_file
+    (meaning the transcript was already fetched and processed) should be
+    added to the tracker. This prevents the cron poller from reprocessing
+    transcripts that were handled by the now-dead in-memory per-bot pollers.
+
+    Also seeds bots that have errors (fatal status) so we don't keep
+    retrying failed bots.
+    """
+    try:
+        cursor = await db.execute(
+            """SELECT bot_id, transcript_file, completed_at, error
+               FROM recall_bots
+               WHERE transcript_file IS NOT NULL AND transcript_file != ''
+                  OR error IS NOT NULL"""
+        )
+        rows = await cursor.fetchall()
+
+        seeded = 0
+        for row in rows:
+            bot_id = row["bot_id"]
+            if not poller.is_processed(bot_id):
+                transcript_file = row["transcript_file"] or ""
+                if row["error"]:
+                    transcript_file = f"ERROR: {row['error']}"
+                poller.mark_processed(bot_id, transcript_file=transcript_file)
+                seeded += 1
+
+        if seeded > 0:
+            logger.info(
+                f"Recall tracker seeded: {seeded} previously-processed bot(s) "
+                f"added to dedup tracker (total: {poller.get_processed_count()})"
+            )
+        else:
+            logger.info(
+                f"Recall tracker: {poller.get_processed_count()} bot(s) already tracked, "
+                "no new seeds needed"
+            )
+    except Exception:
+        logger.exception("Failed to seed recall transcript tracker from DB")
 
 
 def _find_pending_transcripts() -> list[Path]:

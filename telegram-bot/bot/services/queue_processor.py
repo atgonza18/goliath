@@ -1,7 +1,16 @@
 """Background async processor for the message queue.
 
-Picks up new inbound messages, routes them through Nimrod for draft responses,
-then pushes approval requests to Telegram.
+Picks up new inbound messages and routes them:
+  - Email/Teams items → Nimrod draft → approval request to Telegram (human-in-the-loop)
+  - Recall transcript items → full orchestrator pipeline → direct to Telegram
+    (transcript processing → constraint extraction → AUTO cross-reference against
+     ConstraintsPro → deduped sync proposal to user → user says "push it")
+
+The transcript bypass was added because transcripts should go straight to analysis,
+not through the email draft/approval flow. The constraint cross-reference against
+ConstraintsPro happens AUTOMATICALLY after extraction — duplicates are caught, existing
+constraints matched, and the user sees a clean "here's what we'd push" summary.
+The user just says "push it" to sync (no manual dedup step needed).
 """
 
 import asyncio
@@ -14,6 +23,11 @@ from bot.config import REPO_ROOT
 from bot.services.message_queue import MessageQueue
 
 logger = logging.getLogger(__name__)
+
+# Sources that should bypass the email draft/approval flow and go
+# straight through the full orchestrator pipeline (transcript processing,
+# constraint extraction, sync proposal).
+DIRECT_PROCESSING_SOURCES = {"recall_transcript"}
 
 # Cache soul.md content at module level (loaded once)
 _soul_md_cache: str | None = None
@@ -215,46 +229,178 @@ def _build_draft_prompt(item: dict) -> str:
 
 
 async def process_queue_once(queue: MessageQueue, memory, bot, chat_id: int) -> int:
-    """Process all pending items. Returns number of items processed."""
+    """Process all pending items. Returns number of items processed.
+
+    Routes items based on their source:
+      - recall_transcript → direct orchestrator pipeline (transcript processing,
+        constraint extraction, sync proposal). No email-draft approval step.
+      - email / teams / other → Nimrod draft + approval request to Telegram.
+    """
     pending = await queue.get_pending()
     if not pending:
         return 0
 
-    orchestrator = NimrodOrchestrator(memory=memory)
     processed = 0
 
     for item in pending:
-        try:
-            prompt = _build_draft_prompt(item)
-            result = await asyncio.wait_for(
-                orchestrator.handle_message(prompt),
-                timeout=300,
-            )
+        source = item.get("source", "")
 
-            raw_draft = result.text
-            draft = _extract_clean_draft(raw_draft)
-            if not draft:
-                # Extraction stripped everything — fall back to raw
-                logger.warning(
-                    f"Draft extraction returned empty for item {item['id']} — using raw text"
+        if source in DIRECT_PROCESSING_SOURCES:
+            # ── TRANSCRIPT PATH: bypass email-draft approval, go straight
+            # through the full orchestrator pipeline ──
+            try:
+                count = await _process_transcript_item(item, queue, memory, bot, chat_id)
+                processed += count
+            except Exception:
+                logger.exception(
+                    f"Failed to process transcript queue item {item['id']} "
+                    f"(source={source})"
                 )
-                draft = raw_draft.strip()
-            await queue.update_draft(item["id"], draft)
+        else:
+            # ── EMAIL/TEAMS PATH: draft + approval ──
+            try:
+                orchestrator = NimrodOrchestrator(memory=memory)
+                prompt = _build_draft_prompt(item)
+                result = await asyncio.wait_for(
+                    orchestrator.handle_message(prompt),
+                    timeout=300,
+                )
 
-            # Send approval request to Telegram
-            from bot.handlers.approval import send_approval_request
-            updated_item = await queue.get_by_id(item["id"])
-            await send_approval_request(bot, chat_id, updated_item)
+                raw_draft = result.text
+                draft = _extract_clean_draft(raw_draft)
+                if not draft:
+                    # Extraction stripped everything — fall back to raw
+                    logger.warning(
+                        f"Draft extraction returned empty for item {item['id']} — using raw text"
+                    )
+                    draft = raw_draft.strip()
+                await queue.update_draft(item["id"], draft)
 
-            processed += 1
-            logger.info(f"Processed queue item {item['id']} — draft ready for approval")
+                # Send approval request to Telegram
+                from bot.handlers.approval import send_approval_request
+                updated_item = await queue.get_by_id(item["id"])
+                await send_approval_request(bot, chat_id, updated_item)
 
-        except asyncio.TimeoutError:
-            logger.error(f"Queue item {item['id']} timed out during Nimrod processing")
-        except Exception:
-            logger.exception(f"Failed to process queue item {item['id']}")
+                processed += 1
+                logger.info(f"Processed queue item {item['id']} — draft ready for approval")
+
+            except asyncio.TimeoutError:
+                logger.error(f"Queue item {item['id']} timed out during Nimrod processing")
+            except Exception:
+                logger.exception(f"Failed to process queue item {item['id']}")
 
     return processed
+
+
+async def _process_transcript_item(
+    item: dict, queue: MessageQueue, memory, bot, chat_id: int
+) -> int:
+    """Route a recall_transcript queue item directly through the orchestrator.
+
+    This bypasses the email-draft/approval flow entirely. The transcript goes
+    straight to transcript_processor for analysis, constraint extraction, and
+    sync proposal generation. The user still approves constraint pushes to
+    ConstraintsPro (that approval lives in the orchestrator's sync proposal flow,
+    not in the email-approval flow).
+
+    Returns 1 on success, 0 on failure.
+    """
+    from bot.utils.formatting import chunk_message
+
+    item_id = item["id"]
+    body = item.get("body") or ""
+
+    # Use the item's own chat_id if set (e.g., from the Recall bot's session),
+    # otherwise fall back to the global REPORT_CHAT_ID.
+    target_chat_id = item.get("telegram_chat_id") or chat_id
+
+    logger.info(
+        f"Transcript queue item {item_id}: routing directly to orchestrator "
+        f"(bypassing email-draft approval, target_chat_id={target_chat_id})"
+    )
+
+    # Mark the queue item as being processed so it's not picked up again.
+    # We use 'processing' status to take it out of the 'new' pool immediately.
+    try:
+        await queue._db.execute(
+            "UPDATE message_queue SET status = 'processing', "
+            "processed_at = strftime('%Y-%m-%dT%H:%M:%S','now') WHERE id = ?",
+            (item_id,),
+        )
+        await queue._db.commit()
+    except Exception:
+        logger.exception(f"Failed to mark transcript item {item_id} as processing")
+
+    # Run the full orchestrator pipeline — same path as a user Telegram message.
+    # The orchestrator will:
+    #   1. Route to transcript_processor subagent (based on the body content)
+    #   2. Extract constraints via CONSTRAINTS_SYNC block
+    #   3. Generate a sync proposal (human-in-the-loop for ConstraintsPro pushes)
+    #   4. Return the full analysis + sync proposal text
+    orchestrator = NimrodOrchestrator(memory=memory)
+
+    try:
+        result = await asyncio.wait_for(
+            orchestrator.handle_message(body),
+            timeout=600,  # transcripts can be long — 10 min timeout
+        )
+    except asyncio.TimeoutError:
+        logger.error(f"Transcript queue item {item_id} timed out during orchestrator processing")
+        # Revert to 'new' so it can be retried next cycle
+        try:
+            await queue._db.execute(
+                "UPDATE message_queue SET status = 'new' WHERE id = ?",
+                (item_id,),
+            )
+            await queue._db.commit()
+        except Exception:
+            pass
+        return 0
+
+    result_text = result.text
+    file_paths = result.file_paths
+
+    # Mark the queue item as fully processed (not pending_approval — no approval needed)
+    try:
+        await queue._db.execute(
+            "UPDATE message_queue SET status = 'sent', draft_response = ?, "
+            "sent_at = strftime('%Y-%m-%dT%H:%M:%S','now') WHERE id = ?",
+            (result_text[:5000], item_id),
+        )
+        await queue._db.commit()
+    except Exception:
+        logger.exception(f"Failed to mark transcript item {item_id} as sent")
+
+    # Send the analysis results directly to Telegram (no approval gate)
+    try:
+        for chunk in chunk_message(result_text, max_len=4000):
+            try:
+                await bot.send_message(chat_id=target_chat_id, text=chunk, parse_mode="HTML")
+            except Exception:
+                # Fall back to plain text if HTML parsing fails
+                await bot.send_message(chat_id=target_chat_id, text=chunk)
+
+        # Send any generated files (PDFs, processed transcript summaries, etc.)
+        for fp in file_paths:
+            file_path = Path(fp)
+            if file_path.is_file():
+                try:
+                    with open(file_path, "rb") as f:
+                        await bot.send_document(
+                            chat_id=target_chat_id, document=f, filename=file_path.name
+                        )
+                    logger.info(f"Sent transcript file to Telegram: {file_path}")
+                except Exception:
+                    logger.exception(f"Failed to send transcript file: {file_path}")
+
+    except Exception:
+        logger.exception(f"Failed to send transcript results to Telegram for item {item_id}")
+
+    logger.info(
+        f"Transcript queue item {item_id} processed and delivered to Telegram "
+        f"(bypassed email-draft approval)"
+    )
+    return 1
 
 
 async def run_queue_processor(queue: MessageQueue, memory, bot, chat_id: int, interval: int = 30):

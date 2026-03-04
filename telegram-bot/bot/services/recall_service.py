@@ -34,8 +34,9 @@ from bot.config import (
 logger = logging.getLogger(__name__)
 
 # Regex to detect Teams meeting URLs in messages
+# Supports both classic /l/meetup-join/ URLs and newer /meet/ URLs
 TEAMS_URL_PATTERN = re.compile(
-    r'https?://teams\.microsoft\.com/l/meetup-join/[^\s<>"\']+',
+    r'https?://(?:teams\.microsoft\.com/(?:l/meetup-join|meet)/|teams\.live\.com/meet/)[^\s<>"\']+',
     re.IGNORECASE,
 )
 
@@ -396,6 +397,22 @@ class RecallService:
                         await self._queue_transcript_for_processing(
                             chat_id, transcript_file, transcript_text
                         )
+
+                        # Mark in persistent tracker so the cron poller
+                        # doesn't reprocess this bot on restart
+                        try:
+                            from bot.services.recall_transcript_poller import RecallTranscriptPoller
+                            tracker = RecallTranscriptPoller._load_tracker()
+                            tracker["processed"][bot_id] = {
+                                "processed_at": datetime.now(CT).isoformat(),
+                                "transcript_file": str(transcript_file),
+                            }
+                            from bot.services.recall_transcript_poller import TRACKER_FILE
+                            TRACKER_FILE.parent.mkdir(parents=True, exist_ok=True)
+                            TRACKER_FILE.write_text(json.dumps(tracker, indent=2) + "\n")
+                            logger.info(f"Marked bot {bot_id[:8]} in persistent dedup tracker")
+                        except Exception as e:
+                            logger.warning(f"Failed to update dedup tracker for {bot_id[:8]}: {e}")
                     else:
                         await self._queue_notification(
                             chat_id,

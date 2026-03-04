@@ -17,7 +17,7 @@ export function Breadcrumbs({ currentPath, onNavigate }: BreadcrumbsProps) {
           className="flex items-center gap-1.5 px-2 py-1 rounded-md text-muted-foreground hover:text-foreground hover:bg-accent/50 transition-colors shrink-0"
         >
           <Home className="h-3.5 w-3.5" />
-          <span className="hidden sm:inline">Projects</span>
+          <span className="hidden sm:inline">goliath</span>
         </button>
 
         {segments.map((segment, i) => {

@@ -5,25 +5,11 @@ import re
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Optional
+from typing import Callable, Optional
 
 from bot.agents.definitions import NIMROD, CONSTRAINTS_MANAGER
 from bot.agents.registry import AgentRegistry
-from bot.agents.runner import SubagentRunner as CLIRunner, AgentResult
-
-
-def _get_runner():
-    """Get the configured agent runner backend.
-
-    Returns SubagentRunnerSDK when AGENT_RUNNER_BACKEND=sdk,
-    otherwise returns the legacy CLI-based SubagentRunner.
-    Lazy-imports to avoid breaking if the SDK package is absent.
-    """
-    from bot.config import AGENT_RUNNER_BACKEND
-    if AGENT_RUNNER_BACKEND == "sdk":
-        from bot.agents.runner_sdk import SubagentRunnerSDK
-        return SubagentRunnerSDK()
-    return CLIRunner()
+from bot.agents.runner import get_runner, AgentResult
 from bot.memory.store import MemoryStore
 
 # Pending constraint sync proposals are saved here for approval
@@ -73,11 +59,12 @@ class NimrodOrchestrator:
     Memory is injected into prompts and saved from MEMORY_SAVE blocks.
     """
 
-    def __init__(self, memory: MemoryStore, token_tracker=None):
+    def __init__(self, memory: MemoryStore, token_tracker=None, experience_replay=None):
         self.memory = memory
         self.registry = AgentRegistry()
-        self.runner = _get_runner()
+        self.runner = get_runner()
         self._token_tracker = token_tracker
+        self._experience_replay = experience_replay
         # Activity log instrumentation (read by orchestration handler)
         self._pass1_duration: Optional[float] = None
         self._pass2_duration: Optional[float] = None
@@ -90,7 +77,7 @@ class NimrodOrchestrator:
             "agents": [],
         }
 
-    async def handle_message(self, user_message: str, conversation_history: str = "") -> OrchestrationResult:
+    async def handle_message(self, user_message: str, conversation_history: str = "", on_agent_event: Optional[Callable] = None) -> OrchestrationResult:
         all_file_paths: list[str] = []
 
         # --- FAST PATH: Constraint sync approval/rejection ---
@@ -102,7 +89,10 @@ class NimrodOrchestrator:
         memory_context = await self._build_memory_context(user_message)
 
         # --- PASS 1: Nimrod routing ---
-        pass1_prompt = self._build_nimrod_prompt(user_message, memory_context, conversation_history)
+        pass1_prompt = await self._build_nimrod_prompt(user_message, memory_context, conversation_history)
+
+        if on_agent_event:
+            await on_agent_event({"type": "pass", "pass": 1, "status": "start"})
 
         # Pass 1: Nimrod has full tool access but is prompted to delegate complex work
         p1_start = time.monotonic()
@@ -114,6 +104,9 @@ class NimrodOrchestrator:
             )
         self._pass1_duration = time.monotonic() - p1_start
         await self._track_agent_tokens(NIMROD.name)
+
+        if on_agent_event:
+            await on_agent_event({"type": "pass", "pass": 1, "status": "complete", "duration": round(self._pass1_duration, 1)})
 
         if not nimrod_result.success:
             return OrchestrationResult(
@@ -159,7 +152,7 @@ class NimrodOrchestrator:
             f"{[r.agent_name for r in subagent_requests]}"
         )
 
-        results = await self._run_subagents(subagent_requests, user_message)
+        results = await self._run_subagents(subagent_requests, user_message, on_agent_event=on_agent_event)
 
         # Track token usage for each dispatched subagent
         for r in results:
@@ -203,20 +196,57 @@ class NimrodOrchestrator:
         # --- CONSTRAINTS SYNC PROPOSAL: compare against ConstraintsPro, propose changes ---
         # Instead of auto-pushing, we generate a read-only proposal and save it
         # for the user to approve before anything gets written to ConstraintsPro.
-        sync_proposal_task = None
+        #
+        # IMPORTANT: We await the proposal BEFORE Pass 2 synthesis so that the
+        # dedup results are available for Nimrod to present an integrated, clean
+        # summary. The user sees "here's what we'd push" with duplicates already
+        # caught — no separate manual cross-reference step needed.
+        sync_proposal_text = ""
         if constraints_sync_data:
             logger.info(
                 f"Transcript contained {len(constraints_sync_data['constraints'])} "
-                f"constraint(s) — generating sync proposal (human-in-the-loop)"
+                f"constraint(s) — running automatic ConstraintsPro cross-reference"
             )
-            sync_proposal_task = asyncio.create_task(
-                self._propose_constraints_sync(constraints_sync_data)
-            )
+            if on_agent_event:
+                await on_agent_event({"type": "agent_start", "agent": "constraints_manager (auto cross-ref)", "task": "Cross-referencing extracted constraints against ConstraintsPro"})
+
+            try:
+                proposal_result = await self._propose_constraints_sync(constraints_sync_data)
+                if proposal_result and proposal_result.success and proposal_result.output:
+                    sync_proposal_text = self._parse_sync_proposal(proposal_result.output) or ""
+                    # Record in activity log
+                    if self._subagent_log is not None:
+                        self._subagent_log.append({
+                            "agent": "constraints_manager (auto cross-ref)",
+                            "success": proposal_result.success,
+                            "duration": round(proposal_result.duration_seconds, 1),
+                            "error": proposal_result.error,
+                        })
+                    logger.info("ConstraintsPro auto cross-reference completed successfully")
+                elif proposal_result and not proposal_result.success:
+                    logger.warning(f"ConstraintsPro auto cross-reference failed: {proposal_result.error}")
+                    sync_proposal_text = (
+                        "\n\n<b>ConstraintsPro Cross-Reference</b>: "
+                        "Could not auto-compare against ConstraintsPro. Constraints from this "
+                        "transcript were saved locally but not deduped."
+                    )
+            except Exception:
+                logger.exception("ConstraintsPro auto cross-reference raised an exception")
+                sync_proposal_text = ""
+
+            if on_agent_event:
+                await on_agent_event({"type": "agent_complete", "agent": "constraints_manager (auto cross-ref)", "success": bool(sync_proposal_text), "duration": 0})
 
         # --- PASS 2: Nimrod synthesis (proceeds even if some subagents failed) ---
+        # If we have sync proposal results, inject them into the synthesis prompt
+        # so Nimrod can present an integrated, deduped constraint summary.
         synthesis_prompt = self._build_synthesis_prompt(
-            user_message, clean_response, results, memory_context, conversation_history
+            user_message, clean_response, results, memory_context, conversation_history,
+            sync_proposal_context=sync_proposal_text,
         )
+
+        if on_agent_event:
+            await on_agent_event({"type": "pass", "pass": 2, "status": "start"})
 
         # Pass 2: Nimrod synthesizes, has tool access for any follow-up actions
         p2_start = time.monotonic()
@@ -228,6 +258,9 @@ class NimrodOrchestrator:
             )
         self._pass2_duration = time.monotonic() - p2_start
         await self._track_agent_tokens(NIMROD.name)
+
+        if on_agent_event:
+            await on_agent_event({"type": "pass", "pass": 2, "status": "complete", "duration": round(self._pass2_duration, 1)})
 
         if not synthesis_result.success:
             # Fall back to raw subagent results (use HTML, not Markdown)
@@ -265,7 +298,7 @@ class NimrodOrchestrator:
             )
             clean_synthesis = self._strip_structured_blocks(synthesis_text)
 
-            followup_results = await self._run_subagents(followup_requests, user_message)
+            followup_results = await self._run_subagents(followup_requests, user_message, on_agent_event=on_agent_event)
 
             # Track token usage for follow-up subagents
             for r in followup_results:
@@ -318,33 +351,9 @@ class NimrodOrchestrator:
                     restart_required = True
                     restart_reason = fin_reason
 
-        # --- AWAIT CONSTRAINTS SYNC PROPOSAL (if running) ---
-        sync_summary_text = ""
-        if sync_proposal_task is not None:
-            try:
-                proposal_result = await sync_proposal_task
-                if proposal_result and proposal_result.success and proposal_result.output:
-                    proposal_text = self._parse_sync_proposal(proposal_result.output)
-                    if proposal_text:
-                        sync_summary_text = f"\n\n---\n{proposal_text}"
-                    # Record proposal generation in activity log
-                    if self._subagent_log is not None:
-                        self._subagent_log.append({
-                            "agent": "constraints_manager (sync proposal)",
-                            "success": proposal_result.success,
-                            "duration": round(proposal_result.duration_seconds, 1),
-                            "error": proposal_result.error,
-                        })
-                    logger.info("ConstraintsPro sync proposal generated successfully")
-                elif proposal_result and not proposal_result.success:
-                    logger.warning(f"ConstraintsPro sync proposal failed: {proposal_result.error}")
-                    sync_summary_text = (
-                        "\n\n---\n<b>ConstraintsPro Sync</b>: "
-                        "Could not generate sync proposal. Constraints from this transcript "
-                        "were saved locally but not compared against ConstraintsPro."
-                    )
-            except Exception:
-                logger.exception("ConstraintsPro sync proposal task raised an exception")
+        # NOTE: ConstraintsPro cross-reference now runs BEFORE Pass 2 synthesis
+        # and is injected into the synthesis prompt, so Nimrod presents an integrated
+        # deduped summary. No separate post-synthesis await needed.
 
         # Deduplicate file paths while preserving order
         seen = set()
@@ -354,7 +363,7 @@ class NimrodOrchestrator:
                 seen.add(fp)
                 unique_files.append(fp)
 
-        final_text = self._strip_structured_blocks(synthesis_text) + sync_summary_text
+        final_text = self._strip_structured_blocks(synthesis_text)
 
         # Build token summary for this orchestration run
         token_summary = self._build_token_summary()
@@ -426,11 +435,20 @@ class NimrodOrchestrator:
 
         return "PERSISTENT MEMORY:\n" + "\n\n".join(parts)
 
-    def _build_nimrod_prompt(
+    async def _build_nimrod_prompt(
         self, user_message: str, memory_context: str, conversation_history: str = ""
     ) -> str:
         subagent_list = self.registry.subagent_descriptions()
         parts = [f"{memory_context}\n\n---\n\n"]
+
+        # Inject lessons from experience replay (self-improvement V3)
+        if self._experience_replay:
+            try:
+                lessons_block = await self._experience_replay.get_lessons_for_prompt_injection(limit=3)
+                if lessons_block:
+                    parts.append(f"{lessons_block}\n\n---\n\n")
+            except Exception:
+                logger.debug("Failed to inject experience replay lessons", exc_info=True)
 
         # Inject pending constraint sync status if one exists
         pending_sync = self.get_pending_sync_summary()
@@ -453,6 +471,7 @@ class NimrodOrchestrator:
         results: list[AgentResult],
         memory_context: str,
         conversation_history: str = "",
+        sync_proposal_context: str = "",
     ) -> str:
         parts = [f"{memory_context}\n\n---\n\n"]
         if conversation_history:
@@ -475,6 +494,25 @@ class NimrodOrchestrator:
                     f"--- {r.agent_name} (FAILED) ---\nError: {r.error}\n\n"
                 )
                 failed_agents.append(r.agent_name)
+
+        # Inject ConstraintsPro cross-reference results if available
+        if sync_proposal_context:
+            parts.append(
+                "--- AUTOMATIC CONSTRAINTSPRO CROSS-REFERENCE (already completed) ---\n"
+                "The system automatically compared extracted constraints against what already "
+                "exists in ConstraintsPro. Here are the dedup results:\n\n"
+                f"{sync_proposal_context}\n\n"
+                "IMPORTANT: Present this information INTEGRATED into your transcript summary — "
+                "not as a separate section tacked on at the end. The user should see a clean "
+                "'here is what we would push to ConstraintsPro' summary that shows:\n"
+                "- NEW constraints that don't exist yet (would be created)\n"
+                "- EXISTING constraints that would get updated with meeting notes\n"
+                "- RESOLVED constraints that would be closed\n"
+                "- DUPLICATES that were caught and will be skipped\n\n"
+                "The dedup is ALREADY DONE — the user does not need to manually cross-reference. "
+                "Tell them to say <b>\"push it\"</b> to sync the changes to ConstraintsPro, "
+                "or <b>\"skip sync\"</b> to discard. Keep it simple.\n\n"
+            )
 
         parts.append(
             "Synthesize these results for the user. KEEP IT SHORT — max 3-5 paragraphs. "
@@ -500,7 +538,7 @@ class NimrodOrchestrator:
         return "".join(parts)
 
     async def _run_subagents(
-        self, requests: list[SubagentRequest], user_message: str
+        self, requests: list[SubagentRequest], user_message: str, on_agent_event: Optional[Callable] = None
     ) -> list[AgentResult]:
         async def _run_one(req: SubagentRequest) -> AgentResult:
             agent_def = self.registry.get_subagent(req.agent_name)
@@ -512,6 +550,9 @@ class NimrodOrchestrator:
                     duration_seconds=0.0,
                     error=f"Unknown agent: {req.agent_name}",
                 )
+
+            if on_agent_event:
+                await on_agent_event({"type": "agent_start", "agent": req.agent_name, "task": req.task[:200]})
 
             # Build context for the subagent
             context_parts = []
@@ -529,12 +570,23 @@ class NimrodOrchestrator:
 
             context = "\n".join(context_parts)
 
+            start_t = time.monotonic()
             async with _semaphore:
-                return await self.runner.run(
+                result = await self.runner.run(
                     agent=agent_def,
                     task_prompt=req.task,
                     context=context,
                 )
+
+            if on_agent_event:
+                await on_agent_event({
+                    "type": "agent_complete",
+                    "agent": req.agent_name,
+                    "success": result.success,
+                    "duration": round(time.monotonic() - start_t, 1),
+                })
+
+            return result
 
         results = await asyncio.gather(
             *[_run_one(req) for req in requests],
@@ -716,6 +768,17 @@ class NimrodOrchestrator:
         r"yes[,.]?\s*(push|sync|approve)",
         r"go\s+ahead\s+(with\s+)?(the\s+)?(sync|push|constraints)",
         r"looks\s+good[,.]?\s*(push|sync|approve)",
+        r"^push\s*it\s*$",
+        r"^push\s*it[.!]?\s*$",
+        r"^push$",
+        r"^do\s*it$",
+        r"^send\s*it$",
+        r"^ship\s*it$",
+        r"^yes[,.]?\s*push\s*it",
+        r"^lgtm",
+        r"looks\s+good[,.]?\s*push\s*it",
+        r"push\s+it\s+to\s+constraintspro",
+        r"go\s+ahead\s+and\s+push",
     ]
     _SYNC_REJECT_PATTERNS = [
         r"reject\s*(the\s+)?constraint\s*sync",
@@ -724,6 +787,12 @@ class NimrodOrchestrator:
         r"don'?t\s+(push|sync)\s*(the\s+)?constraints",
         r"cancel\s*(the\s+)?sync",
         r"skip\s*(the\s+)?sync",
+        r"^skip$",
+        r"^skip\s*it$",
+        r"^nah$",
+        r"^no[,.]?\s*skip",
+        r"^don'?t\s+push",
+        r"^discard$",
     ]
 
     async def _check_constraint_sync_approval(
@@ -839,23 +908,33 @@ class NimrodOrchestrator:
         constraints_json = json.dumps(constraints, indent=2)
 
         prompt = f"""\
-You are comparing constraints extracted from a {source_description} against what already \
-exists in ConstraintsPro. This is a READ-ONLY analysis — DO NOT create, update, or modify \
-anything. Your job is to produce a PROPOSAL of what WOULD change.
+You are the AUTOMATIC DEDUP ENGINE for the transcript-to-ConstraintsPro pipeline. \
+Your job is critical: the user relies on your analysis to avoid creating duplicates. \
+This is a READ-ONLY analysis — DO NOT create, update, or modify anything. You produce \
+a PROPOSAL of what WOULD change if the user approves.
 
 STEP 1: Call `projects_list` to get all project IDs and names.
 
 STEP 2: For each constraint below, find the matching project by name/key and call \
-`constraints_list_by_project` to get ALL existing constraints for that project.
+`constraints_list_by_project` to get ALL existing constraints for that project. \
+For each existing constraint that seems even remotely related, call \
+`constraints_get_with_notes` to see the full detail and notes history — this is \
+essential for accurate semantic matching.
 
-STEP 3: DEDUPLICATION ANALYSIS — For each extracted constraint, compare against existing:
+STEP 3: DEDUPLICATION ANALYSIS — THIS IS YOUR PRIMARY VALUE. For each extracted \
+constraint, compare against EVERY existing constraint in the project:
 - Match by SEMANTIC SIMILARITY, not exact text. If an existing constraint covers the same \
-issue (same blocker, same material, same vendor problem, etc.), it is a MATCH.
+issue (same blocker, same material, same vendor problem, same subcontractor issue, \
+same permit/inspection, same equipment delay, etc.), it is a MATCH — even if worded \
+differently.
+- Be AGGRESSIVE about matching. Two constraints about "waiting on DC cable delivery" and \
+"DC collection cable PO delayed" are the SAME constraint. Don't create duplicates.
 - Classify each extracted constraint as one of:
   a) MATCH_UPDATE — Matches an existing constraint; would add meeting notes and/or update priority
   b) MATCH_RESOLVE — Matches an existing constraint AND extracted has resolved=true; would close it
   c) NEW — No existing match and not resolved; would create a new constraint
-  d) SKIP — Resolved but no existing match (nothing to do)
+  d) SKIP — Resolved but no existing match (nothing to do), OR duplicate of another \
+     extracted constraint that is already being handled
 
 STEP 4: For each classified constraint, note:
 - The extracted description, priority, owner, category
@@ -863,10 +942,14 @@ STEP 4: For each classified constraint, note:
 - If MATCH: what would change (notes to add, priority change, status change)
 - If NEW: what would be created (title, priority, category, owner, need-by date)
 
+STEP 5: SECOND-PASS DEDUP CHECK — Review your own proposal for internal duplicates. \
+If two extracted constraints would both create NEW entries that describe the same issue, \
+merge them into one CREATE and mark the other as SKIP.
+
 DO NOT use any write tools (constraints_create, constraints_update, constraints_update_status, \
 constraints_add_note, constraints_bulk_import). READ ONLY.
 
-EXTRACTED CONSTRAINTS FROM TRANSCRIPT:
+EXTRACTED CONSTRAINTS FROM {source_description.upper()}:
 {constraints_json}
 
 After your analysis, output a SYNC_PROPOSAL block with a JSON array of proposed actions:
@@ -962,16 +1045,21 @@ The JSON must be valid and on a single line after "actions: ".
         }
 
     def _parse_sync_proposal(self, text: str) -> Optional[str]:
-        """Extract SYNC_PROPOSAL block and format as an HTML notification for the user."""
+        """Extract SYNC_PROPOSAL block and format as an HTML notification for the user.
+
+        The output is designed to be integrated into Nimrod's synthesis response,
+        presenting an already-deduped constraint summary that the user can approve
+        with a simple "push it".
+        """
         proposal = self._parse_sync_proposal_data(text)
         if not proposal or not proposal.get("actions"):
             # Even without a structured proposal, check if a pending sync was saved
             if PENDING_SYNC_PATH.exists():
                 return (
-                    "<b>ConstraintsPro Sync Proposal</b>\n"
-                    "Constraints from this transcript have been compared against ConstraintsPro. "
-                    "Say <b>\"approve constraint sync\"</b> to push changes, or "
-                    "<b>\"reject constraint sync\"</b> to discard."
+                    "<b>ConstraintsPro Sync Ready</b>\n"
+                    "Constraints from this transcript have been cross-referenced against "
+                    "ConstraintsPro (duplicates already caught). "
+                    "Say <b>\"push it\"</b> to sync, or <b>\"skip\"</b> to discard."
                 )
             return None
 
@@ -988,10 +1076,14 @@ The JSON must be valid and on a single line after "actions: ".
                 "all constraints from this transcript already match ConstraintsPro."
             )
 
-        parts = ["<b>ConstraintsPro Sync Proposal</b> (pending your approval)"]
+        parts = [
+            f"<b>ConstraintsPro — Ready to Push</b> "
+            f"({total_changes} change{'s' if total_changes != 1 else ''}, "
+            f"already deduped)"
+        ]
 
         if creates:
-            parts.append(f"\n<b>CREATE ({len(creates)} new):</b>")
+            parts.append(f"\n<b>NEW ({len(creates)}):</b>")
             for c in creates:
                 desc = (c.get("description") or "")[:80]
                 prio = c.get("priority", "?")
@@ -1003,23 +1095,22 @@ The JSON must be valid and on a single line after "actions: ".
             for u in updates:
                 existing = u.get("existing_title") or u.get("description", "")
                 existing = existing[:80]
-                notes = (u.get("notes_to_add") or "")[:60]
                 prio_change = u.get("priority_change")
-                detail = f"+ notes" + (f", priority {prio_change}" if prio_change else "")
+                detail = "+ meeting notes" + (f", priority {prio_change}" if prio_change else "")
                 parts.append(f"  - {existing} ({detail})")
 
         if resolves:
-            parts.append(f"\n<b>RESOLVE ({len(resolves)}):</b>")
+            parts.append(f"\n<b>CLOSE ({len(resolves)}):</b>")
             for r in resolves:
                 existing = (r.get("existing_title") or r.get("description", ""))[:80]
                 parts.append(f"  - {existing}")
 
         if skips:
-            parts.append(f"\n<i>Skipped: {len(skips)} (resolved, no match in ConstraintsPro)</i>")
+            parts.append(f"\n<i>Caught {len(skips)} duplicate{'s' if len(skips) != 1 else ''} — already in ConstraintsPro, skipped.</i>")
 
         parts.append(
-            "\nSay <b>\"approve constraint sync\"</b> to push these changes, "
-            "or <b>\"reject constraint sync\"</b> to discard."
+            "\nSay <b>\"push it\"</b> to sync these to ConstraintsPro, "
+            "or <b>\"skip\"</b> to discard."
         )
 
         return "\n".join(parts)
@@ -1171,7 +1262,7 @@ details: <brief description of what was synced>
                 f"PENDING CONSTRAINT SYNC (from {created_at}, project: {project}): "
                 f"{len(constraints)} constraints extracted — "
                 f"proposal: {creates} new, {updates} updates, {resolves} to resolve. "
-                f"Awaiting user approval."
+                f"Already deduped — awaiting user to say 'push it' or 'skip'."
             )
         except Exception:
             return "PENDING CONSTRAINT SYNC: File exists but could not be read."
