@@ -205,6 +205,101 @@ filesRouter.post(
 // ──────────────────────────────────────────────────────────────────────────
 // POST /api/files/mkdir  — Create a directory
 // ──────────────────────────────────────────────────────────────────────────
+// ──────────────────────────────────────────────────────────────────────────
+// GET /api/files/preview?path=  — Return text content for preview
+// ──────────────────────────────────────────────────────────────────────────
+filesRouter.get('/files/preview', (req: Request, res: Response) => {
+  try {
+    const userPath = req.query.path as string;
+    if (!userPath) {
+      res.status(400).json({ error: 'path query parameter is required' });
+      return;
+    }
+
+    const filePath = safePath(userPath);
+    if (!filePath) {
+      res.status(400).json({ error: 'Invalid path' });
+      return;
+    }
+
+    if (!fs.existsSync(filePath)) {
+      res.status(404).json({ error: 'File not found' });
+      return;
+    }
+
+    const stat = fs.statSync(filePath);
+    if (!stat.isFile()) {
+      res.status(400).json({ error: 'Path is not a file' });
+      return;
+    }
+
+    const MAX_PREVIEW_SIZE = 100 * 1024; // 100KB
+    const size = stat.size;
+    const truncated = size > MAX_PREVIEW_SIZE;
+
+    const readSize = Math.min(size, MAX_PREVIEW_SIZE);
+    const buffer = Buffer.alloc(readSize);
+    const fd = fs.openSync(filePath, 'r');
+    fs.readSync(fd, buffer, 0, readSize, 0);
+    fs.closeSync(fd);
+
+    const content = buffer.toString('utf-8');
+    const name = path.basename(filePath);
+
+    res.json({
+      content,
+      size,
+      truncated,
+      name,
+      path: path.relative(PROJECTS_ROOT, filePath),
+    });
+  } catch (err) {
+    console.error('[GET /api/files/preview]', err);
+    res.status(500).json({ error: 'Failed to preview file' });
+  }
+});
+
+// ──────────────────────────────────────────────────────────────────────────
+// GET /api/files/serve?path=  — Serve file inline with correct MIME type
+// ──────────────────────────────────────────────────────────────────────────
+filesRouter.get('/files/serve', (req: Request, res: Response) => {
+  try {
+    const userPath = req.query.path as string;
+    if (!userPath) {
+      res.status(400).json({ error: 'path query parameter is required' });
+      return;
+    }
+
+    const filePath = safePath(userPath);
+    if (!filePath) {
+      res.status(400).json({ error: 'Invalid path' });
+      return;
+    }
+
+    if (!fs.existsSync(filePath)) {
+      res.status(404).json({ error: 'File not found' });
+      return;
+    }
+
+    const stat = fs.statSync(filePath);
+    if (!stat.isFile()) {
+      res.status(400).json({ error: 'Path is not a file' });
+      return;
+    }
+
+    // Serve inline (browser renders rather than downloads)
+    const filename = path.basename(filePath);
+    res.setHeader('Content-Disposition', `inline; filename="${filename}"`);
+    res.sendFile(filePath);
+  } catch (err) {
+    console.error('[GET /api/files/serve]', err);
+    res.status(500).json({ error: 'Failed to serve file' });
+  }
+});
+
+// ──────────────────────────────────────────────────────────────────────────
+// POST /api/files/mkdir  — Create a directory
+// ──────────────────────────────────────────────────────────────────────────
 filesRouter.post('/files/mkdir', (req: Request, res: Response) => {
   try {
     const userPath = req.body?.path as string;

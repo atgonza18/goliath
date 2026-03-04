@@ -65,6 +65,11 @@ app.use(express.static(FRONTEND_DIST, {
 // SPA fallback — any non-API GET route serves index.html
 // (but don't serve index.html for requests that look like missing files)
 app.get('*', (_req, res) => {
+  // Never serve SPA fallback for API routes — return 404 so bugs are visible
+  if (_req.path.startsWith('/api/')) {
+    res.status(404).json({ error: 'API route not found' });
+    return;
+  }
   const ext = path.extname(_req.path);
   if (ext && ext !== '.html') {
     // Request has a file extension (e.g. .js, .css, .png) but wasn't matched
