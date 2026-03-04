@@ -1,6 +1,5 @@
 import { useState, useRef, useCallback } from 'react';
 import { ArrowUp } from 'lucide-react';
-import { cn } from '@/lib/utils';
 
 interface ChatInputProps {
   onSend: (message: string) => void;
@@ -38,41 +37,52 @@ export function ChatInput({ onSend, disabled }: ChatInputProps) {
   const canSend = message.trim().length > 0 && !disabled;
 
   return (
-    <div className="px-4 pb-4 pt-2 shrink-0">
+    <div className="px-4 pb-5 pt-2 shrink-0">
       <div className="max-w-[720px] mx-auto">
-        <div className="relative">
+        <div className="flex items-center gap-0">
           <textarea
             ref={textareaRef}
             value={message}
             onChange={handleInput}
             onKeyDown={handleKeyDown}
-            placeholder="Ask anything..."
+            placeholder="ASK ANYTHING..."
             disabled={disabled}
             rows={1}
-            className={cn(
-              'w-full resize-none rounded-xl border border-zinc-800 bg-zinc-900/50 pl-4 pr-12 py-3 text-[13px] text-foreground',
-              'placeholder:text-zinc-600',
-              'focus:outline-none focus:border-zinc-600',
-              'transition-colors duration-150',
-              'disabled:opacity-40 disabled:cursor-not-allowed'
-            )}
-            style={{ minHeight: '48px', maxHeight: '160px' }}
+            className="flex-1 min-w-0 resize-none pl-4 pr-4 py-3.5 text-[13px] focus:outline-none transition-colors duration-100"
+            style={{
+              minHeight: '50px',
+              maxHeight: '160px',
+              background: 'var(--card)',
+              border: '2px solid var(--theme-border)',
+              color: 'var(--foreground)',
+            }}
+            onFocus={(e) => {
+              e.currentTarget.style.borderColor = 'var(--chart-2)';
+            }}
+            onBlur={(e) => {
+              e.currentTarget.style.borderColor = 'var(--theme-border)';
+            }}
           />
           <button
             onClick={handleSubmit}
             disabled={!canSend}
-            className={cn(
-              'absolute right-2 bottom-2 h-8 w-8 rounded-lg flex items-center justify-center transition-all duration-150',
-              canSend
-                ? 'bg-zinc-200 text-zinc-900 hover:bg-white'
-                : 'bg-zinc-800 text-zinc-600 cursor-not-allowed'
-            )}
+            className="shrink-0 flex items-center justify-center transition-all duration-100"
+            style={{
+              width: '48px',
+              height: '48px',
+              marginLeft: '-2px',
+              background: canSend ? 'var(--theme-accent)' : 'var(--theme-bg-tertiary)',
+              border: canSend ? '2px solid var(--theme-accent)' : '2px solid var(--theme-border)',
+              color: canSend ? 'var(--primary-foreground)' : 'var(--theme-border)',
+              cursor: canSend ? 'pointer' : 'not-allowed',
+              borderRadius: '0',
+            }}
           >
-            <ArrowUp className="h-4 w-4" strokeWidth={2.5} />
+            <ArrowUp className="h-5 w-5" strokeWidth={3} />
           </button>
         </div>
-        <p className="text-[10px] text-zinc-700 text-center mt-1.5">
-          Enter to send &middot; Shift+Enter for new line
+        <p className="text-[10px] text-center mt-2 font-bold tracking-widest" style={{ color: 'var(--theme-border)' }}>
+          ENTER TO SEND &middot; SHIFT+ENTER FOR NEW LINE
         </p>
       </div>
     </div>

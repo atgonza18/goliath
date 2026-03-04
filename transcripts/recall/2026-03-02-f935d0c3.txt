@@ -1,0 +1,941 @@
+[00:01:08] Aaron Gonzalez:
+  Good morning, everybody.
+
+[00:01:13] Caleb Kutz:
+  Morning. Let
+
+[00:01:20] Aaron Gonzalez:
+  me know if you guys can hear me.
+
+[00:01:23] Caleb Kutz:
+  Yeah, you're good. Okay.
+
+[00:01:25] Aaron Gonzalez:
+  I
+
+[00:01:25] Caleb Kutz:
+  know
+
+[00:01:25] Aaron Gonzalez:
+  Josh is going to be joining. Give him a couple minutes to hop on.
+
+[00:01:43] Joshua Hauger:
+  Good morning, soft branch team. Happy Monday.
+
+[00:01:46] Caleb Kutz:
+  Yay.
+
+[00:01:49] Zachary Vallejos:
+  Good morning.
+
+[00:01:51] Caleb Kutz:
+  Morning.
+
+[00:01:53] Joshua Hauger:
+  Who's got a safe by choice to get us rocking and rolling today?
+
+[00:02:00] Caleb Kutz:
+  So our safe by choice today was actually more related to RV. You know, everybody thinks on these RVs, these newer ones, if you just disconnect power at the breaker box on the outside on the RVs campground, that it kills the power to the entire camper. It does not just because a lot of these campers have DC battery backup for lights. So we had an individual that was working on it and actually just remember had somebody tell her to that she had to kill the breaker inside the rv, so. Oh,
+
+[00:02:35] Joshua Hauger:
+  I, I haven't even heard of that before. Yeah.
+
+[00:02:38] Caleb Kutz:
+  So if, if you're tr. If you're pulling your camper, it's got, it's. If it's got battery power, you have some limited lights that will still work in your camper.
+
+[00:02:50] Joshua Hauger:
+  Okay. Yeah, that makes sense.
+
+[00:02:55] Caleb Kutz:
+  And
+
+[00:02:55] Joshua Hauger:
+  we probably have quite a few folks using campers and things. So it's a good reminder for everybody to. Understand the electrical safety around, you know, their equipment. Whether or whether, you know, whether or not it's actually plugged into the AC or not, it's still got stuff that we have to
+
+[00:03:10] Caleb Kutz:
+  be
+
+[00:03:10] Joshua Hauger:
+  careful with.
+
+[00:03:11] Caleb Kutz:
+  Absolutely. All
+
+[00:03:14] Joshua Hauger:
+  right, we'll go ahead and get started. So before we jump into this, just take a peek at Terror Base. It does look like we've been stepping up our production out there at Salt Branch. I know there's been a lot of good work by the team to get moving through some of these remediation obstacles. And we're starting to see that on our end as well. I am seeing that piles is, you know, stepping up a little bit. But I did see a day, you know, last week we were at 1800 with us and our subcontractor out there both hitting it. Are we. Do we plan to be at some pretty decent pile numbers this week or are we still waiting for drilling operations in the couple blocks that we have left? I know we're, we're still. We're finishing up Salt Branch two and then we were thinking about going and drilling up in one, but I was curious if any of those plans have changed or obstacles.
+
+[00:04:15] Caleb Kutz:
+  That's the plan. But now we've got weather this week. We got 0.8 inch overnight and off and on today. Tomorrow looks all right. So we gonna try to get something done. But then Wednesday, Thursday, Friday hits us hard again. So it's gonna be challenging. Obviously we're going to continue to still try to work, but we will be limited.
+
+[00:04:38] Joshua Hauger:
+  Okay. Yeah. There's some other projects that are absolute monsoons right now and for the next few days. So I didn't know if Oklahoma was getting any of that too. Sounds like it is.
+
+[00:04:49] Caleb Kutz:
+  Correct.
+
+[00:04:51] Joshua Hauger:
+  Okay.
+
+[00:04:52] Caleb Kutz:
+  On that note though, I am buying some Milwaukee water pumps. They're like little hand ones that I'm gonna buy. And each spotter that goes with the slurry crew, we'll drop that pump in. It'll basically suck out that water, that hole. And then we'll put the slurry in just to obviously keep us moving.
+
+[00:05:13] Joshua Hauger:
+  Yeah. To try to mitigate any risk to the cure and getting all that stuff moving even with the wet conditions.
+
+[00:05:19] Caleb Kutz:
+  Yeah. Also got night shift remediation hopefully starting showing up on site maybe Thursday. Get them all up to SOP and trained in and probably send them tonights starting Monday. So. Okay,
+
+[00:05:34] Joshua Hauger:
+  so night shift, we are doing night shift remediation then
+
+[00:05:38] Caleb Kutz:
+  start.
+
+[00:05:39] Joshua Hauger:
+  Yeah,
+
+[00:05:40] Caleb Kutz:
+  yeah, they'll get onboarded on Thursday, but probably won't turn them loose on nights until Monday. Just so make sure we get them all trained up and whatnot. How
+
+[00:05:53] Joshua Hauger:
+  many day shift crews do we have for
+
+[00:05:56] Caleb Kutz:
+  remediation?
+
+[00:05:57] Joshua Hauger:
+  Yeah.
+
+[00:06:00] Caleb Kutz:
+  Well, we, we got four pull test crews and then we got, you know, a couple of 10 man crews on remediation. But it's all depends on what, you know, if you have a lot more cut, punch or bumper twists. You know, it just depends on the block. We have the ability to put more people on it.
+
+[00:06:18] Joshua Hauger:
+  Okay. And then the, the night shift remit isn't going to be pool testing. That's just going to be doing the cut and punches and things like that.
+
+[00:06:26] Caleb Kutz:
+  No, they'll be testing. I will have a driller on site and we'll have some concrete capability as well. Just with, you know, bag mix and then, you know, just to keep us moving and we'll do redrives, everything.
+
+[00:06:40] Joshua Hauger:
+  Okay. And you have all the light plants and
+
+[00:06:43] Caleb Kutz:
+  got 10, like, got 10 light plants ordered. And then I purchased some Milwaukee light towers as well just to make sure we're compliant. You know, a lot of times you have light plants and you have shaded areas. So to eliminate that, we'll have some Milwaukee light towers as well.
+
+[00:06:59] Joshua Hauger:
+  Okay.
+
+[00:07:00] Caleb Kutz:
+  Just so we got no excuses for light,
+
+[00:07:07] Diane Lentz:
+  I also ordered headlamps.
+
+[00:07:12] Joshua Hauger:
+  Excellent. Do we have safety leadership for the night shift? I know that was a topic we were discussing. Yeah,
+
+[00:07:23] Caleb Kutz:
+  a night shift coordinator and night shift cm.
+
+[00:07:25] Joshua Hauger:
+  Okay, then
+
+[00:07:26] Caleb Kutz:
+  we'll have quality on nights as well.
+
+[00:07:28] Joshua Hauger:
+  Excellent. Where's Racking today? Did we open up 10, 11 or.
+
+[00:07:35] Caleb Kutz:
+  Yeah.
+
+[00:07:36] Joshua Hauger:
+  Okay, so we're all done remid with 10 and 11.
+
+[00:07:42] Caleb Kutz:
+  11. I believe there's still some redrives to. To go, but 10? Yes,
+
+[00:07:48] Joshua Hauger:
+  10's wide open now. Okay, so that's
+
+[00:07:52] Caleb Kutz:
+  kind of
+
+[00:07:53] Joshua Hauger:
+  where the racking team is. Is mostly finished with nine and moving through 10.
+
+[00:07:58] Caleb Kutz:
+  Correct. And
+
+[00:08:02] Joshua Hauger:
+  then mods is up in 1, 2 and 3 or
+
+[00:08:08] Caleb Kutz:
+  4 currently. Yeah, go to seven. Yep. Four then moving to seven.
+
+[00:08:14] Joshua Hauger:
+  Okay.
+
+[00:08:16] Caleb Kutz:
+  How
+
+[00:08:16] Joshua Hauger:
+  many folks do we have on mods? What
+
+[00:08:19] Caleb Kutz:
+  do you got going now, Zach?
+
+[00:08:21] Zachary Vallejos:
+  Right now we currently got 65.
+
+[00:08:24] Joshua Hauger:
+  65?
+
+[00:08:27] Zachary Vallejos:
+  Yep. Are
+
+[00:08:28] Joshua Hauger:
+  you running? Sorry, Zach,
+
+[00:08:31] Zachary Vallejos:
+  go ahead. We're running a total of right now four crews.
+
+[00:08:40] Joshua Hauger:
+  Okay, four crews. It looks like we've been doing anywhere between
+
+[00:08:44] Zachary Vallejos:
+  hardly
+
+[00:08:46] Joshua Hauger:
+  like 5,000, 6,000 a day with four crews. Feel pretty confident to be able to keep that moving forward or.
+
+[00:08:59] Caleb Kutz:
+  Yeah, exact. I mean, running rooms. Each crew can do 1500 modules a day. Way. And Zach has the capability to add more crews if need be, but right now just, you know, waiting for the. Waiting for the room. So his team is also helping out on remediation as well.
+
+[00:09:13] Joshua Hauger:
+  Okay, is 1, 2 and
+
+[00:09:16] Zachary Vallejos:
+  3
+
+[00:09:16] Joshua Hauger:
+  open or is these still being turned over from Racking? Because if 1, 2 and 3 are open, then you have five blocks of Runway. That's. That's pretty
+
+[00:09:28] Caleb Kutz:
+  good. Modules aren't staged there yet, but yes. Eric, what's the turnover looking like in 1, 2, 3?
+
+[00:09:38] Eric Espinoza:
+  Let me check my tracker. One second. We're talking about piles or are we talking about everything?
+
+[00:09:43] Caleb Kutz:
+  Racking, turn over to mods.
+
+[00:09:45] Eric Espinoza:
+  Racking, turn over to mods for one. I
+
+[00:09:50] Joshua Hauger:
+  think we need to stage here. Looks like.
+
+[00:09:53] Caleb Kutz:
+  Yeah, they started staged dinner yesterday.
+
+[00:09:56] Joshua Hauger:
+  Okay,
+
+[00:09:58] Eric Espinoza:
+  well, 1, 2 and 3, racking. I'm showing that there has not been, as far as inspections are concerned, has not been completed. But we are auditing a lot, so it's probably just not in my review. My review folder.
+
+[00:10:17] Joshua Hauger:
+  Just something to take back then, right? Like if you had. If these got open, you know, you may be able to have the Runway for another mod crew or two.
+
+[00:10:28] Eric Espinoza:
+  Yeah,
+
+[00:10:29] Joshua Hauger:
+  yeah. I'm checking
+
+[00:10:30] Eric Espinoza:
+  the
+
+[00:10:30] Joshua Hauger:
+  inspections
+
+[00:10:31] Eric Espinoza:
+  right now. Give me one second. Let me change my.
+
+[00:10:36] Caleb Kutz:
+  Jessica, where are we staging that over there right now. For
+
+[00:10:43] Jessica Soto:
+  our modules? We're not doing module staging today, sir.
+
+[00:10:46] Caleb Kutz:
+  No. Where are we currently staging at, though? What's staged and what needs to be?
+
+[00:10:51] Jessica Soto:
+  I'll tell you right now. One second. They're working in block 3 of SB2, block 19 of SB1.
+
+[00:11:10] Caleb Kutz:
+  So you got 3, 2, N1 to stage over there, right? Yes,
+
+[00:11:13] Jessica Soto:
+  sir.
+
+[00:11:15] Caleb Kutz:
+  All
+
+[00:11:15] Joshua Hauger:
+  right, so we're staging for Sanderfoot, getting them moving, and then we're staging for us a little bit over in three. Or does Sander Foot do their own staging up here in SB1?
+
+[00:11:33] Caleb Kutz:
+  Jessica, you're currently staging for
+
+[00:11:35] Jessica Soto:
+  both? Yes, that is correct. Yep. And then on the block set, we have the. Out here. We do stage them in the arrays and then the areas where they're currently working, we just stage them close to the arrays and then they distribute themselves.
+
+[00:11:50] Joshua Hauger:
+  Okay. I put the update here for the night shift remit. I think that'll be helping you all a lot. We were talking about having a total of 15 rigs on site by Saturday. We are all up and running on that or we. We still waiting to get a few more over from Precision.
+
+[00:12:09] Caleb Kutz:
+  Yeah, I know that the, the biggest thing is that pull testing for a seven inch hole is like five times as much more than the regular six and three quarter, which is kind of crazy, the requirement. So unless we could get that change, we're just going to continue a six and six and a half because we wouldn't be able to, you know, get those kind of numbers. So
+
+[00:12:34] Joshua Hauger:
+  we're just going to stay with the six from hey Duck. And not use any of the precision drills or. No,
+
+[00:12:39] Caleb Kutz:
+  we're using precision as well. Precision. They're running three, three of them at six and a half. Okay.
+
+[00:12:45] Joshua Hauger:
+  So we have three from Precision and six from hey Duck.
+
+[00:12:48] Caleb Kutz:
+  Yeah, and Precision is trying to find. Obviously they're working on even modifying some stuff in order to use six and a half. So they're working on it. But just right now we have nine going.
+
+[00:13:00] Joshua Hauger:
+  Okay, Is piles running up on drilling or do you, do you see that with the weather this week that we may get stuck?
+
+[00:13:28] Caleb Kutz:
+  Yeah, well they, they were catching them down on the south end. So they moved up to Block 14 and SB1 and they started driving up there until the rain hit.
+
+[00:13:39] Joshua Hauger:
+  Okay, What about turnover done on the documentation side with the native fill. We were following up with Eric on Friday.
+
+[00:13:55] Caleb Kutz:
+  We're
+
+[00:13:56] Joshua Hauger:
+  running into some issues with the ones that we had to do the native backfill on. Yeah,
+
+[00:14:01] Caleb Kutz:
+  we had some more issues arise in Block 8 for sinking piles. I
+
+[00:14:08] Joshua Hauger:
+  think I'm tracking sinking piles over here. You found more sinking piles?
+
+[00:14:12] Caleb Kutz:
+  Correct. Block 8, section 1. We
+
+[00:14:20] Joshua Hauger:
+  have a path forward for them. Yeah,
+
+[00:14:23] Caleb Kutz:
+  well we'll have to take the module off and we'll have to basically obviously lift up the pile and color it.
+
+[00:14:41] Joshua Hauger:
+  We had a constraint for module staging. I think we're even seeing it a little bit today. Equipment was sending four trucks. Should have been received last week trying to do. 240 pallets were taken out. Yeah,
+
+[00:14:54] Caleb Kutz:
+  we added six third party truckers. Do
+
+[00:14:58] Joshua Hauger:
+  we have ten now?
+
+[00:14:59] Caleb Kutz:
+  Correct. Our internal trucks, we have four. Just depends whether we run piles, tubes or all modules. And then six third party trucks. So 10 total trucks. It just depends on how logistics. Obviously you know, you have to feed racking and tubes as well. So
+
+[00:15:20] Joshua Hauger:
+  yeah,
+
+[00:15:21] Caleb Kutz:
+  third party run modules only and then usually two of the four are running modules and
+
+[00:15:29] Joshua Hauger:
+  you're fully up on those 10 trucks now are you still waiting for the third party to kind of get their ducks together?
+
+[00:15:35] Caleb Kutz:
+  They're working. They got their. In the group. Yes, last week. Okay,
+
+[00:15:47] Joshua Hauger:
+  Spare files. We were trying to get a change order in for a tower.
+
+[00:15:58] Caleb Kutz:
+  Landon, do you know anything on that?
+
+[00:16:01] Gavin Herrera:
+  Yeah, that got that got sent over to Atala for signature. Looked like they had just one question, but it wasn't. Wasn't going to slow anything down that it was just a typo on a change order number.
+
+[00:16:14] Joshua Hauger:
+  Okay. With their current delivery schedule, we don't think it's going to impact like MC or anything.
+
+[00:16:22] Gavin Herrera:
+  We might have to push on them a little bit. They
+
+[00:16:25] Caleb Kutz:
+  give us any type of delivery dates?
+
+[00:16:28] Gavin Herrera:
+  Yeah, I believe it was. I'll find it and throw it in the chat here. Okay.
+
+[00:16:52] Joshua Hauger:
+  We've been talking about cast in place. The info for the pile hole specifics and locations were sent over through an rfi. We haven't. Have we heard anything back on that one?
+
+[00:17:04] Eric Espinoza:
+  No, not yet. Well, okay. I guess the way that Timmins had responded was they wanted to see like I guess they wanted to do a design for it. But I. From what I was. I was talking to Jeff and I think they thought that we were going to be doing like a collar on them or something. So either way we did send over here. Let me check the refer right now. We did kind of let them know like where we found the piles and essentially what our plan was and they didn't respond to that. So
+
+[00:17:45] Joshua Hauger:
+  I
+
+[00:17:45] Eric Espinoza:
+  can, I can try to send something again over to Kim Lee Horn, but he. They haven't said anything and they also have not approved the mix design. So.
+
+[00:18:01] Joshua Hauger:
+  What about you said piles. I thought this was just. One pile. Have we found multiple piles that need cast in place now or.
+
+[00:18:10] Eric Espinoza:
+  This is the Kimley horn. I mean assuming that we'll have to use it for
+
+[00:18:15] Caleb Kutz:
+  all the. All the sinking piles.
+
+[00:18:16] Eric Espinoza:
+  All the sinking piles, yeah.
+
+[00:18:19] Joshua Hauger:
+  Okay.
+
+[00:18:21] Caleb Kutz:
+  All the other piles that just basically have water holes, we've been basically just switching out the slurry suck and using concrete and everything's been passing. No issues.
+
+[00:18:29] Aaron Gonzalez:
+  Okay. Eric, do we know what's holding up them giving us or approving the mix design? Are they looking for something else or. I
+
+[00:18:38] Eric Espinoza:
+  have
+
+[00:18:38] Aaron Gonzalez:
+  no
+
+[00:18:38] Eric Espinoza:
+  idea. I. Like I said, I can call or send a message over to Stephen Lee to see what. What's going on there.
+
+[00:18:47] Aaron Gonzalez:
+  Yeah. Because I mean it's been in their court not a long time, but it's already been on their court. So.
+
+[00:18:52] Eric Espinoza:
+  Yeah.
+
+[00:18:53] Aaron Gonzalez:
+  Kind of curious as to what's holding that up. I
+
+[00:18:56] Eric Espinoza:
+  gotcha. I'll put that down as an action item.
+
+[00:19:06] Joshua Hauger:
+  Our refusals post pre drill. We've been checking in on this one. Are we good to close this one out? The slurry mix, with the exception of the sinking piles, which we have, we're doing something else with.
+
+[00:19:20] Caleb Kutz:
+  Yeah.
+
+[00:19:22] Joshua Hauger:
+  So
+
+[00:19:22] Caleb Kutz:
+  as long. As long as the hole is dry, slurry works fine. Where the hole's wet, we got to use concrete.
+
+[00:19:27] Joshua Hauger:
+  Okay. Above ground electrical, we had some design misses, had a response from Tibmans was to remove and reinstall.
+
+[00:19:42] Caleb Kutz:
+  That's all working really well. We're pretty much caught back up there. We are trying to get some machines up in SB1 to do install for cabin dead ends.
+
+[00:19:55] Joshua Hauger:
+  So you would say this is just business as usual, no longer a big issue.
+
+[00:19:58] Caleb Kutz:
+  Correct. And I think it's. What, what is it? One pile per block for pull testing on those. Yeah, one of each.
+
+[00:20:09] Eric Espinoza:
+  Correct.
+
+[00:20:10] Caleb Kutz:
+  So that I don't think. As far as I know, nothing's failed there right forward. Not
+
+[00:20:15] Eric Espinoza:
+  at
+
+[00:20:15] Caleb Kutz:
+  this time. Yeah, there's a current target. We talked about LBDs. It's actually really dumb. If you look at the pull testing requirements for that, it's like £200 on a pile. For some of the stuff. For vertical, it's a little more on dead end piles because you got the messenger. It's like over 2,000, I think. But some of the upward lifts are just kind of crazy amounts like 150 pounds, 200 pounds. And I think we're trying to get away from that, doing it in the increments of the 25 pounds. So there's an RFI seeing if we can just do one at the max load. Yeah. Go right to that number?
+
+[00:20:53] Eric Espinoza:
+  Yeah, because it's like the 25% increments. I think I sell one at, like, 76 pounds or something like that.
+
+[00:21:03] Caleb Kutz:
+  If it doesn't move, you're good. Yeah,
+
+[00:21:07] Eric Espinoza:
+  basically.
+
+[00:21:09] Caleb Kutz:
+  What
+
+[00:21:10] Joshua Hauger:
+  about apprentice hours? Do we get these back up to where we needed them
+
+[00:21:16] Caleb Kutz:
+  last I heard. You know, I Probably same thing. I already told you but we were trending in the right direction. Obviously. We have our meeting tomorrow, But no one's complaining. Nobody said anything to you? Have they landed? I
+
+[00:21:33] Shawn Pilney:
+  think last
+
+[00:21:34] Landon Kohlrusch:
+  week
+
+[00:21:34] Shawn Pilney:
+  was like
+
+[00:21:35] Joshua Hauger:
+  just
+
+[00:21:35] Shawn Pilney:
+  over 14. We'll
+
+[00:21:36] Joshua Hauger:
+  keep this open just to make sure you guys are hitting your numbers when you check in tomorrow. Then what about substation conduits? Went in the wrong place. Team was verifying this has been resolved. It was sent over to Dustin before the team. Josh,
+
+[00:21:53] Shawn Pilney:
+  I followed up with Dustin on Friday. He has a crew still there hoping to. Obviously depending on weather this week, but he's hoping to. He's got. They're doing several other pieces of work also. There's a. I think a three person or four person crew there. And Dustin indicated he was shooting for the end of the week for have everything wrapped up over there.
+
+[00:22:16] Joshua Hauger:
+  Okay, thanks for the update, Sean. Any new constraints that have come up other than the weather? Of course.
+
+[00:22:26] Caleb Kutz:
+  I think we need to talk about above ground electrical. I know Reuben has a plan, but I just want to make sure that we're all on the same page. Just because it's going to be go like crazy, you know, for string wire and terminations and whatnot. Yeah,
+
+[00:22:40] Ruben Mendoza:
+  Reading a list together. We're going to have to bring in basically double.
+
+[00:22:47] Joshua Hauger:
+  When do we start Ag. I mean you got some modules already out there. When do you plan to start that
+
+[00:22:56] Ruben Mendoza:
+  again? I'm sorry,
+
+[00:22:57] Joshua Hauger:
+  when? When are we starting above ground? Like hitting it, like really hitting it. A couple weeks.
+
+[00:23:04] Ruben Mendoza:
+  We waiting on some material to come in. I know we got approved last week by Landon. I'm not too sure when the estimated time of arrival is for the split loom and everything, but we do have golden rows out there. We just need a benchmark. And if willing to do a benchmark without the split loom and maybe a P clip here and there, we can roll forward and have a spawn team fall back when the material arrives. I just need
+
+[00:23:26] Caleb Kutz:
+  a benchmark
+
+[00:23:27] Ruben Mendoza:
+  then.
+
+[00:23:28] Eric Espinoza:
+  Do
+
+[00:23:28] Caleb Kutz:
+  we have everything to get started or. Or do we need to pick up some stuff locally just to get us going? We
+
+[00:23:35] Ruben Mendoza:
+  have enough to get started, but it wouldn't hurt to grab a few just to. I don't know what the lead time is with everything coming in.
+
+[00:23:43] Caleb Kutz:
+  What is it? Is it zip ties, clips or split loom or what is it
+
+[00:23:48] Ruben Mendoza:
+  all of it, split loom, the P clips, the zip ties, the whole shebang.
+
+[00:23:55] Caleb Kutz:
+  We have anything else, Sander. You know of that we can just to get it get us going.
+
+[00:24:07] Ruben Mendoza:
+  A call today up at the Kenton yard and see what he has and I'll get back to you.
+
+[00:24:12] Zander Mairs:
+  I think they're out of split loom there. I don't know exactly what clips. If you could send Ozzy a picture that would be best for him to try to match what you guys need. Obviously many different styles. Yes,
+
+[00:24:27] Ruben Mendoza:
+  sir. I.
+
+[00:24:30] Caleb Kutz:
+  And then just
+
+[00:24:31] Joshua Hauger:
+  overall,
+
+[00:24:32] Caleb Kutz:
+  do you have a. Do you have a lead on the manpower, electricians and all that? We're doubling all that up.
+
+[00:24:39] Ruben Mendoza:
+  I'm really making calls. I know Rolando's releasing about 12 over in Graceland that we're going to bring in and it'll get us going. It all really depends also on when we're actually taking off because, you know, I don't want it to be where I did with string wire. Brought 30 people in and send them home at 12 o' clock for two weeks, three weeks.
+
+[00:25:00] Caleb Kutz:
+  Do
+
+[00:25:00] Joshua Hauger:
+  we have a date when we're going to start? Because we've gotten some shells deliveries already. Right. And I heard that we're pulling in those deliveries now into May, which is great news. Just trying to figure out when we actually plan to start.
+
+[00:25:19] Ruben Mendoza:
+  We can, we can start as soon as tomorrow or whatever day available. The guys come back. I just need a benchmark done and we'll be able to roll
+
+[00:25:30] Caleb Kutz:
+  kind
+
+[00:25:30] Eric Espinoza:
+  of to add to that too. Josh. So tachyon won't even. I mean, I don't know if it's a huge deal or anything. We can definitely do the benchmark, but tachyon won't even look at that until everything is, is put in. So like the client might be completely fine with what we have until we, you know, get whatever, whatever we're missing. But like tachyon won't even take a look at it. So
+
+[00:25:57] Ruben Mendoza:
+  that's fine. The right. It'll just be hit to a punch list that we can touch up.
+
+[00:26:02] Eric Espinoza:
+  Yeah, probably. What
+
+[00:26:05] Joshua Hauger:
+  do we mean Tachyon won't take a look at it? Like, what is tachyon's role in our above ground electrical.
+
+[00:26:11] Eric Espinoza:
+  Oh, sorry. Here, do you mind if I share? This is mainly string wire and cab line, but I'm going to share my screen real quick, Josh. So essentially, let me know when you can see my screen. I
+
+[00:26:27] Joshua Hauger:
+  got it.
+
+[00:26:28] Eric Espinoza:
+  Okay. So essentially, like these are the items that they're going to be looking at. So we have piles, racking modules, wire management and cab. The first thing is like, so for example, if we have like a section done in, let's say block seven, they're not going to look at block seven until it's completely finished. And that goes the same for the wire management and the cab line. So, for example, like, let's say that we did the benchmark with the items that we do have. They're not going to look at it until we have every single item there. So, like, I can say, hey, this is ready, but. But if they go out there and they're like, well, the split loom's not here, you know, the P clips aren't here, then they're not going to take the time to look at that.
+
+[00:27:16] Joshua Hauger:
+  Okay.
+
+[00:27:18] Eric Espinoza:
+  Basically we're good up to about modules and as you can see right now I'm doing the. Doing the audit right now, so I can send it over to them. But as far as wire management, they're not going to. And they're pretty. That's. That's a pretty hard line for them. So. Because we had a meeting with them. When was it? Last Thursday.
+
+[00:27:43] Joshua Hauger:
+  So are you saying that we won't be able to do above ground electrical because tachyon isn't going to be ready to do what they need to do? No,
+
+[00:27:50] Eric Espinoza:
+  no, no, we can definitely do it. There's no issue with that. But they're not going to go back and do or check any of that and I'm not entirely sure if that would affect rmc, but they're just not. They're not going to take the time to do it. So essentially these two spots will probably be open until we have everything and everything is installed, at least on tachyon side. Like I said, we can go out there with the client and do it any day.
+
+[00:28:17] Caleb Kutz:
+  Luis, Is Luis with you? Reuben?
+
+[00:28:20] Ruben Mendoza:
+  Yes, he is.
+
+[00:28:21] Caleb Kutz:
+  How did that work at Ridgely as far as with having tachyon, did that hold anything up or.
+
+[00:28:25] Ruben Mendoza:
+  No, that which is punch listed until we got the Sprint known, either or. They have not approved the submittal yet. But talking to Niall and Jason last week, it's approved. We just. They haven't put it on the paper yet on our. On the submittal yet. So it wouldn't affect the mechanical completion. It could just be punch listed.
+
+[00:29:02] Joshua Hauger:
+  Okay. Sounds like something we may need to dig into a little bit more, but. All right. I added the constraint for getting started on above ground. Sounds like there's a couple things we need to look at this week as we get rocking and rolling, making sure we have everything we need to be successful. There any other new constraints we want to add today? This
+
+[00:29:29] Caleb Kutz:
+  is time to speak up guys. Anything you're struggling with to keep us moving,
+
+[00:29:32] Ruben Mendoza:
+  please
+
+[00:29:33] Caleb Kutz:
+  speak up.
+
+[00:29:34] Ruben Mendoza:
+  Just want to just touch base again. I know we got a set of a path to travel already. Right. For the pile testing, remediation and getting availabilities of conduit install for us.
+
+[00:29:44] Caleb Kutz:
+  Yep. So early on we started obviously driving inverter piles and we followed with conduit right away. But then it got to a point where, you know, we had issues on pull testing, so we had to go back and fix and retest a lot of these pumps. Inverter piles. So inverter conduit grounding stopped, but now we need to ramp that back up and get them moving again because we're actually moving forward now with inverter pull testing. So just obviously to make sure everybody's following sequence to try to get as many circuits turned over as possible and everybody's in alignment.
+
+[00:30:30] Ruben Mendoza:
+  And Corey, I heard you talk about positive moving over a team of piles to start driving dead ends and OBDs. Does that include inverters as well so you can work both sides of the project?
+
+[00:30:42] Caleb Kutz:
+  Yeah, I don't see any reason that we couldn't do that. Carl and your team, let's just make sure. Obviously we don't slow down in SB2, but obviously with SB1 just going up there, obviously pull testing, making sure we're doing any extractions and, you know, obviously concreting if we have to and getting those back in. So they have run room as well. And I think we're going to
+
+[00:31:09] Carl Luedy:
+  start,
+
+[00:31:09] Caleb Kutz:
+  start with block 2019, SB1, and just work our way north and just try to get everything in that circuit before we move to move to another circuit.
+
+[00:31:25] Joshua Hauger:
+  All right,
+
+[00:31:27] Caleb Kutz:
+  good
+
+[00:31:27] Joshua Hauger:
+  discussion.
+
+[00:31:30] Caleb Kutz:
+  Anybody else? I mean, as managers, this is your time to chime in and say, hey, I have issues. This is what we need to work on, or what we need.
+
+[00:31:44] Ruben Mendoza:
+  The main thing for us is that we are going to ramp up on the electrical side. Me and Andrew are going to sit down here shortly and build up a list on what exactly we need. We started this morning but went out for site assessment, so we'll continue that list of equipment and personnel to be able to support both sides of the project.
+
+[00:32:04] Caleb Kutz:
+  Eric, are you sitting good enough with qis to keep up with all these inspections?
+
+[00:32:10] Eric Espinoza:
+  Yeah,
+
+[00:32:11] Zachary Vallejos:
+  that's wrong.
+
+[00:32:12] Eric Espinoza:
+  I talked to, oh, what's his name to Sean earlier today and he's gonna need at least two or three more people for the module racking side. And then I understand we have some more QIs coming in for insta, for not for install for piles. So if we can get those, I think we'll be sitting pretty decent. I can reach out to Bill and see where he's at with it, though. Yeah,
+
+[00:32:44] Caleb Kutz:
+  because I just want to make sure it's like, you know, we've got blocks 1, 2, 3 there. They got racking on them. If the racking is complete and they're not being. Being inspected entirely.
+
+[00:32:56] Zachary Vallejos:
+  Exactly, yeah. That's going to be one of our biggest ones. Right now we're hearing quality not turning over any blocks, but there's racking on top of it. So as long as we can get racking, I mean, quality turnover. The blocks to us. We've already got the staging situation figured out. We can start getting modules up in there
+
+[00:33:15] Eric Espinoza:
+  for.
+
+[00:33:17] Gavin Herrera:
+  Yeah, just to
+
+[00:33:18] Gabriel Almodovar:
+  chime
+
+[00:33:18] Gavin Herrera:
+  in on that, another
+
+[00:33:19] Ruben Mendoza:
+  thing we may want to.
+
+[00:33:22] Gabriel Almodovar:
+  You guys have the proper tools. Are you guys gonna need more tools or are we gonna need to order more tools for you guys? I
+
+[00:33:30] Eric Espinoza:
+  did go with Landon. We might need to order a few more torque
+
+[00:33:34] Caleb Kutz:
+  work
+
+[00:33:35] Eric Espinoza:
+  wrenches from or for the extra qis we have, but
+
+[00:33:43] Caleb Kutz:
+  have enough to cover you. Gabe
+
+[00:33:46] Eric Espinoza:
+  also needs his people to have
+
+[00:33:47] Gabriel Almodovar:
+  torque. Yeah, we.
+
+[00:33:49] Eric Espinoza:
+  We
+
+[00:33:49] Gabriel Almodovar:
+  have enough to cover them right now, but we're running really low on certain torque wrenches. We loaned everything out already,
+
+[00:33:57] Shawn Pilney:
+  so. So order them. You don't need to ask anybody to order them. Need them. Get them. I.
+
+[00:34:03] Gabriel Almodovar:
+  I'll do that.
+
+[00:34:04] Shawn Pilney:
+  Thank you. I
+
+[00:34:07] Ruben Mendoza:
+  think we need to visit. Also the parking. I know we extended a parking lot over there by Dave's yard. Of the influx of electrical people coming in. I think that needs to be looked at as well.
+
+[00:34:18] Caleb Kutz:
+  Are
+
+[00:34:19] Joshua Hauger:
+  we constrained on parking right now?
+
+[00:34:21] Caleb Kutz:
+  We've always been constrained on parking. They gave us, like, seven acres here, and we've had to basically create parking spots and areas that normally wouldn't have parking and, you know, adding, you know, rock at our expense because we need more spots.
+
+[00:34:39] Joshua Hauger:
+  Okay, I'll add that. What are our options
+
+[00:34:42] Caleb Kutz:
+  that
+
+[00:34:42] Joshua Hauger:
+  we can do there over the next week? Is there more space we can procure, or.
+
+[00:34:50] Caleb Kutz:
+  I would say you cross from the electrical yard next to the perimeter fence I could look at. But, I mean, we just created 40 more spots, so I don't know. I would encourage our people to carpool if they could, which helps a lot.
+
+[00:35:13] Joshua Hauger:
+  Okay, just something to monitor then as
+
+[00:35:16] Caleb Kutz:
+  we get
+
+[00:35:16] Joshua Hauger:
+  more electrical folks coming in.
+
+[00:35:18] Caleb Kutz:
+  We're at 750 people right now, so we're gonna be well over 800. So it's just.
+
+[00:35:25] Joshua Hauger:
+  That's a lot.
+
+[00:35:26] Caleb Kutz:
+  Yes, exactly. Got our own little village out here.
+
+[00:35:29] Zachary Vallejos:
+  Yeah, I got.
+
+[00:35:30] Caleb Kutz:
+  I
+
+[00:35:31] Zachary Vallejos:
+  got a lot of guys that stay at the RV park right where I'm at, and I'll tell them to start carpooling as well, filling up all their trucks.
+
+[00:35:38] Caleb Kutz:
+  So I. I would even look at open to letting. If you have somebody that's competent taking vans home and bringing people to and from work.
+
+[00:35:50] Zachary Vallejos:
+  Yeah, I mean, our campground is only 10 minutes, 15 minutes from the job site. So that wouldn't be a bad idea if you're good with it. We
+
+[00:35:59] Caleb Kutz:
+  just gotta make sure they're obviously taking care of it, not abusing it. And obviously no drinking and driving in it. And
+
+[00:36:07] Zachary Vallejos:
+  No, I mean, it'd be parked right outside my camper every day. So it wouldn't go nowhere.
+
+[00:36:11] Caleb Kutz:
+  Oh, I would say that if you have 15 people that you can throw in a van, if you have or even 10, that's 10 less cars than the parking lot. Yeah,
+
+[00:36:21] Zachary Vallejos:
+  I definitely do.
+
+[00:36:23] Caleb Kutz:
+  Then let's make sure they're all on the same crew. So if that crew gets sent home for whatever reason for the day that we don't have bodies here, wait for rides. No, it's just like that. We're gonna have to think outside the box.
+
+[00:36:35] Zachary Vallejos:
+  Yeah. Yep, yep, yep. Now we'll figure it out. I'll come up with a plan now. Tell you, I
+
+[00:36:41] Caleb Kutz:
+  mean, that would work really good for Racking if they could do something similar to that as well. Gabe. Yes,
+
+[00:36:49] Gabriel Almodovar:
+  sir? Just give me the green light and I. I can make it happen.
+
+[00:36:52] Caleb Kutz:
+  I'd say make it happen because you. You're using that electrical yard over there, and you got over 200 people.
+
+[00:36:59] Gabriel Almodovar:
+  I got some people at the trailer where. Where Zach stays as well. And then at the micro. Micro 6 right there in Claremore. Most of our guys stay there as well. So we'll come up with the plan.
+
+[00:37:14] Joshua Hauger:
+  Sounds good.
+
+[00:37:16] Caleb Kutz:
+  A good way to sell it is they save on gas money.
+
+[00:37:21] Gabriel Almodovar:
+  Yeah, I'll tell them. I'll. I'll pay the gas with my card and fill them up and whatnot.
+
+[00:37:29] Joshua Hauger:
+  So I heard something interesting. I heard that, you know, we have three blocks that are racked that we can't turn over to mods yet because we need more QIs and FES. Sounds like we're getting some in. Do we have we looked at making sure that we're optimally deploying our field engineers where they need to be? Do we need more of them? Like, just. You've ramped
+
+[00:37:57] Caleb Kutz:
+  up the
+
+[00:37:58] Joshua Hauger:
+  whole rest of the park, Right? I don't know if we've taken
+
+[00:38:01] Caleb Kutz:
+  the case, Eric.
+
+[00:38:05] Eric Espinoza:
+  Let me see for wrecking, but I know we have, like, the inspections have been opened because I'm looking at them right now. I just don't know. It's like, for example, Salt Branch two, block one, subsection three is opened. Block two, subsection three is also open. And then block two, subsection two is also opened. So let me get with Harry and figure out why or what's going on there.
+
+[00:38:40] Joshua Hauger:
+  Just something we can look into.
+
+[00:38:42] Eric Espinoza:
+  Yeah. Because
+
+[00:38:44] Joshua Hauger:
+  we can get. Get you more FES and QIs pretty quick. I mean, if it's holding up your critical path for whatever reason, I'll send people from other projects over. I mean, this is a very critical project and I
+
+[00:38:55] Eric Espinoza:
+  gotcha.
+
+[00:38:56] Joshua Hauger:
+  It'd be tough to have 700 people on site. And the reason we can't build is because we don't have enough people doing inspections. Right. That's
+
+[00:39:02] Eric Espinoza:
+  something that
+
+[00:39:03] Joshua Hauger:
+  we can help with.
+
+[00:39:04] Eric Espinoza:
+  Okay. Yeah. Like
+
+[00:39:05] Gavin Herrera:
+  I said,
+
+[00:39:06] Eric Espinoza:
+  let me. Let me go with the fe and see what's going on there. Okay? Yeah.
+
+[00:39:10] Gavin Herrera:
+  Josh, we got Sean Brown on site. I kind of tasked him with kind of observing the efficiencies of the QIs out in the field and just give an idea of what that looks like and then he was going to follow up with me on that.
+
+[00:39:26] Joshua Hauger:
+  Okay, yeah,
+
+[00:39:28] Gavin Herrera:
+  let
+
+[00:39:28] Joshua Hauger:
+  us know if you find that you need, you know, additional resources on that front and we can help put together something for you real quick. We meet with Bill pretty often, so.
+
+[00:39:41] Gavin Herrera:
+  Yep. All
+
+[00:39:43] Joshua Hauger:
+  right.
+
+[00:39:43] Sandra Cash:
+  Yeah,
+
+[00:39:44] Joshua Hauger:
+  we'll
+
+[00:39:44] Sandra Cash:
+  have a. I'll get with Eric and we'll sit down and have a conversation with all the other fes.
+
+[00:39:53] Eric Espinoza:
+  Yes.
+
+[00:39:53] Joshua Hauger:
+  Okay. Thanks, Andrew.
+
+[00:39:58] Eric Espinoza:
+  All
+
+[00:39:58] Joshua Hauger:
+  right, well, good discussion today, team. I know those conditions aren't great out there, so let's make sure that we're working safe and we'll connect on Wednesday. Have a great rest of your day, everybody.
+
+[00:40:09] Caleb Kutz:
+  Thanks, Josh, Aaron, thanks
+
+[00:40:10] Shawn Pilney:
+  everyone.
+
+[00:40:11] Gavin Herrera:
+  Thanks.

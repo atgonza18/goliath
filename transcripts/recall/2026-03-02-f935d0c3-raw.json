@@ -1,0 +1,189 @@
+{
+  "id": "f935d0c3-2447-4a19-9bf0-cd3122068410",
+  "meeting_url": {
+    "meeting_id": null,
+    "meeting_password": null,
+    "organizer_id": null,
+    "tenant_id": null,
+    "message_id": null,
+    "thread_id": null,
+    "business_meeting_id": "2220064123804",
+    "business_meeting_password": "ZQMoDbDpu6L9GkSViU",
+    "platform": "microsoft_teams"
+  },
+  "bot_name": "Aaron Gonzalez",
+  "join_at": "2026-03-02T15:28:39.675617Z",
+  "recording_config": {
+    "transcript": {
+      "provider": {
+        "recallai_streaming": {
+          "language_code": "en_us",
+          "filter_profanity": false,
+          "mode": "prioritize_accuracy"
+        }
+      }
+    },
+    "realtime_endpoints": [],
+    "retention": {
+      "type": "forever"
+    },
+    "video_mixed_layout": "speaker_view",
+    "video_mixed_mp4": {},
+    "participant_events": {},
+    "meeting_metadata": {},
+    "video_mixed_participant_video_when_screenshare": "overlap",
+    "start_recording_on": "participant_join"
+  },
+  "status_changes": [
+    {
+      "code": "joining_call",
+      "message": null,
+      "created_at": "2026-03-02T15:28:42.142626Z",
+      "sub_code": null
+    },
+    {
+      "code": "in_call_not_recording",
+      "message": null,
+      "created_at": "2026-03-02T15:28:48.740054Z",
+      "sub_code": null
+    },
+    {
+      "code": "in_call_recording",
+      "message": null,
+      "created_at": "2026-03-02T15:28:48.754397Z",
+      "sub_code": null
+    },
+    {
+      "code": "call_ended",
+      "message": null,
+      "created_at": "2026-03-02T16:17:54.424088Z",
+      "sub_code": "timeout_exceeded_everyone_left"
+    },
+    {
+      "code": "recording_done",
+      "message": null,
+      "created_at": "2026-03-02T16:17:57.913597Z",
+      "sub_code": null
+    },
+    {
+      "code": "done",
+      "message": null,
+      "created_at": "2026-03-02T16:17:58.322780Z",
+      "sub_code": null
+    }
+  ],
+  "recordings": [
+    {
+      "id": "f35c0416-aecc-4b3a-bdeb-4ced9ccac836",
+      "created_at": "2026-03-02T15:28:48.754397Z",
+      "started_at": "2026-03-02T15:28:48.754397Z",
+      "completed_at": "2026-03-02T16:17:57.913597Z",
+      "expires_at": null,
+      "status": {
+        "code": "done",
+        "sub_code": null,
+        "updated_at": "2026-03-02T16:17:57.913597Z"
+      },
+      "media_shortcuts": {
+        "video_mixed": {
+          "id": "ba775a2a-20d3-4054-893e-39a4a427cf4a",
+          "created_at": "2026-03-02T15:28:48.754397Z",
+          "status": {
+            "code": "done",
+            "sub_code": null,
+            "updated_at": "2026-03-02T16:17:57.913597Z"
+          },
+          "metadata": {},
+          "data": {
+            "download_url": "https://us-west-2-recallai-production-bot-data.s3.amazonaws.com/_workspace-fabb6c42-aca1-463b-9de2-895fa0f29009/recordings/f35c0416-aecc-4b3a-bdeb-4ced9ccac836/video_mixed/ba775a2a-20d3-4054-893e-39a4a427cf4a/bot/f935d0c3-2447-4a19-9bf0-cd3122068410/AROA3Z2PRSQANGTUQXHNJ%3Ai-01a9f8099dea991c8/video.mp4?AWSAccessKeyId=ASIA3Z2PRSQAJ2K2BQL5&Signature=Q2oT8fSnSJfIOJwHy5J0hYNlFU0%3D&x-amz-security-token=IQoJb3JpZ2luX2VjEMD%2F%2F%2F%2F%2F%2F%2F%2F%2F%2FwEaCXVzLXdlc3QtMiJHMEUCIB%2F3yP6YIWHFLfhH4BczUQVer2V743ZZeW30jQQoStZjAiEAtC14G9JSXgGjsIMJ3DkGjuixkSvGZ04tnHOFI1W97h0qwwUIif%2F%2F%2F%2F%2F%2F%2F%2F%2F%2FARAAGgw4MTEzNzg3NzUwNDAiDGLe9y7UnRNztNT7fyqXBXcFCORA%2BpPXNuAGYA%2FCpUBEBTOOSkIO7wYe%2FkzQsorKDYBnkc%2FccGiuoV8LTDhfDhknpdJcR0GIJ8DObdBTYjUKSIbWbcMWs5r26FIl8QkY8k6b60xn8bT71uBKf%2B%2BrEsKGZ7SrYYUorKgiUdAz9ht36PAxOsc3OYZZ%2BrUJIAqJ2F0IoU66eFJ23XrtDJErHDqUQ%2BtCCvPE6zjpfmcAfcx7YURBtugMgMxMxvjjBoa3%2B39YSwe6R2bpAIeRvk%2BAMg%2BOfNewpr7rxAUimuwe7FCv3Rn2Nr71ksIfD3X0W%2FjH7JzjFEK9fAgwTwGx1%2Ba3Kz%2B4Mi3cZ7b%2BBYCukZMlMmFDvwhZzpn5iWh91auO7mkZsNutHy8CmW7g%2Bf6qJ9c7Xmc%2Bnz3efdHIbIogii2zhO7rIj3ZhCKChlTMVPvO7sGaUnZACHnhnGTM4sTFrftp8bfIJMJU2qmbf3jkjlDDySCdb%2FQIYhDL1nRe0t%2FEHKGBIOewMreu0uHnrlMvO3%2FGtp3OUdXEt%2BFJ1Z7EMlOLW1snY1R%2FY9fdWRWUMhcV67PQIbPAlY75JdITl8TgCh01BmeHmA05h2NDoOdYxhKB2gsZye2%2F3jTH2kwS%2BI4GY9Fcvw3XBq%2Bt3SI8ss7z6Fr%2B07EmtFJrV720hQoPQOHiAYEzQuh%2BQ0MG2B0MEUlf2iCLXgkPRsKr4T8u56ilwNHpd5AQhemT8qACT%2BRwgM4LTwLXAkmrsdcltO1Qf%2Bblc63ERf7G2uCunTJKMH87OS3u2InL06zhkJbkmwtTx5WN9T2nHZSstsb%2Brkn5ARUwfMhW9lkaxkvOfActzgifayNGhJaEQhD90No82LFBT1m545oW0Llrh6343L%2Fxr5zofdhWZGbBB%2BRLDzCV15bNBjqxAbzCEq%2BGChKHC3qsIwK0Ze%2Fgokojqz%2FIG9ynhyY5uP64vdKQre%2FD7WHVjtiVyp7VI%2BndmhChexN0hkMsLeSCeOqWJrkSGv0Pwvwkb7c%2FExvHiIxpY7S%2FZLc8AEJeP8KY%2Fub5aK%2BnboOa0ONmIlkFr4AoWB9t%2BYX2pzlNh2cOpjlSUwi5OCjXeXiEfutVjBawEDDALUr6BUQ2T5P4MpzRtLPDXuuBVr9B5%2F4E1NcPZHBiHA%3D%3D&Expires=1772489911"
+          },
+          "format": "mp4"
+        },
+        "transcript": {
+          "id": "0c242fdb-6667-4894-b6d8-e51b4eca86c6",
+          "created_at": "2026-03-02T15:28:48.754397Z",
+          "status": {
+            "code": "done",
+            "sub_code": null,
+            "updated_at": "2026-03-02T16:17:57.913597Z"
+          },
+          "metadata": {},
+          "data": {
+            "download_url": "https://us-west-2-recallai-production-bot-data.s3.amazonaws.com/_workspace-fabb6c42-aca1-463b-9de2-895fa0f29009/recordings/f35c0416-aecc-4b3a-bdeb-4ced9ccac836/transcript/0c242fdb-6667-4894-b6d8-e51b4eca86c6/bot/f935d0c3-2447-4a19-9bf0-cd3122068410/AROA3Z2PRSQANGTUQXHNJ%3Ai-01a9f8099dea991c8/diarized-processed1.1.json?AWSAccessKeyId=ASIA3Z2PRSQAJ2K2BQL5&Signature=OuVyPgcs4bLx5Uiyb68LdxlI0lM%3D&x-amz-security-token=IQoJb3JpZ2luX2VjEMD%2F%2F%2F%2F%2F%2F%2F%2F%2F%2FwEaCXVzLXdlc3QtMiJHMEUCIB%2F3yP6YIWHFLfhH4BczUQVer2V743ZZeW30jQQoStZjAiEAtC14G9JSXgGjsIMJ3DkGjuixkSvGZ04tnHOFI1W97h0qwwUIif%2F%2F%2F%2F%2F%2F%2F%2F%2F%2FARAAGgw4MTEzNzg3NzUwNDAiDGLe9y7UnRNztNT7fyqXBXcFCORA%2BpPXNuAGYA%2FCpUBEBTOOSkIO7wYe%2FkzQsorKDYBnkc%2FccGiuoV8LTDhfDhknpdJcR0GIJ8DObdBTYjUKSIbWbcMWs5r26FIl8QkY8k6b60xn8bT71uBKf%2B%2BrEsKGZ7SrYYUorKgiUdAz9ht36PAxOsc3OYZZ%2BrUJIAqJ2F0IoU66eFJ23XrtDJErHDqUQ%2BtCCvPE6zjpfmcAfcx7YURBtugMgMxMxvjjBoa3%2B39YSwe6R2bpAIeRvk%2BAMg%2BOfNewpr7rxAUimuwe7FCv3Rn2Nr71ksIfD3X0W%2FjH7JzjFEK9fAgwTwGx1%2Ba3Kz%2B4Mi3cZ7b%2BBYCukZMlMmFDvwhZzpn5iWh91auO7mkZsNutHy8CmW7g%2Bf6qJ9c7Xmc%2Bnz3efdHIbIogii2zhO7rIj3ZhCKChlTMVPvO7sGaUnZACHnhnGTM4sTFrftp8bfIJMJU2qmbf3jkjlDDySCdb%2FQIYhDL1nRe0t%2FEHKGBIOewMreu0uHnrlMvO3%2FGtp3OUdXEt%2BFJ1Z7EMlOLW1snY1R%2FY9fdWRWUMhcV67PQIbPAlY75JdITl8TgCh01BmeHmA05h2NDoOdYxhKB2gsZye2%2F3jTH2kwS%2BI4GY9Fcvw3XBq%2Bt3SI8ss7z6Fr%2B07EmtFJrV720hQoPQOHiAYEzQuh%2BQ0MG2B0MEUlf2iCLXgkPRsKr4T8u56ilwNHpd5AQhemT8qACT%2BRwgM4LTwLXAkmrsdcltO1Qf%2Bblc63ERf7G2uCunTJKMH87OS3u2InL06zhkJbkmwtTx5WN9T2nHZSstsb%2Brkn5ARUwfMhW9lkaxkvOfActzgifayNGhJaEQhD90No82LFBT1m545oW0Llrh6343L%2Fxr5zofdhWZGbBB%2BRLDzCV15bNBjqxAbzCEq%2BGChKHC3qsIwK0Ze%2Fgokojqz%2FIG9ynhyY5uP64vdKQre%2FD7WHVjtiVyp7VI%2BndmhChexN0hkMsLeSCeOqWJrkSGv0Pwvwkb7c%2FExvHiIxpY7S%2FZLc8AEJeP8KY%2Fub5aK%2BnboOa0ONmIlkFr4AoWB9t%2BYX2pzlNh2cOpjlSUwi5OCjXeXiEfutVjBawEDDALUr6BUQ2T5P4MpzRtLPDXuuBVr9B5%2F4E1NcPZHBiHA%3D%3D&Expires=1772489911",
+            "provider_data_download_url": "https://us-west-2-recallai-production-bot-data.s3.amazonaws.com/_workspace-fabb6c42-aca1-463b-9de2-895fa0f29009/recordings/f35c0416-aecc-4b3a-bdeb-4ced9ccac836/transcript/0c242fdb-6667-4894-b6d8-e51b4eca86c6/bot/f935d0c3-2447-4a19-9bf0-cd3122068410/AROA3Z2PRSQANGTUQXHNJ%3Ai-01a9f8099dea991c8/provider_data_postprocessed.json?AWSAccessKeyId=ASIA3Z2PRSQAJ2K2BQL5&Signature=HxKoexj%2BevgYFj3ZzdRqZd%2FF7Bc%3D&x-amz-security-token=IQoJb3JpZ2luX2VjEMD%2F%2F%2F%2F%2F%2F%2F%2F%2F%2FwEaCXVzLXdlc3QtMiJHMEUCIB%2F3yP6YIWHFLfhH4BczUQVer2V743ZZeW30jQQoStZjAiEAtC14G9JSXgGjsIMJ3DkGjuixkSvGZ04tnHOFI1W97h0qwwUIif%2F%2F%2F%2F%2F%2F%2F%2F%2F%2FARAAGgw4MTEzNzg3NzUwNDAiDGLe9y7UnRNztNT7fyqXBXcFCORA%2BpPXNuAGYA%2FCpUBEBTOOSkIO7wYe%2FkzQsorKDYBnkc%2FccGiuoV8LTDhfDhknpdJcR0GIJ8DObdBTYjUKSIbWbcMWs5r26FIl8QkY8k6b60xn8bT71uBKf%2B%2BrEsKGZ7SrYYUorKgiUdAz9ht36PAxOsc3OYZZ%2BrUJIAqJ2F0IoU66eFJ23XrtDJErHDqUQ%2BtCCvPE6zjpfmcAfcx7YURBtugMgMxMxvjjBoa3%2B39YSwe6R2bpAIeRvk%2BAMg%2BOfNewpr7rxAUimuwe7FCv3Rn2Nr71ksIfD3X0W%2FjH7JzjFEK9fAgwTwGx1%2Ba3Kz%2B4Mi3cZ7b%2BBYCukZMlMmFDvwhZzpn5iWh91auO7mkZsNutHy8CmW7g%2Bf6qJ9c7Xmc%2Bnz3efdHIbIogii2zhO7rIj3ZhCKChlTMVPvO7sGaUnZACHnhnGTM4sTFrftp8bfIJMJU2qmbf3jkjlDDySCdb%2FQIYhDL1nRe0t%2FEHKGBIOewMreu0uHnrlMvO3%2FGtp3OUdXEt%2BFJ1Z7EMlOLW1snY1R%2FY9fdWRWUMhcV67PQIbPAlY75JdITl8TgCh01BmeHmA05h2NDoOdYxhKB2gsZye2%2F3jTH2kwS%2BI4GY9Fcvw3XBq%2Bt3SI8ss7z6Fr%2B07EmtFJrV720hQoPQOHiAYEzQuh%2BQ0MG2B0MEUlf2iCLXgkPRsKr4T8u56ilwNHpd5AQhemT8qACT%2BRwgM4LTwLXAkmrsdcltO1Qf%2Bblc63ERf7G2uCunTJKMH87OS3u2InL06zhkJbkmwtTx5WN9T2nHZSstsb%2Brkn5ARUwfMhW9lkaxkvOfActzgifayNGhJaEQhD90No82LFBT1m545oW0Llrh6343L%2Fxr5zofdhWZGbBB%2BRLDzCV15bNBjqxAbzCEq%2BGChKHC3qsIwK0Ze%2Fgokojqz%2FIG9ynhyY5uP64vdKQre%2FD7WHVjtiVyp7VI%2BndmhChexN0hkMsLeSCeOqWJrkSGv0Pwvwkb7c%2FExvHiIxpY7S%2FZLc8AEJeP8KY%2Fub5aK%2BnboOa0ONmIlkFr4AoWB9t%2BYX2pzlNh2cOpjlSUwi5OCjXeXiEfutVjBawEDDALUr6BUQ2T5P4MpzRtLPDXuuBVr9B5%2F4E1NcPZHBiHA%3D%3D&Expires=1772489911"
+          },
+          "diarization": null,
+          "provider": {
+            "recallai_streaming": {
+              "language_code": "en_us",
+              "filter_profanity": false,
+              "mode": "prioritize_accuracy"
+            }
+          }
+        },
+        "participant_events": {
+          "id": "4fdb410f-76e1-46da-9db6-f3579c45fb67",
+          "created_at": "2026-03-02T15:28:48.754397Z",
+          "status": {
+            "code": "done",
+            "sub_code": null,
+            "updated_at": "2026-03-02T16:17:57.913597Z"
+          },
+          "metadata": {},
+          "data": {
+            "participant_events_download_url": "https://us-west-2.recall.ai/api/v1/download/participant_events?token=eyJpZCI6IjRmZGI0MTBmLTc2ZTEtNDZkYS05ZGI2LWYzNTc5YzQ1ZmI2NyJ9%3A1vx5yZ%3AEO4dnC2P1BmEVpSpzHy2dxRY2RmDmoGeLA2lNOR_Wwg",
+            "speaker_timeline_download_url": "https://us-west-2.recall.ai/api/v1/download/speaker_timeline?token=eyJpZCI6IjRmZGI0MTBmLTc2ZTEtNDZkYS05ZGI2LWYzNTc5YzQ1ZmI2NyJ9%3A1vx5yZ%3AEO4dnC2P1BmEVpSpzHy2dxRY2RmDmoGeLA2lNOR_Wwg",
+            "participants_download_url": "https://us-west-2.recall.ai/api/v1/download/participants?token=eyJpZCI6IjRmZGI0MTBmLTc2ZTEtNDZkYS05ZGI2LWYzNTc5YzQ1ZmI2NyJ9%3A1vx5yZ%3AEO4dnC2P1BmEVpSpzHy2dxRY2RmDmoGeLA2lNOR_Wwg"
+          }
+        },
+        "meeting_metadata": {
+          "id": "c385cc40-a331-4c13-9063-d54adc49a05f",
+          "created_at": "2026-03-02T15:28:48.754397Z",
+          "status": {
+            "code": "done",
+            "sub_code": null,
+            "updated_at": "2026-03-02T16:17:57.913597Z"
+          },
+          "metadata": {},
+          "data": {
+            "title": "Salt Branch Constraints Tracker Updates",
+            "zoom": null
+          }
+        },
+        "audio_mixed": null
+      },
+      "metadata": {}
+    }
+  ],
+  "automatic_leave": {
+    "waiting_room_timeout": 1200,
+    "noone_joined_timeout": 1200,
+    "everyone_left_timeout": {
+      "timeout": 2,
+      "activate_after": null
+    },
+    "in_call_not_recording_timeout": 3600,
+    "recording_permission_denied_timeout": 30,
+    "silence_detection": {
+      "timeout": 3600,
+      "activate_after": 1200
+    },
+    "bot_detection": {
+      "using_participant_events": {
+        "timeout": 600,
+        "activate_after": 1200
+      },
+      "using_participant_names": {
+        "timeout": 600,
+        "activate_after": 120,
+        "matches": [
+          "notetaker",
+          "recorder",
+          "assistant"
+        ]
+      }
+    }
+  },
+  "calendar_meetings": [],
+  "metadata": {}
+}

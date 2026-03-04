@@ -1,0 +1,881 @@
+[00:01:15] Aaron Gonzalez:
+  Hey, how's it going, team? Hey,
+
+[00:01:18] Luis Soto:
+  how's it going? What
+
+[00:01:21] Aaron Gonzalez:
+  are you up to, Luis?
+
+[00:01:23] Luis Soto:
+  I'm just here in the office with everybody. Who's
+
+[00:01:29] Aaron Gonzalez:
+  that?
+
+[00:01:29] Luis Soto:
+  Caesar.
+
+[00:01:30] Aaron Gonzalez:
+  Don't tell me that's Caesar.
+
+[00:01:32] Luis Soto:
+  Yeah. The one and only. Yeah.
+
+[00:01:36] Aaron Gonzalez:
+  The
+
+[00:01:36] Luis Soto:
+  man, the legend, the
+
+[00:01:38] Aaron Gonzalez:
+  myth.
+
+[00:01:39] Luis Soto:
+  The
+
+[00:01:39] Aaron Gonzalez:
+  myth, the legend.
+
+[00:01:41] Luis Soto:
+  Do you have the. Do you have the camera capability? Yeah.
+
+[00:01:52] Aaron Gonzalez:
+  10. 4. I
+
+[00:01:56] Luis Soto:
+  like your picture. I
+
+[00:01:58] Aaron Gonzalez:
+  like yours, too. What happened to yours
+
+[00:02:03] Luis Soto:
+  there?
+
+[00:02:05] Aaron Gonzalez:
+  Where's the watch, Caesar? I. I thought it was going to be here, bro.
+
+[00:02:11] Luis Soto:
+  I have it at home, but I have here with me. Look at that. All right, who's got to say by choice, take us off? I think Lisa has one. Yeah, that's a really good one. With all the changing conditions, making sure we radiate to the crew and let them know that foot placements are really big one. Making sure you're not. If you get your foot stuck in the mud, you're not just yanking your boot out, you know, you're taking your stopping following the proper procedures and making sure you don't get hurt. Just relaying it to the crew and making sure that they're aware that, you know, it's okay to stop in a situation like that, not just to panic off of instinct. Yeah. You know, there's an sop or extracting yourself. There is, Right. You know, and I guess to that point there, when we tell people, you know, the proper way, do they know the proper way? Oh, yeah. We gotta explain that. Right? Yes. It's gone. How many injuries did we have
+
+[00:03:16] Aaron Gonzalez:
+  in
+
+[00:03:16] Luis Soto:
+  the last. Oh, originally it was bad, right? Yeah. And we actually just. Just had one at Duff I seen come through not getting stuck in the mother, stepped in a mud puddle and rode an ankle. Yeah. And also out there, all this mud is dried up and it's bunch of clunks and just loose clunks and driving over is rough and you roll your ankle real fast just even trying to pay attention. You just got to be extremely careful out there. You hear the person. This black top out here, there's rocks coming apart. Yeah. Always say, you'll hear me say, look, walking is working, is working. Yeah. 100%. Things that. That bites us sometimes, you know, we think about all the work that we have to do in the lifting and the cranes and rigging and all this. Right. And sometimes we miss. We miss stepping into the truck or walking out to the field or going through the parking lot. Right. That's what gets us. So
+
+[00:04:13] Aaron Gonzalez:
+  got
+
+[00:04:13] Luis Soto:
+  to get it out to the field. Thanks, Lewis. Yes, sir. And then over to you, Mr. Gonzalez, if you got the list.
+
+[00:04:22] Aaron Gonzalez:
+  Yes, sir. Give me one second. I pull it up. Hey, I'm here with Aaron today team. Before we jump in from the terabase side, because I think we have terabase up and running. Can you bring that up real quick, Aaron? Yeah, I. I think I saw like almost 900 files installed. I think you may have done more than that by now. But how's that going out there?
+
+[00:04:46] Luis Soto:
+  It's a slow process, but we're moving forward with it. Some of the GPS issues we had to work through back there with signal issues. The PDT is not keeping a good signal the whole time and in the bloody conditions. But we're still pushing through it. Yes, sir. You're trying to get boosters or something? Yeah, I'm trying to get boosters. I've got a repeater. It's not for the. That is where the tablets themselves are not receiving the signals. Oh, so it's not boosters, it's the actual cell signal? No, the SAF cars are good. We just got to get the boosters out there. Okay. Did they. Did they talk to you just 20 minutes ago about the OBDs? Yes, we were trying to find out if the R5 would put in all that stock Y. Got it? Yep. But just a quick,
+
+[00:05:40] Aaron Gonzalez:
+  I
+
+[00:05:40] Luis Soto:
+  guess, data check. From the quantities that you're seeing Josh from Pod Today, it was at 492 total production. Pause in look
+
+[00:05:50] Aaron Gonzalez:
+  over there.
+
+[00:05:50] Luis Soto:
+  Okay,
+
+[00:05:54] Aaron Gonzalez:
+  that sounds right. I have my numbers mixed up. Okay. Too far. Aaron doesn't have a mouse. Because, you know, we're on a budget over here in the dsc, apparently. So he's trying to do this with the handheld thing. Okay, so you have 492. You have, what, five PD10s in operation or four.
+
+[00:06:13] Luis Soto:
+  It's four right now in production. Two doing the inverters, one was doing LEDs, and I got two broke down and two being put together.
+
+[00:06:28] Aaron Gonzalez:
+  Okay,
+
+[00:06:29] Luis Soto:
+  foreign
+
+[00:06:29] Aaron Gonzalez:
+  production. Yeah. Right.
+
+[00:06:31] Luis Soto:
+  So
+
+[00:06:32] Aaron Gonzalez:
+  you have four. Four in production, three doing auxiliary work and four that are down. Two. Two that are broke and two that are not. So. Okay, do you need support getting these other four units up and running? Do you have the. What
+
+[00:06:47] Luis Soto:
+  you need on
+
+[00:06:48] Aaron Gonzalez:
+  site? RDO and all that?
+
+[00:06:51] Luis Soto:
+  Yes. Premiere is supposed to be here next week to work on the two that are broke down. Next week? That's as quick as we can get them here. So we gotta get in here sooner than that. That's as fast as we can get here by
+
+[00:07:05] Aaron Gonzalez:
+  next
+
+[00:07:05] Luis Soto:
+  week. We
+
+[00:07:05] Aaron Gonzalez:
+  met tomorrow, right?
+
+[00:07:07] Luis Soto:
+  Yeah. Yeah, that's all we
+
+[00:07:09] Aaron Gonzalez:
+  need. We
+
+[00:07:11] Luis Soto:
+  gotta see if we can
+
+[00:07:11] Aaron Gonzalez:
+  escalate
+
+[00:07:12] Luis Soto:
+  that. Who were you talking to? Mechanics. I mean, his name wrote down, but yeah. And what's going on with the other two? The two together? And when are they coming? That I don't know yet. So, Josh, do y' all want to help escalate that, or do you want.
+
+[00:07:33] Aaron Gonzalez:
+  Yeah,
+
+[00:07:34] Luis Soto:
+  you.
+
+[00:07:34] Aaron Gonzalez:
+  You guys push on your end, but we meet with the equipment team tomorrow morning, and I'll also send Ben a note tonight. But let's. We need to get Vermeer out there sooner. Now, for the two that have GPS issues, like are being set up,
+
+[00:07:50] Luis Soto:
+  do
+
+[00:07:50] Aaron Gonzalez:
+  you have RDO on site for that?
+
+[00:07:53] Luis Soto:
+  That's what we need. So
+
+[00:07:55] Aaron Gonzalez:
+  you need RDO and Vermeer, you're waiting on both vendors to get those four units,
+
+[00:07:59] Luis Soto:
+  right? Yep.
+
+[00:08:02] Aaron Gonzalez:
+  What. When did RDO say that they would be able to be out there?
+
+[00:08:08] Luis Soto:
+  Look, I have. I haven't wrote down. It's not this week right now, right? No, sure.
+
+[00:08:14] Aaron Gonzalez:
+  Let's create a constraint for
+
+[00:08:16] Luis Soto:
+  PD10
+
+[00:08:17] Aaron Gonzalez:
+  up time and see what we can do
+
+[00:08:19] Luis Soto:
+  to
+
+[00:08:20] Aaron Gonzalez:
+  escalate.
+
+[00:08:20] Luis Soto:
+  We need
+
+[00:08:21] Aaron Gonzalez:
+  to get both RDO and Vermeer out there. When
+
+[00:08:24] Luis Soto:
+  did those two go down, Kevin? Those two last week. The two that needed the premiere went down last week. The harness is bad, right? Yeah, I believe the harnesses are back. That's whenever all the things I load is pushed to the harnesses being back.
+
+[00:08:46] Aaron Gonzalez:
+  All right, so we'll work on
+
+[00:08:47] Luis Soto:
+  that
+
+[00:08:48] Aaron Gonzalez:
+  first to get. But you still have four machines out there, right? And you have the. The bird whisperer, who should be getting 150 piles per machine. Are you work? You buttoned up on Shakeout, or what are you guys doing out there?
+
+[00:09:02] Luis Soto:
+  I'm sorry, I couldn't hear that. Where's Bird? Is he here right now? He went. Went back. Yeah, yeah. He's just. He went back to Delta to get his stuff, and then he's coming back.
+
+[00:09:12] Aaron Gonzalez:
+  Okay, okay. Because I know he's good at fixing some of that stuff too, so.
+
+[00:09:17] Luis Soto:
+  Oh, yeah.
+
+[00:09:21] Aaron Gonzalez:
+  All right.
+
+[00:09:26] Luis Soto:
+  Okay.
+
+[00:09:27] Aaron Gonzalez:
+  The team. Okay, who's going to take point on following up with Vermeer and RDO once we kind of push it? Push it. Are on end.
+
+[00:09:36] Luis Soto:
+  Kevin. Kevin. Kevin.
+
+[00:09:50] Aaron Gonzalez:
+  All right, is Shakeout. Are we running up against Shakeout right now, or is Shakeout out ahead enough for us to actually start getting a couple hundred piles more a day? Because with four machines, we should be, you know, getting a few hundred a day, not a few hundred in a week type thing. But I know we're just getting up and running, so I'm kind of curious what's holding us up from just normal operations, at least with the four that we have.
+
+[00:10:15] Luis Soto:
+  We had several hold ups. The major one is being all these operators are new from the union and have never operated PD10. So they went through the unit training, but we've had to train them on site. Can
+
+[00:10:28] Aaron Gonzalez:
+  we get any keyed employees from, like,
+
+[00:10:32] Luis Soto:
+  Uni
+
+[00:10:32] Aaron Gonzalez:
+  Ridge or Delta? No,
+
+[00:10:35] Luis Soto:
+  we got what we could, but we got two from California and I think one from Union Ridge.
+
+[00:10:45] Aaron Gonzalez:
+  Okay, so
+
+[00:10:45] Luis Soto:
+  you have
+
+[00:10:46] Aaron Gonzalez:
+  reached.
+
+[00:10:46] Luis Soto:
+  You
+
+[00:10:47] Aaron Gonzalez:
+  have three keyed employees right now.
+
+[00:10:49] Luis Soto:
+  Yes, sir. And what, are they doing the auxiliary stuff though, or. No, they're doing the production, and even they're having a hard time really getting their numbers up, so. So shakeouts got enough run room to take off. It's just a matter of getting them going. Right, because you got 12, a little over 1200 shook out as of this morning. Right ahead of what we got in the ground, Right? Yeah. And we're working on that. Me and Kevin. This is Caesar. Me and Kevin had a conversation this morning. This. This Friday, he had 135 pounds in the ground. They're averaging about 35 to 40 of them per machine, so we're working on that. Do
+
+[00:11:29] Aaron Gonzalez:
+  we currently have any issues or anything in the way between grading and pile shakeout?
+
+[00:11:39] Luis Soto:
+  Not at this moment, no, sir.
+
+[00:11:42] Aaron Gonzalez:
+  Okay. Sounds like we just got to get trained up and get these four machines fixed. So, yeah, we'll. We'll act quick on our side where we can to get this going. I already. I already escalated with the equipment team, so we'll see what they come back with.
+
+[00:12:00] Luis Soto:
+  Good.
+
+[00:12:03] Aaron Gonzalez:
+  Back to your. Yep,
+
+[00:12:11] Luis Soto:
+  I know. Bird said he had a lot of when all the material he needs to fix them up. I can't do harnesses. That's a major, major deal. Yeah, Vermeer has to do those. Vermeer has to do the harnesses. We don't even carry harnesses. We carry a GPM cape. And I've got a bunch of them too, so Birds got some of those. Well, you got some cables. I've got plenty of cables, but the heart, that's the main wiring harness. Let us know. Let us know what Vermeer comes back with. Sounds like we need them all here. Equipment management. Yeah, I
+
+[00:12:49] Aaron Gonzalez:
+  think RDO might be at one of our projects right now, but I'll verify. Yeah, RDO only has two crews and they're both at projects right now, but we'll see what we can do to shift one over. I think they're at the walking up, to be honest. Yeah,
+
+[00:13:05] Luis Soto:
+  another RDO guy that does work besides rdo. He used to work with the RDO based in Minneapolis. They split up and he opens his own company. I can give you guys a contact information. We just need to set up a PO with. Yeah, let's look at that too. Look at that option. Because rdo, we're always struck. Yeah, we've got another name that can help.
+
+[00:13:28] Aaron Gonzalez:
+  Let's. We'll push on RDO first before.
+
+[00:13:31] Luis Soto:
+  But.
+
+[00:13:31] Aaron Gonzalez:
+  Yeah, send that
+
+[00:13:31] Luis Soto:
+  contact because
+
+[00:13:32] Aaron Gonzalez:
+  I know
+
+[00:13:32] Luis Soto:
+  getting
+
+[00:13:33] Aaron Gonzalez:
+  a PO
+
+[00:13:33] Luis Soto:
+  it might
+
+[00:13:33] Aaron Gonzalez:
+  take a
+
+[00:13:34] Luis Soto:
+  while
+
+[00:13:34] Aaron Gonzalez:
+  too, so.
+
+[00:13:35] Luis Soto:
+  Yeah.
+
+[00:13:38] Aaron Gonzalez:
+  Okay. And
+
+[00:13:39] Luis Soto:
+  survey. Survey had in the past has been able to. Had some folks that were able to help us to set up too. Right. Yeah, I got this all up and running earlier. Do you know what the issues are right now with the two machines? Can you. I mean, is that something you can do? I mean. Yeah, I could. I didn't realize
+
+[00:13:58] Aaron Gonzalez:
+  you could
+
+[00:13:58] Luis Soto:
+  do bad wiring harnesses. No, no, no, no. The RDO issues. So you can put position equipment on it. No. Okay.
+
+[00:14:10] Aaron Gonzalez:
+  What are the specific issues you're having with the GPS portion, the Carlson portion of these PD10s?
+
+[00:14:16] Luis Soto:
+  At first they weren't reporting. Then we got them started back reporting. But right now it's just a signal issue. And I'm looking to get the boosters here. Yeah,
+
+[00:14:27] Aaron Gonzalez:
+  I was gonna say if you get a repeater, might. Might alleviate that problem.
+
+[00:14:33] Luis Soto:
+  No, it's not the repeater itself. It's the signal coming to the pack. Like the cellular service. Do they operate on SIM cards like a cell phone back there, The F block say, just not enough signal. You need to sell booster. Right? Yeah. Booster. G to go take a look at those two machines. I was going to call rdo. When else? Already called. Yeah, yeah, no, we're working on it. Have we tried. We tried remote troubleshooting with RDO on the phone. Kevin. Yes, sir. I thought within the survey team, and I'm not. I'm not pointing at you. With the. Within Isaac's team, I thought we had one or two people that did GPS setup as well. That's why they help with it.
+
+[00:15:27] Aaron Gonzalez:
+  We do. We have key
+
+[00:15:30] Luis Soto:
+  people
+
+[00:15:31] Aaron Gonzalez:
+  in the company that can do that. On the survey side, one, I think, teaser work. If you remember, Mellow was able to kind of help with that front at midpoint. So I don't know if we
+
+[00:15:42] Luis Soto:
+  can. Yeah. Isaac and. And see if he's got anybody right now because that's another good angel.
+
+[00:15:56] Aaron Gonzalez:
+  All right, moving on to the next constraint here. That is MB delays due to mass grading. Did we get that pre activity done today?
+
+[00:16:07] Luis Soto:
+  Yes, the MV preacher was completed today and it went well, just with a few action items. How's
+
+[00:16:14] Aaron Gonzalez:
+  the weather looking for this week? I know it changes a little bit, but still looking
+
+[00:16:18] Luis Soto:
+  unfavorable. Yeah, not looking too well. Got what, about 3 inches of rain or something coming over the next couple days? Couple days here. When
+
+[00:16:29] Aaron Gonzalez:
+  is it supposed to start? Tuesday
+
+[00:16:31] Luis Soto:
+  afternoon, tomorrow.
+
+[00:16:35] Aaron Gonzalez:
+  Okay. Do we have all the equipment we need to get mass grading done? Is there anything we need? Manpower. How are we looking on that end?
+
+[00:16:46] Adam McCamey:
+  No, we are good. I'm out here right now with Miller Brothers. They are moving along. We. We. The field is done and they are actually trying to get the rest of the cut out. We're trying to get that done before the rain starts tomorrow. Looking pretty good.
+
+[00:16:59] Aaron Gonzalez:
+  Okay, cool.
+
+[00:17:00] Luis Soto:
+  That's D Block still, Adam. Yes,
+
+[00:17:02] Adam McCamey:
+  sir. That is D block. We're looking at trying to get it knocked out tomorrow with the cut and moving into C block. And I'm also going
+
+[00:17:09] Luis Soto:
+  to be
+
+[00:17:09] Adam McCamey:
+  working WE ending. I'm going to be working on E block myself
+
+[00:17:12] Luis Soto:
+  because
+
+[00:17:13] Adam McCamey:
+  it's really minimal in there.
+
+[00:17:15] Luis Soto:
+  Okay. And Envy's still slated to start on the night. Yep, Yep, that's what they said. As long as we are done with the action items. Okay, so a couple action items. What else needs to happen between now and the ninth to make sure we're ready for mv? They need to masquerade. Oh, well, for the mv, they need to put their call into the halls, but they're still. They haven't got their people here calls. Yeah, yeah, they got to get their. I
+
+[00:17:46] Cody Martens:
+  don't think we've gotten their execution plan either, guys.
+
+[00:17:50] Aaron Gonzalez:
+  Yeah,
+
+[00:17:50] Luis Soto:
+  they're ex. We're waiting on their execution plan as well. Okay, so who's driving that with William Charles? Is that you, Cody?
+
+[00:17:56] Aaron Gonzalez:
+  Myself
+
+[00:17:57] Cody Martens:
+  and
+
+[00:17:57] Luis Soto:
+  my. Okay, yeah. And then they got the. They working off. RG watering. So talking with Joe Cazano, he was explaining to me that there's not a specific plan that you need for de watering. You just have to be prepared for dewatering when it happens. So ensuring that we have a plan for what we're going to do when we get to standing water is kind of what they're looking for. So that's something we could come up with on our own. It's not going to take too long.
+
+[00:18:23] Aaron Gonzalez:
+  Okay,
+
+[00:18:25] Luis Soto:
+  yeah, something like that. That's all they want. Now, we want to keep moving along here, but if we can just track these few open items for the next constraints call and just make sure we're making progress on them. Help hold us all.
+
+[00:18:36] Aaron Gonzalez:
+  Yeah,
+
+[00:18:37] Luis Soto:
+  we had the issue at Delta where the sub was. Had water in the trench. They were just pushing dirt on top and they didn't have a dewatering plan. So
+
+[00:18:49] Aaron Gonzalez:
+  it
+
+[00:18:50] Luis Soto:
+  doesn't have to be fancy. Yeah. Like standing water needs to come out of that trench. Well, yeah, but I mean, they were literally leaving standing water. In French, just pushing them. That's crazy. So you're taking charges on this one? Yeah. Busy water plant works. Yeah. You're muted, Aaron. You're talking. I saw you clicking around.
+
+[00:19:56] Aaron Gonzalez:
+  Okay. Hear me now?
+
+[00:19:58] Luis Soto:
+  Yep.
+
+[00:19:59] Aaron Gonzalez:
+  Okay. Yeah. As far as the finished bom for materials for New River, I sent an email out to you on Friday regarding the DMC connector or the fittings. Did you get a hold of stantec?
+
+[00:20:12] Luis Soto:
+  So we sent emails out requesting accounts for grounding materials. We haven't heard back yet and we're currently. Manny and I are trying to discuss with New Rivers exactly what are key items they need because there's definitely some misalignment there between the contract wording and what they understand.
+
+[00:20:37] Aaron Gonzalez:
+  Okay, who's. Who's taking point on this? Is it mainly you, Louise? I'll
+
+[00:20:42] Luis Soto:
+  be Manny. And
+
+[00:20:42] Aaron Gonzalez:
+  I'll
+
+[00:20:44] Luis Soto:
+  be myself. Manny. I got it.
+
+[00:20:46] Aaron Gonzalez:
+  Okay.
+
+[00:20:49] Luis Soto:
+  Are
+
+[00:20:50] Aaron Gonzalez:
+  we going to follow up?
+
+[00:20:51] Luis Soto:
+  Have we
+
+[00:20:51] Aaron Gonzalez:
+  gotten them on the phone? Do we need to set up a
+
+[00:20:55] Luis Soto:
+  call
+
+[00:20:55] Aaron Gonzalez:
+  to get everybody aligned?
+
+[00:20:57] Luis Soto:
+  Yeah, I sent an email Friday in the morning. So tomorrow I'm going to sit down with our new rivers. So we can get an ex. I mean, so we can understand exactly what they. What quantities they want. I mean, I understand that some of the conduit and other things, I mean, stantech is not going to give us an actual amount of it. Right. But I just want to know from New river standpoint, I mean, what, what they're actually looking for.
+
+[00:21:25] Aaron Gonzalez:
+  Okay. Yeah, because I know sometimes emailing is good, right. For paper trail. But we, if we can follow up via phone or set up a meeting to get everybody aligned to move things quicker, we should be doing that. That's.
+
+[00:21:39] Luis Soto:
+  It's. It's through the client. So we can't just call them. So we have to go through the client and have them set a meeting. And then if they join it, which I think the last
+
+[00:21:47] Aaron Gonzalez:
+  couple
+
+[00:21:47] Luis Soto:
+  calls
+
+[00:21:48] Aaron Gonzalez:
+  regarding
+
+[00:21:49] Luis Soto:
+  the
+
+[00:21:49] Aaron Gonzalez:
+  substation,
+
+[00:21:49] Luis Soto:
+  they didn't have them join.
+
+[00:21:51] Aaron Gonzalez:
+  What
+
+[00:21:51] Luis Soto:
+  client
+
+[00:21:52] Aaron Gonzalez:
+  representative is. What client representative is taking point on that, that we can push on
+
+[00:21:57] Luis Soto:
+  for the, for the bomb. It'll be rde Christian Gomez. Yep. But where we left it off on Friday was that getting with New river understanding from the bomb that was so many pages long. Exactly. Which ones they have questions on. Just like you said, the items that they can do takeoffs on, on conduit sizes, they can, we can work through that,
+
+[00:22:18] Aaron Gonzalez:
+  but
+
+[00:22:19] Luis Soto:
+  making it a more specific plan of which ones they need rather than just an open request. Right. So once we get that from New River, I can help drive that depression. Exactly what we're needing clarity on. Yes, sir.
+
+[00:22:30] Aaron Gonzalez:
+  Okay, so condense it so it's quick, so we can get a quicker response, basically.
+
+[00:22:37] Luis Soto:
+  Exactly.
+
+[00:22:38] Aaron Gonzalez:
+  Okay, condense
+
+[00:22:40] Luis Soto:
+  it to what exactly does New river have questions on? On quantities. Right. Because there was a five to seven page bomb. Two of them got explained. Rather than just send them. Sending them the four pages back saying, hey, give us quantities for all this. It's, hey, which of these can you not get on your own and do you have concerns with? And then once we gather those meeting notes, we'll go to Christian and say, we need your guys's support for pushing this.
+
+[00:23:05] Aaron Gonzalez:
+  Okay, Gotcha. Makes sense. Okay, I know rwe. Oh, studies two, the mid utility. Do we know where we stand on that? I mean, I know it's. Did
+
+[00:23:24] Luis Soto:
+  they ever say anything?
+
+[00:23:25] Aaron Gonzalez:
+  Right.
+
+[00:23:25] Luis Soto:
+  I just got. I got a call from them today, explained the situation to them again. And then she asked if I had talked to John and Brandon, and I said, yeah, we didn't. She goes, oh, okay, well, they got it, so they'll be following up. That's where she ended the conversation. So did he ever send you the email he phone call from them here soon? I'll follow up with another email and call them. Yeah, because she. She has. She said she already got an account ready and all that stuff because that's what they're waiting on from her. So they should be out here to the email
+
+[00:23:59] Aaron Gonzalez:
+  and
+
+[00:23:59] Luis Soto:
+  then give them coin. Yeah, Manny's gonna follow up on that one. That's for Mid Ohio. Yeah. Yeah. For the substation. Yeah. Okay. And we found out they don't do permanent power. Yeah, I heard that Friday. That's disappointing. Yeah.
+
+[00:24:13] Aaron Gonzalez:
+  So.
+
+[00:24:16] Luis Soto:
+  So
+
+[00:24:16] Aaron Gonzalez:
+  high level, where are we at? It's just. Who's gonna follow up again? I didn't catch her name. I heard she.
+
+[00:24:22] Luis Soto:
+  I
+
+[00:24:22] Aaron Gonzalez:
+  just didn't.
+
+[00:24:23] Luis Soto:
+  No, no. Manny's gonna follow up with Mid Ohio and get a. An idea of what. How to proceed. And it sounds like the second. The second item to that, Aaron, is getting power. Utility power to the trailer stations, Which is aep, right? Yes, sir. Is correct.
+
+[00:25:09] Aaron Gonzalez:
+  Okay. We're still on target for this Wednesday to finalize that co. Yeah.
+
+[00:25:20] Luis Soto:
+  Review this Wednesday. Is it Wednesday or Thursday? Thursday. Thursday. Sorry. Open change order review. It's on Wednesday. I don't know if I got that one. Whatever Erica Young's meeting is. Yeah, this one's on Thursday the 5th.
+
+[00:25:52] Aaron Gonzalez:
+  Okay. Okay. We already kind of touched on this. D1 through D4 we're supposed. We're tracking to finish by tomorrow. Is that still the case or. Or no.
+
+[00:26:16] Luis Soto:
+  Yep.
+
+[00:26:16] Aaron Gonzalez:
+  On grading.
+
+[00:26:19] Luis Soto:
+  Yeah. That's the plan that Adam was talking about a second ago.
+
+[00:26:22] Aaron Gonzalez:
+  Yeah.
+
+[00:26:24] Luis Soto:
+  Should be done before the weather. Okay.
+
+[00:26:28] Aaron Gonzalez:
+  And then shortly after that, are we gonna have time to get the new surface files over to the engineers?
+
+[00:26:36] Luis Soto:
+  Yep. So we'll do a rolling top row. The weather comes around whenever he turns it over. Yeah. That's how you do it before the weather comes. Yeah.
+
+[00:26:46] Aaron Gonzalez:
+  Do
+
+[00:26:46] Luis Soto:
+  you have any. Yeah. Concerns with that? Yeah. No, it's just. So the other end. All this is to. I'm trying to avoid having so many revisions of POP Life plans, and we are ahead of. Well ahead of shakeout and all that. So if I see, like, they're getting closer, I'll go ahead and burn the rollout. It out. Long as I have a 58 turnaround ahead of PS, I'm good. Ideally, you know, I got a lot of our schedule for 24th. If I can back it up and capture D blocks and C blocks to have lease revisions of the pop block plan, that's going to be ideal. But I know everybody's in crunch and I'm, I'm. I got my backup plan and I got a preferred plan as well. So what I'm watching it closely.
+
+[00:27:30] Aaron Gonzalez:
+  So ideally, if weather does catch up, you're trying to push that lidar flight to the left a little bit to kind of get both D and C circuits. DNC blocks.
+
+[00:27:41] Luis Soto:
+  Exactly.
+
+[00:27:42] Aaron Gonzalez:
+  Yes.
+
+[00:27:42] Luis Soto:
+  We're using a rolling topo. That's what I'm trying. Rolling togo at this point is a backup plan just to stay ahead. But if I see that piles are starting to get close, I'll go ahead and do the roller topo. But right now, if I can wait like a week or so, I can get that. Probably get that flying that L AR and capture. Depends on how fast I get SE block done. But if I can get Ds and C. You
+
+[00:28:06] Aaron Gonzalez:
+  can kill two birds with one stone essentially.
+
+[00:28:09] Luis Soto:
+  Yeah. Yeah. With better quality and less revisions. Yeah. We just don't want to hold the ball
+
+[00:28:15] Aaron Gonzalez:
+  too much
+
+[00:28:16] Luis Soto:
+  catch up. Right. I'm watching both. Okay. Those got to keep in mind too. We're not guaranteed that that's set in the right spot stations. What like if we get the lottery back and we wait till that. Until we wait. If we wait too late and just time for that 5 days jit with a lot of our back get it pop up one already and then it comes back and says hey, you missed a foot of cut in this spot in here and here and here. I'm going to go back and redo it and then go redone it and then recenters again. It's another five days and then so we gotta keep on. I'm gonna utilize a lot of every chance I get. I can't reschedule a lot every week or anyway I got. I've got it. You gotta have. Yeah. Okay. I think we should keep it from the center. Yeah. Stay on here.
+
+[00:29:04] Aaron Gonzalez:
+  Okay. Do we feel like we have a good handle on Stan Tech holding to their five day turnaround on pile plot plans?
+
+[00:29:11] Luis Soto:
+  Absolutely. Yes.
+
+[00:29:14] Aaron Gonzalez:
+  Okay. So is this something we want to monitor as low since we already. We've already had that conversation and this is currently not a
+
+[00:29:22] Luis Soto:
+  bottleneck. Yeah, I think we're tracking good. The only hold up is that the weather and all that affecting civil. As soon as Civil just start marching, everything else is going to fall in place.
+
+[00:29:36] Aaron Gonzalez:
+  Okay?
+
+[00:29:39] Luis Soto:
+  And just remember, you know, give it. Give a day or so for our internal review post Stantex release of the power platform so Ferdinand Dan Linetti can do their review. Okay.
+
+[00:30:00] Aaron Gonzalez:
+  Right now we're also gonna, with the weather coming, gonna have issues with the trucks getting reliable access to the field. For logistics. Do we have a mitigation plan in place? What, what is this looking like right now? Well,
+
+[00:30:14] Luis Soto:
+  we got like 850 mats on site. Most of those are an F block. We got another 250 composite poly mats ordered. Those are going to go through D5 and D6. After we get through D5 and D6 of those mats, that's where we're going to get run the issue.
+
+[00:30:30] Aaron Gonzalez:
+  Okay,
+
+[00:30:32] Luis Soto:
+  Adam. Right. I think we saw. When do you plan to start distro and nickel D6, Kevin, or shake it up. I would like to spend some dedicated time though, looking at the logistics plan with you, Caesar, and maybe Miles and Riker and Autumn and just going through because there's a lot of double helmet on this project based off where we had to unload. And just make sure now that she's got some time studies, make sure we're optimizing our travel time and everything to each block and make sure we stage those lay downs efficiently so we look at the touches. Because any, any shape time is going to. So maybe like a lean process optimization, Aaron, for
+
+[00:31:32] Aaron Gonzalez:
+  the rest
+
+[00:31:32] Luis Soto:
+  of these models later this week, Wednesday or something like that.
+
+[00:31:38] Aaron Gonzalez:
+  Yeah. And
+
+[00:31:40] Luis Soto:
+  just spend time
+
+[00:31:41] Aaron Gonzalez:
+  talking
+
+[00:31:41] Luis Soto:
+  about logistics.
+
+[00:31:43] Aaron Gonzalez:
+  Yeah. And I'm. I'm assuming out of that we'll be able to kind of gauge how much running room we'll have post weather event, I guess you can say for distro. And where we're going to be looking at as far as the sequence goes is that.
+
+[00:32:03] Luis Soto:
+  Yeah, yeah. We've got all the sequencing laid out. I think it's more of a. A timing and quantity of control. Right. Per truck, like
+
+[00:32:15] Aaron Gonzalez:
+  hour and
+
+[00:32:15] Luis Soto:
+  a half each block.
+
+[00:32:17] Aaron Gonzalez:
+  Okay.
+
+[00:32:18] Luis Soto:
+  100 piles. 100 piles. So it's like looking at all the quantities and then saying, okay, how many truckloads is that? How much time is that? How many people is that? Do we do it on Saturday? Do we do it on Thursday? Do we double up the trucks? As long as the weather holds off, we should have the access road capped in D5 tomorrow. Okay. We went and proof rolled today. It looked good. The water went down like we was hoping it would. Yeah. D6 didn't, but D5 did. And we're scott truck scheduled for tomorrow. Yeah. Lay down the hours being put in as we speak. Good. Okay,
+
+[00:32:48] Aaron Gonzalez:
+  cool. We already talked about this one. Seems like you guys have a good grip and mitigations in place for the three inches of rain.
+
+[00:33:05] Luis Soto:
+  So
+
+[00:33:06] Aaron Gonzalez:
+  unless you guys want to add anything else to this. Rain that might have a domino effect on other scopes. Trenching, anything, piles, whatever. Yeah,
+
+[00:33:20] Luis Soto:
+  it's going to push back a lot of stuff with the rain. But we're supposed to how that searching go day we continue on that or no. Yeah. So how many spare mats do we have available? Not utilized. We're out. The yard in E5 got halfway built there. Do we know if there's any mats coming available in the fleet? There's some Walker 1 miles Andy today. You can hear us?
+
+[00:33:55] Miles Mulkey:
+  Yeah, let me call about that one. I'm not sure how many are there. I don't think it's a ton though.
+
+[00:34:00] Luis Soto:
+  Okay. Yeah. H. Andy. He's having very many, but he has some to send us. So
+
+[00:34:05] Miles Mulkey:
+  I'm gonna say it's only like 30 or 40 guys.
+
+[00:34:09] Luis Soto:
+  Okay. I do know that. I get you so far. Yeah, that'll help. The lay down yard. These lay down yards D5 and D6 are small. So I'm just thinking the forecast is calling for a lot of rain the next several days. The weather stays up, but it just sounds like it's going to be raining for like the foreseeable future. The good thing about the situation we're in now though is we can bleed that off. I mean, we can blend it off and get down to dry ground and put it back later. All right. You know, worst case scenario. Y' all heard him. It's not going to be an issue. No, I said we work with it, but it's. It's not. You're not. You're not going to get optimal numbers. We know that. Right. But we can make it work. Let's just have them here. I rather have them not use them. Absolutely. Than need them not. Have we got Polymax? We got those 250. See, those are going to work good for the roads too. The poly mats are actually better. These three, these three plies we get, they are just busting all two pieces. We're starting. Yeah. We asked for AB grading, got CD F. Yeah. Some of these things come off the truck just that fast. I. I just. We're making do.
+
+[00:35:09] Aaron Gonzalez:
+  Yeah.
+
+[00:35:09] Luis Soto:
+  Now's the time we want to just think through that. Right. So we're able to have a. Have a plan, have them here. If we don't need them. Great. Y. We do. We've got them and we've got a plan. I've got a crew split it up tomorrow where Freddie's going to be handling D.C. and I'll have a crew just for worrying about roads and mats and getting other crafts. Access. That's all. Their job is going to be making sure that everybody can get around. Any concerns on the substation or the pad. If you get a lot of rain, there is concerns. We won't be punching any holes. If we get some rain, though, I mean, that. That's going to affect schedule since we got that high yield concrete. I don't think it's going to affect schedule at this point, you know, because they, they got to prove on that pedestal that was our main concern. And I think that bought us a couple weeks, you know, followed a lot of time. So should be sitting pretty good. We're going to start receiving rebar tomorrow. So, I mean, even if it rains, we could still tie some rebar and be ready for. For most of those pores whenever the rain pushes away. Okay. Yeah. No concerns on the pad? No. Okay. Did they move your equipment out of the way? Did we get that? I just remember seeing the lay down yard that got worked on and then went out and tried to drive on it. The Kim bases equipment, they're coming and getting all that out of our way. We couldn't get my answer. I think we're going the back route. They've got a small job north of here I believe is where it's at. So they need that equipment. So they're going to pull it out of the way from island. We'll worry about that later. We figure out how we're going to do these robes. Yeah, we're probably going to see that state. Yeah, I think we can we see what it. What happened from Saturday when we left here to today. It's fantastic out there. Like the jaw is dry. Yeah. So if we can just get through, you know, not have 3 inch rains a week. I mean a half inch rain a week ain't gonna hurt nothing. So I think we can going to work our way into better. Yeah. And save us a whole lot of. It's going to be warmer. It holds up. Absolutely. And the way it's windy up here, this thing should drive pretty fast. It should drive like Texas does, as windy as it is. So. Okay. What else, Aaron?
+
+[00:37:19] Aaron Gonzalez:
+  All right. Other than that. I mean the. We're a little bit over time. I know we have a lot of work to do and stuff but we have these low priority risk items. Is there any one of them that you guys want to bring up and explore or have updates on? I really just wanted
+
+[00:37:33] Luis Soto:
+  to knock out the high
+
+[00:37:34] Aaron Gonzalez:
+  and medium ones. We
+
+[00:37:35] Luis Soto:
+  need to add a high, a high item on here.
+
+[00:37:39] Aaron Gonzalez:
+  Quality
+
+[00:37:39] Luis Soto:
+  process as a team. Right. There's. There's a gap there and we've got to get us. George. Yeah. Who's
+
+[00:37:53] Aaron Gonzalez:
+  your fql?
+
+[00:37:56] Luis Soto:
+  George Lucas. But we'll cover it some more at the end of day. Right Caesar? That's the plan. I mean I would. I could speak on this one a lot too. I mean we have a lot of misalignment as a team between the turnover processes. That's where we're. We're lacking a lot at. So as far
+
+[00:38:14] Aaron Gonzalez:
+  as
+
+[00:38:15] Luis Soto:
+  Gonzalez,
+
+[00:38:16] Aaron Gonzalez:
+  I know
+
+[00:38:16] Luis Soto:
+  you, I know you've worked in this role before, but we, we need. I know we've got process but this group needs turnover, high lines of communication. Something that makes it very simple so that steps aren't getting missed and we're not having their rework items. And Aaron, we're going to address that a little bit here this afternoon at our pod, but we're going to go more in depth tomorrow when Wayne gets here.
+
+[00:38:41] Aaron Gonzalez:
+  Okay. Do you guys want to include me on that call or just kind of fill me
+
+[00:38:45] Luis Soto:
+  in after
+
+[00:38:45] Aaron Gonzalez:
+  the call?
+
+[00:38:46] Luis Soto:
+  We can if you're available. I sent and you know, we don't need to use it, but it looked really good. I sent Deltas turnover spreadsheet that they're using and I think we need to. Yep, I've got it. Got it. Re situated for our side. Okay. Just
+
+[00:39:05] Aaron Gonzalez:
+  a couple questions here. Just real quick.
+
+[00:39:08] Luis Soto:
+  What about.
+
+[00:39:09] Aaron Gonzalez:
+  Go ahead. What
+
+[00:39:11] Luis Soto:
+  about the form we used at midpoint? The CX0? Yeah,
+
+[00:39:16] Aaron Gonzalez:
+  that's perfect. That's what I was going to bring up is if we should just use a CX0 form to be able to have the FQM and the two CMS sign off on it. So we have that as paper trail and we know who to hold accountable if something happens down the line or whatever. Like that's, that's what that form is there for, but also to make sure that things are getting installed correctly. And the more we. If it takes us a long time to get that form signed, that's telling us that hey, you know what? There's miscommunication between the
+
+[00:39:44] Luis Soto:
+  both
+
+[00:39:45] Aaron Gonzalez:
+  CNS and the fqm. Right. So.
+
+[00:39:52] Luis Soto:
+  It just shows it in a picture. You can call it the spreadsheet. And you can see what where each activity is. Right? The form is what you use to sign off. Yes, but it's. It's like a little tracker. Yeah, both. Even we. Even at midpoint we had a display at the door. So everybody sees it where everybody's at. So can we get that process established no later than tomorrow? Like we really need it here. I think we're missing a step too. To get to. There is that group text. We need to be talking about what's coming up and what we're going to be doing to get. Is that what you're talking about, Louise? Yeah. People say that we have them, but everybody seems on me here. There's a group chat. We got one. We have one. One with George, Vicam, Cody, myself and this is gonna take charge to create one. If we don't have one each each craft, I'll make everyone who does not have one. Oh, George, don't have WhatsApp. That's why I had to make a text mess. I made a text message group. I got it, I got it. Aaron.
+
+[00:40:58] Aaron Gonzalez:
+  I had a tracker for that. If you guys want the template, I can send it over. It's basically like a Excel sheet where you know what block is done and we know what's been signed off and what hasn't and so on and so forth. Or if you guys are
+
+[00:41:10] Luis Soto:
+  going to make one. Yeah, we've got one from Delta. Aaron, I bet you it's the same one you're talking about. Yeah, What I was going to say is once we utilize those CX zeros, we'll market on that tracker and that tracker will get sent out to every cm, the director, myself, pm, everybody once they get signed. So there's no way anybody can say, oh, I didn't know it wasn't signed. Right. When it's right there gets into everybody. It's not green. You don't work. So. Yeah. And I also live in procore. Yeah,
+
+[00:41:40] Aaron Gonzalez:
+  yeah. Caesar knows. Caesar knows how that that process needs to go.
+
+[00:41:45] Luis Soto:
+  We
+
+[00:41:46] Aaron Gonzalez:
+  worked pretty well at midpoint with that, so we never had any issues. As far as one more thing I'd like to
+
+[00:41:53] Luis Soto:
+  bring
+
+[00:41:53] Aaron Gonzalez:
+  up is observations. Guys,
+
+[00:41:55] Luis Soto:
+  on the
+
+[00:41:55] Aaron Gonzalez:
+  quality side, remember not to be so trigger happy with the observations. Give time, give the time to the CM to fix his observations. Right. You don't want to have like 20 observations and pro quo. For if the CM wasn't notified, then that's an issue. So that could stall production. Just
+
+[00:42:14] Luis Soto:
+  so. The rule I always live by, Aaron, was if you can fix it that day, don't have observation for it.
+
+[00:42:20] Aaron Gonzalez:
+  Exactly. Exactly.
+
+[00:42:22] Luis Soto:
+  But
+
+[00:42:22] Aaron Gonzalez:
+  sometimes. Yeah. And that's the thing. That's the thing that comes with experience. Right. Like, you need to know when to walk those quote, unquote, gray areas and work with your cms. So I don't know. This. This definitely needs a lot of exploration, David. This is one of those things that's, like. It's. It's. There's a lot of things that need to be talked about. So if Wayne is already going tomorrow, he'll. He'll set you guys straight for sure. So.
+
+[00:42:46] Luis Soto:
+  Yeah. Good. It's certainly a gap that we've got to close. Right? As a team. I think we could all agree to that. Right. We've all got to do better. So I say whatever process we establish, let's buy into it and make sure everyone understand it in the following it. Right? Yeah.
+
+[00:43:05] Aaron Gonzalez:
+  Awesome. And
+
+[00:43:06] Luis Soto:
+  there's no stupid question, guys. So if you guys. You guys don't understand it, bring it up. All right?
+
+[00:43:14] Aaron Gonzalez:
+  Yeah. Yeah, Absolutely. Anytime we get on these calls, guys, like, there's no stupid questions or stupid suggestions for constraints. This is coming straight from Caesar. Like, we had these calls before we had this stuff, so just bring it up. Is there anything else that we want to track here? Oh,
+
+[00:43:35] Luis Soto:
+  sir, looks like it's all good.
+
+[00:43:38] Aaron Gonzalez:
+  All right. Yeah. As always, just reach out to me if you guys have any questions or concerns or anything I can push on the procurement side, whatever the case may be. Just reach out.
+
+[00:43:47] Luis Soto:
+  I got a hold of Isaac Lopez, too. He's looking into what resources he might have to help us with those two PD10s.
+
+[00:43:57] Aaron Gonzalez:
+  Awesome.
+
+[00:43:58] Luis Soto:
+  So keep hitting RDO up, but you may have some. Thank you, Aaron. Thank
+
+[00:44:06] Aaron Gonzalez:
+  you, guys.
+
+[00:44:08] Luis Soto:
+  Appreciate it.
