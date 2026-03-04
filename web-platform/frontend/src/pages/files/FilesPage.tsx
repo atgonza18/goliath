@@ -4,7 +4,6 @@ import {
   FolderPlus,
   FolderOpen,
   FolderUp,
-  X,
   ChevronRight,
   ChevronDown,
   Folder,
@@ -30,6 +29,7 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import { Breadcrumbs } from './Breadcrumbs';
 import { FileRow } from './FileRow';
 import { UploadDialog } from './UploadDialog';
+import { FilePreviewDrawer, PREVIEWABLE_EXTENSIONS } from './FilePreviewDrawer';
 
 // ---- Tree Sidebar ----
 
@@ -143,62 +143,7 @@ function TreeSidebar({
   );
 }
 
-// ---- Preview Panel ----
-
-function PreviewPanel({
-  filePath,
-  onClose,
-}: {
-  filePath: string;
-  onClose: () => void;
-}) {
-  const { data, loading, error } = useApi(
-    () => api.previewFile(filePath),
-    [filePath]
-  );
-
-  return (
-    <div className="w-96 min-w-[24rem] border-l border-border shrink-0 flex flex-col hidden xl:flex">
-      <div className="flex items-center justify-between px-3 py-2 border-b border-border">
-        <span className="text-xs font-medium text-foreground truncate">
-          {data?.name || filePath.split('/').pop()}
-        </span>
-        <Button variant="ghost" size="icon-xs" onClick={onClose}>
-          <X className="h-3.5 w-3.5" />
-        </Button>
-      </div>
-      <ScrollArea className="flex-1">
-        {loading ? (
-          <div className="p-4">
-            <ListSkeleton count={10} />
-          </div>
-        ) : error ? (
-          <div className="p-4 text-xs text-muted-foreground">{error}</div>
-        ) : data ? (
-          <pre className="p-4 text-[11px] leading-relaxed font-mono text-foreground/80 whitespace-pre-wrap break-words">
-            {data.content}
-            {data.truncated && (
-              <span className="text-muted-foreground/50 italic block mt-2">
-                (truncated at 100KB — {(data.size / 1024).toFixed(0)}KB total)
-              </span>
-            )}
-          </pre>
-        ) : null}
-      </ScrollArea>
-    </div>
-  );
-}
-
 // ---- Main Page ----
-
-const TEXT_EXTENSIONS = new Set([
-  'txt', 'md', 'json', 'yaml', 'yml', 'toml', 'ini', 'cfg', 'conf',
-  'py', 'js', 'ts', 'tsx', 'jsx', 'html', 'css', 'scss', 'less',
-  'sh', 'bash', 'zsh', 'fish', 'sql', 'graphql', 'prisma',
-  'rs', 'go', 'java', 'kt', 'c', 'cpp', 'h', 'hpp', 'cs',
-  'rb', 'php', 'swift', 'r', 'lua', 'vim', 'log', 'csv', 'env',
-  'xml', 'svg', 'dockerfile', 'makefile', 'gitignore', 'editorconfig',
-]);
 
 export function FilesPage() {
   const [currentPath, setCurrentPath] = useState('');
@@ -383,8 +328,9 @@ export function FilesPage() {
                     item={item}
                     onNavigate={navigate}
                     onDownload={handleDownload}
+                    isSelected={previewPath === item.path}
                     onPreview={
-                      item.type === 'file' && TEXT_EXTENSIONS.has(item.extension.toLowerCase())
+                      item.type === 'file' && PREVIEWABLE_EXTENSIONS.has(item.extension.toLowerCase())
                         ? () => setPreviewPath(item.path)
                         : undefined
                     }
@@ -395,9 +341,9 @@ export function FilesPage() {
           </div>
         </div>
 
-        {/* Preview panel */}
+        {/* Preview drawer */}
         {previewPath && (
-          <PreviewPanel
+          <FilePreviewDrawer
             filePath={previewPath}
             onClose={() => setPreviewPath(null)}
           />

@@ -22,6 +22,7 @@ interface FileRowProps {
   onNavigate: (path: string) => void;
   onDownload: (path: string) => void;
   onPreview?: () => void;
+  isSelected?: boolean;
 }
 
 const ICON_MAP: Record<string, typeof File> = {
@@ -70,17 +71,21 @@ function formatDate(iso: string): string {
   });
 }
 
-export function FileRow({ item, onNavigate, onDownload, onPreview }: FileRowProps) {
+export function FileRow({ item, onNavigate, onDownload, onPreview, isSelected }: FileRowProps) {
   const handleClick = () => {
     if (item.type === 'directory') {
       onNavigate(item.path);
+    } else if (onPreview) {
+      onPreview();
     } else {
       onDownload(item.path);
     }
   };
 
   return (
-    <div className="group flex items-center gap-3 px-4 py-2.5 border-b border-border last:border-b-0 hover:bg-accent/30 transition-colors">
+    <div className={`group flex items-center gap-3 px-4 py-2.5 border-b border-border last:border-b-0 hover:bg-accent/30 transition-colors ${
+      isSelected ? 'bg-amber-500/10 border-l-2 border-l-amber-500' : ''
+    }`}>
       {/* Clickable area: icon + name */}
       <button
         onClick={handleClick}

@@ -19,7 +19,7 @@ export interface SSECallbacks {
   onThinking?: (message: string) => void;
   onSubagent?: (event: SubagentEvent) => void;
   onChunk?: (chunk: string) => void;
-  onComplete?: (data: { text: string; file_paths?: string[]; subagents?: any[] }) => void;
+  onComplete?: (data: { text: string; file_paths?: string[]; subagents?: any[]; conversation_id?: string }) => void;
   onError?: (error: string) => void;
 }
 
@@ -154,6 +154,15 @@ class ApiClient {
                   }
                   break;
                 }
+                case 'agent_tool': {
+                  try {
+                    const parsed = typeof eventData === 'string' ? JSON.parse(eventData) : eventData;
+                    callbacks.onSubagent?.(parsed as SubagentEvent);
+                  } catch {
+                    // Skip malformed tool events
+                  }
+                  break;
+                }
                 case 'chunk':
                   callbacks.onChunk?.(eventData);
                   break;
@@ -165,12 +174,11 @@ class ApiClient {
                       text: parsed.text || '',
                       file_paths: parsed.file_paths,
                       subagents: parsed.subagents,
+                      conversation_id,
                     });
                   } catch {
-                    callbacks.onComplete?.({ text: eventData || '' });
+                    callbacks.onComplete?.({ text: eventData || '', conversation_id });
                   }
-                  // Return conversation_id for the caller
-                  (callbacks as any)._resolvedConversationId = conversation_id;
                   return;
                 }
                 case 'error':
@@ -302,6 +310,11 @@ class ApiClient {
       method: 'POST',
       body: JSON.stringify({ path: dirPath }),
     });
+  }
+
+  /** Returns a URL that serves the file inline with correct MIME type (for iframe, img, etc.) */
+  getFileServeUrl(filePath: string): string {
+    return `${this.baseUrl}/files/serve?path=${encodeURIComponent(filePath)}`;
   }
 
   async previewFile(filePath: string): Promise<{
