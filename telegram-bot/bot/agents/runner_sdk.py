@@ -55,13 +55,16 @@ _tool_event_logger = logging.getLogger("goliath.tool_events")
 _token_tracker = None
 
 
-def _build_tool_hooks(agent_name: str) -> dict:
+def _build_tool_hooks(agent_name: str, on_tool_event=None) -> dict:
     """Build PreToolUse / PostToolUse hook matchers for real-time observability.
 
     Returns a hooks dict ready for ClaudeAgentOptions.  Each hook callback
     logs a structured JSON event via the goliath.tool_events logger so that
     tool calls are visible in real-time in bot.log (not just in the final
     ResultMessage summary).
+
+    When ``on_tool_event`` is provided, tool events are also forwarded to
+    the callback for real-time streaming to the web UI.
 
     The hooks are observation-only — they always return ``continue_: True``
     and never block execution.
@@ -82,6 +85,12 @@ def _build_tool_hooks(agent_name: str) -> dict:
                     "tool_input_preview": str(tool_input)[:300] if tool_input else None,
                 },
             )
+            if on_tool_event:
+                await on_tool_event({
+                    "type": "tool_start",
+                    "tool": tool_name,
+                    "input_preview": str(tool_input)[:200] if tool_input else None,
+                })
         except Exception:
             pass  # Never let hook logging crash the agent
         return {"continue_": True}
@@ -98,6 +107,8 @@ def _build_tool_hooks(agent_name: str) -> dict:
                     "tool_name": tool_name,
                 },
             )
+            if on_tool_event:
+                await on_tool_event({"type": "tool_done", "tool": tool_name})
         except Exception:
             pass  # Never let hook logging crash the agent
         return {"continue_": True}
@@ -126,14 +137,31 @@ class SubagentRunnerSDK:
     - Configurable via env vars (see config.py)
     """
 
-    # Safety-net timeout ONLY -- catches genuinely hung zombie processes.
-    # Mirrors the same constant from SubagentRunner for consistency.
-    DEFAULT_TIMEOUT = 3600  # 1 hour -- zombie safety net only
+    # Operational timeout: kills a subagent that has been running too long.
+    # Mirrors the same value as SubagentRunner (CLI runner) for consistency.
+    # After timeout: SDK query is cancelled, error is logged, graceful error
+    # is returned to the user so synthesis can continue with other agents.
+    OPERATIONAL_TIMEOUT = 720  # 12 minutes — kills hung subagents
+
+    # Zombie safety-net: absolute backstop, mirrors SubagentRunner.
+    DEFAULT_TIMEOUT = 3600  # 1 hour — zombie safety net only
 
     def __init__(self):
         # Build a clean env dict once, stripping CLAUDECODE to avoid
         # nested-session errors (same as the CLI runner).
         self._env = {k: v for k, v in os.environ.items() if k != "CLAUDECODE"}
+
+        # Hetzner NAT drops TCP connections idle for 300+ seconds.
+        # Claude Opus extended thinking causes silent API connections with no
+        # data flow.  After 300s Hetzner drops the NAT state, Node.js CLI gets
+        # ECONNRESET, self-terminates with SIGTERM, Python sees exit code -15.
+        # LD_PRELOAD + libkeepalive forces SO_KEEPALIVE on all TCP sockets so
+        # the Linux kernel sends keep-alive probes every 60s (see sysctl
+        # net.ipv4.tcp_keepalive_time), keeping the NAT entry alive.
+        _libkeepalive = "/opt/goliath/lib/libkeepalive.so.0"
+        if os.path.exists(_libkeepalive):
+            self._env["LD_PRELOAD"] = _libkeepalive
+
         self._retry_config = RetryConfig.from_config()
         self._circuit_breaker = get_circuit_breaker()
 
@@ -144,14 +172,17 @@ class SubagentRunnerSDK:
         context: str = "",
         timeout: float = None,
         no_tools: bool = False,
+        on_text_chunk=None,
+        on_tool_event=None,
     ) -> AgentResult:
         """Execute an agent via the Claude Agent SDK with retry and circuit breaker.
 
         Interface is identical to ``SubagentRunner.run()`` so the
         orchestrator can swap runners transparently.
         """
-        # Resolve timeout: explicit call param > agent definition > default
-        timeout = timeout or agent.timeout or self.DEFAULT_TIMEOUT
+        # Resolve timeout: explicit call param > agent definition > operational default.
+        # Never fall back to the zombie safety net for per-run calls.
+        timeout = timeout or agent.timeout or self.OPERATIONAL_TIMEOUT
 
         # --- Circuit breaker check ---
         allowed, wait_secs = await self._circuit_breaker.check(agent.name)
@@ -176,7 +207,7 @@ class SubagentRunnerSDK:
         last_result: AgentResult | None = None
 
         for attempt in range(rc.max_attempts):
-            result = await self._run_once(agent, task_prompt, context, timeout, no_tools)
+            result = await self._run_once(agent, task_prompt, context, timeout, no_tools, on_text_chunk=on_text_chunk, on_tool_event=on_tool_event)
 
             if result.success:
                 await self._circuit_breaker.record_success(agent.name)
@@ -235,6 +266,8 @@ class SubagentRunnerSDK:
         context: str = "",
         timeout: float = 900,
         no_tools: bool = False,
+        on_text_chunk=None,
+        on_tool_event=None,
     ) -> AgentResult:
         """Execute a single Claude Agent SDK call for the given agent."""
         full_prompt = task_prompt
@@ -252,6 +285,22 @@ class SubagentRunnerSDK:
         # Heavy agents (constraints, construction, scheduling, cost, transcript)
         # use Opus; everything else uses Sonnet.
         effective_model = agent.model or AGENT_MODEL
+
+        # GAP H3: Apply learned routing override if available
+        try:
+            from bot.agents.model_router import get_global_router
+            _router = get_global_router()
+            if _router and effective_model:
+                from bot.memory.reliability_log import classify_task_type
+                task_type = classify_task_type(task_prompt[:200] if task_prompt else "")
+                effective_model = await _router.get_effective_model(
+                    agent_name=agent.name,
+                    task_type=task_type,
+                    base_model=effective_model,
+                )
+        except Exception:
+            pass  # Never let routing lookup crash the agent
+
         if effective_model:
             options.model = effective_model
 
@@ -272,7 +321,7 @@ class SubagentRunnerSDK:
         # PreToolUse + PostToolUse callbacks log every tool call to the
         # "goliath.tool_events" structured logger.  They are observation-only
         # and never block execution.
-        options.hooks = _build_tool_hooks(agent.name)
+        options.hooks = _build_tool_hooks(agent.name, on_tool_event=on_tool_event)
 
         logger.info(
             f"Running subagent '{agent.name}' via SDK "
@@ -297,6 +346,11 @@ class SubagentRunnerSDK:
                         for block in message.content:
                             if isinstance(block, TextBlock):
                                 texts.append(block.text)
+                                if on_text_chunk:
+                                    try:
+                                        await on_text_chunk(block.text)
+                                    except Exception:
+                                        pass  # Never let streaming callback crash the agent
                     elif isinstance(message, ResultMessage):
                         final_result = message
 
@@ -320,6 +374,24 @@ class SubagentRunnerSDK:
                     model=observed_model,
                     task_prompt=task_prompt,
                 )
+
+            # --- GAP H3: Record routing outcome ---
+            try:
+                from bot.agents.model_router import get_global_router
+                from bot.memory.reliability_log import classify_task_type
+                _router = get_global_router()
+                if _router:
+                    _task_type = classify_task_type(task_prompt[:200] if task_prompt else "")
+                    _is_error = bool(final and final.is_error)
+                    await _router.record_outcome(
+                        agent_name=agent.name,
+                        model_used=effective_model or observed_model or "unknown",
+                        success=not _is_error,
+                        latency_ms=int(elapsed * 1000),
+                        task_type=_task_type,
+                    )
+            except Exception:
+                pass  # Never let outcome recording crash the agent
 
             # Check for SDK-reported errors
             if final and final.is_error:
@@ -348,8 +420,10 @@ class SubagentRunnerSDK:
 
         except asyncio.TimeoutError:
             elapsed = time.monotonic() - start
+            timeout_minutes = int(timeout // 60)
             logger.error(
-                f"Subagent '{agent.name}' SDK timeout after {elapsed:.1f}s"
+                f"Subagent '{agent.name}' SDK timed out after {elapsed:.1f}s "
+                f"(limit={timeout}s / {timeout_minutes}min) — cancelling."
             )
             return AgentResult(
                 agent_name=agent.name,
@@ -357,7 +431,9 @@ class SubagentRunnerSDK:
                 output="",
                 duration_seconds=elapsed,
                 error=(
-                    f"Timed out after {timeout}s (zombie safety net)."
+                    f"Agent '{agent.name}' timed out after {timeout_minutes} minutes. "
+                    f"The SDK query was cancelled. This usually means the task was too "
+                    f"large or the agent got stuck. Try breaking the request into smaller pieces."
                 ),
             )
 

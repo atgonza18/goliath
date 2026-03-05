@@ -1,14 +1,45 @@
 import asyncio
 import logging
+import socket as _socket
 from pathlib import Path
 
 from telegram.ext import ApplicationBuilder, ContextTypes
+
+# ---------------------------------------------------------------------------
+# TCP keepalive monkey-patch (applied before any network code runs)
+# ---------------------------------------------------------------------------
+# Hetzner Cloud NAT drops TCP connections idle for 300+ seconds.
+# Claude Opus extended thinking creates silent API connections with no data
+# flow for several minutes.  After 300s Hetzner silently drops the NAT entry;
+# Node.js CLI gets ECONNRESET, terminates with SIGTERM, Python sees exit -15.
+#
+# Fix: force SO_KEEPALIVE + short TCP_KEEPIDLE on every socket this process
+# creates.  Overrides the system default (7200s) even if we can't touch sysctl.
+# The sysctl values in /opt/goliath/deploy/99-goliath-keepalive.conf should
+# also be applied by root to cover the Claude CLI subprocess sockets.
+_orig_socket_init = _socket.socket.__init__
+
+
+def _keepalive_socket_init(self, *args, **kwargs):
+    _orig_socket_init(self, *args, **kwargs)
+    try:
+        if self.type in (_socket.SOCK_STREAM,):
+            self.setsockopt(_socket.SOL_SOCKET, _socket.SO_KEEPALIVE, 1)
+            self.setsockopt(_socket.IPPROTO_TCP, _socket.TCP_KEEPIDLE, 60)
+            self.setsockopt(_socket.IPPROTO_TCP, _socket.TCP_KEEPINTVL, 10)
+            self.setsockopt(_socket.IPPROTO_TCP, _socket.TCP_KEEPCNT, 6)
+    except OSError:
+        pass  # Non-TCP sockets (UDP, Unix) ignore these options — that's fine
+
+
+_socket.socket.__init__ = _keepalive_socket_init
+# ---------------------------------------------------------------------------
 
 from bot.config import (
     TELEGRAM_BOT_TOKEN, MEMORY_DB_PATH,
     WEBHOOK_PORT, WEBHOOK_AUTH_TOKEN, REPORT_CHAT_ID,
     GMAIL_ADDRESS, GMAIL_APP_PASSWORD,
-    RECALL_API_KEY, REPO_ROOT,
+    RECALL_API_KEY, RECALL_WEBHOOK_SECRET, REPO_ROOT,
 )
 from bot.handlers import register_all_handlers
 from bot.memory.store import MemoryStore
@@ -17,6 +48,10 @@ from bot.memory.activity_log import ActivityLogStore
 from bot.memory.token_tracker import TokenTracker
 from bot.memory.reflection import ReflectionStore, set_reflection_store
 from bot.memory.experience_replay import ExperienceReplayStore
+from bot.memory.reliability_log import ReliabilityLogStore
+from bot.memory.tiered_memory import TieredMemoryStore
+from bot.agents.model_router import ModelRouter
+from bot.agents.tool_registry import ToolRegistry, set_tool_registry
 from bot.services.message_queue import MessageQueue
 from bot.services.preferences import PreferenceStore
 from bot.services.webhook_server import start_webhook_server
@@ -76,6 +111,56 @@ async def post_init(application) -> None:
     await experience_replay.initialize()
     application.bot_data["experience_replay"] = experience_replay
     logger.info("Experience replay store initialized (lesson extraction + prompt injection ready)")
+
+    # Reliability log store shares the same DB connection (GAP H1)
+    reliability_log = ReliabilityLogStore(memory._db)
+    await reliability_log.initialize()
+    application.bot_data["reliability_log"] = reliability_log
+    logger.info("Reliability log store initialized (subagent call tracking active)")
+
+    # Tiered memory store shares the same DB connection (GAP H2)
+    tiered_memory = TieredMemoryStore(memory._db)
+    await tiered_memory.initialize()
+    application.bot_data["tiered_memory"] = tiered_memory
+    logger.info("Tiered memory store initialized (episodic + semantic tiers active)")
+
+    # Model router shares the same DB connection (GAP H3)
+    model_router = ModelRouter(memory._db)
+    await model_router.initialize()
+    application.bot_data["model_router"] = model_router
+    # Make globally accessible so runner_sdk can query overrides and log outcomes
+    from bot.agents.model_router import set_global_router as _set_global_router
+    _set_global_router(model_router)
+    logger.info("Model router initialized (learned routing active)")
+
+    # Tool registry — loads tools/manifest.yaml at startup (GAP H4)
+    tool_registry = ToolRegistry.load()
+    set_tool_registry(tool_registry)
+    application.bot_data["tool_registry"] = tool_registry
+    loaded_tools = tool_registry.list_tools()
+    logger.info(
+        f"Tool registry loaded: {len(loaded_tools)} tool(s) active "
+        f"({[t['name'] for t in loaded_tools]})"
+    )
+
+    # Dispatch lint check — assert no CLI-based agent dispatch (GAP H5)
+    try:
+        from bot.agents.dispatch_lint import lint_bot_dispatch
+        lint_report = lint_bot_dispatch()
+        if lint_report["clean"]:
+            logger.info(
+                f"Dispatch lint: CLEAN ({lint_report['files_scanned']} files scanned, "
+                "no CLI dispatch violations)"
+            )
+        else:
+            violations = lint_report["violations"]
+            logger.warning(
+                f"Dispatch lint: {len(violations)} CLI dispatch violation(s) detected — "
+                "agents should use get_runner() instead of subprocess. "
+                f"Violations: {violations}"
+            )
+    except Exception as lint_exc:
+        logger.warning(f"Dispatch lint check failed (non-fatal): {lint_exc}")
 
     # User preferences shares the same DB connection
     preferences = PreferenceStore(memory._db)
@@ -166,6 +251,7 @@ async def post_init(application) -> None:
         memory=memory,
         web_conversations=web_conversations,
         token_tracker=token_tracker,
+        recall_webhook_secret=RECALL_WEBHOOK_SECRET or None,
     )
     application.bot_data["webhook_runner"] = webhook_runner
     if WEBHOOK_AUTH_TOKEN:
