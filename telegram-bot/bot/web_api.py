@@ -13,6 +13,7 @@ import json
 import logging
 import mimetypes
 import os
+import re
 import stat
 import time
 import uuid
@@ -21,6 +22,8 @@ from typing import Optional
 
 import aiosqlite
 from aiohttp import web
+
+import aiohttp as _aiohttp_lib
 
 from bot.agents.definitions import ALL_AGENTS, SUBAGENTS, NIMROD
 from bot.agents.orchestrator import NimrodOrchestrator
@@ -33,6 +36,33 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 _BOOT_TIME = time.monotonic()
 _VERSION = "1.0.0"
+
+# ---------------------------------------------------------------------------
+# Telegram notification on agent completion
+# ---------------------------------------------------------------------------
+_TG_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "")
+_TG_CHAT_ID = os.getenv("REPORT_CHAT_ID", "")
+
+
+async def _notify_telegram(title: str, preview: str, is_error: bool = False) -> None:
+    """Send a Telegram notification when a GUI agent task completes."""
+    if not _TG_BOT_TOKEN or not _TG_CHAT_ID:
+        return
+    try:
+        icon = "\u274c" if is_error else "\u2705"
+        text = (
+            f"{icon} <b>GUI Agent {'Error' if is_error else 'Complete'}</b>\n\n"
+            f"<b>Chat:</b> {title}\n"
+            f"<b>Preview:</b> <code>{preview[:200]}</code>"
+        )
+        async with _aiohttp_lib.ClientSession() as session:
+            await session.post(
+                f"https://api.telegram.org/bot{_TG_BOT_TOKEN}/sendMessage",
+                json={"chat_id": _TG_CHAT_ID, "text": text, "parse_mode": "HTML"},
+                timeout=_aiohttp_lib.ClientTimeout(total=10),
+            )
+    except Exception as e:
+        logger.warning(f"Telegram notification failed: {e}")
 
 # ---------------------------------------------------------------------------
 # Auth helper
@@ -226,6 +256,18 @@ async def _run_web_orchestration(
     """Run Nimrod orchestration for a web chat and push SSE events."""
     queue = _get_or_create_stream(conversation_id)
 
+    # Fetch conversation title for Telegram notification
+    _conv_title = user_message[:60]
+    try:
+        cursor = await web_conversations._db.execute(
+            "SELECT title FROM web_conversations WHERE id = ?", (conversation_id,)
+        )
+        row = await cursor.fetchone()
+        if row and row[0]:
+            _conv_title = row[0]
+    except Exception:
+        pass
+
     try:
         # Signal that processing has started
         await queue.put({"type": "thinking", "data": "Nimrod is processing your message..."})
@@ -234,15 +276,25 @@ async def _run_web_orchestration(
         conv_history = await web_conversations.get_history_for_prompt(conversation_id)
 
         # Create orchestrator (same brain as Telegram)
-        orchestrator = NimrodOrchestrator(memory=memory_store, token_tracker=token_tracker)
+        orchestrator = NimrodOrchestrator(memory=memory_store, token_tracker=token_tracker, chat_id=conversation_id)
 
         # Live agent event callback — streams events to SSE as they happen
         async def agent_callback(event):
             await queue.put({"type": "subagent", "data": json.dumps(event)})
 
-        # Run the pipeline with live event streaming
+        # Live tool event callback — streams tool_start/tool_done to SSE
+        async def tool_callback(event):
+            await queue.put({"type": "agent_tool", "data": json.dumps(event)})
+
+        # Run the orchestration pipeline (SDK doesn't support token-level
+        # streaming, so we stream the final clean text word-by-word below).
         result = await asyncio.wait_for(
-            orchestrator.handle_message(user_message, conv_history, on_agent_event=agent_callback),
+            orchestrator.handle_message(
+                user_message, conv_history,
+                on_agent_event=agent_callback,
+                on_tool_event=tool_callback,
+                source="web",
+            ),
             timeout=7200,  # Same 2-hour zombie safety net as Telegram
         )
 
@@ -251,14 +303,16 @@ async def _run_web_orchestration(
 
         response_text = result.text
 
-        # Stream response in chunks to simulate streaming
-        # Break into ~200 char chunks for smooth UX
-        chunk_size = 200
-        for i in range(0, len(response_text), chunk_size):
-            chunk = response_text[i : i + chunk_size]
-            await queue.put({"type": "chunk", "data": chunk})
-            # Tiny yield to let the SSE consumer keep up
-            await asyncio.sleep(0.01)
+        # Stream the clean response word-by-word via SSE chunks.
+        # The SDK yields complete text blocks (no token streaming), so we
+        # add real delays between words for a ChatGPT-like drip effect.
+        # ~30ms per word ≈ 33 words/sec. TCP needs real time gaps to send
+        # separate packets; asyncio.sleep(0) is not enough.
+        words = re.split(r'(?<=\s)', response_text)
+        for word in words:
+            if word:
+                await queue.put({"type": "chunk", "data": word})
+                await asyncio.sleep(0.03)
 
         # Save assistant response
         metadata = {
@@ -283,18 +337,23 @@ async def _run_web_orchestration(
             }),
         })
 
+        # Notify via Telegram
+        await _notify_telegram(_conv_title, response_text[:200])
+
     except asyncio.TimeoutError:
         logger.error(f"Web orchestration timed out for conversation {conversation_id}")
         await queue.put({
             "type": "error",
             "data": "Orchestration timed out after 2 hours.",
         })
+        await _notify_telegram(_conv_title, "Orchestration timed out after 2 hours", is_error=True)
     except Exception as e:
         logger.exception(f"Web orchestration failed for conversation {conversation_id}")
         await queue.put({
             "type": "error",
             "data": f"Orchestration error: {str(e)[:500]}",
         })
+        await _notify_telegram(_conv_title, f"Error: {str(e)[:200]}", is_error=True)
     finally:
         # Signal stream end
         await queue.put({"type": "_done", "data": ""})
@@ -383,7 +442,7 @@ async def handle_chat_stream(request: web.Request) -> web.StreamResponse:
     try:
         while True:
             try:
-                event = await asyncio.wait_for(queue.get(), timeout=300)
+                event = await asyncio.wait_for(queue.get(), timeout=30)
             except asyncio.TimeoutError:
                 # Send keepalive comment
                 await response.write(b": keepalive\n\n")
@@ -394,6 +453,7 @@ async def handle_chat_stream(request: web.Request) -> web.StreamResponse:
 
             sse_data = json.dumps({"type": event["type"], "data": event["data"]})
             await response.write(f"data: {sse_data}\n\n".encode("utf-8"))
+            await response.drain()
 
     except (ConnectionResetError, asyncio.CancelledError):
         logger.debug(f"SSE client disconnected for conversation {conversation_id}")
@@ -886,6 +946,37 @@ async def handle_mkdir(request: web.Request) -> web.Response:
     return _json({"success": True, "path": str(target.relative_to(_FILES_ROOT))})
 
 
+async def handle_serve_file(request: web.Request) -> web.Response:
+    """GET /api/files/serve?path= — Serve file inline with correct MIME type.
+
+    Used by the FilePreviewDrawer for PDF (iframe), Excel (fetch + xlsx parse),
+    and image previews. Sets Content-Disposition: inline so browsers render
+    the file rather than downloading it.
+    """
+    if not _check_web_auth(request):
+        return _error("unauthorized", status=401)
+
+    rel_path = request.query.get("path", "")
+    if not rel_path or ".." in rel_path:
+        return _error("invalid path", status=400)
+
+    target = _FILES_ROOT / rel_path
+    if not _is_safe_path(target):
+        return _error("access denied", status=403)
+    if not target.is_file():
+        return _error("file not found", status=404)
+
+    content_type = mimetypes.guess_type(str(target))[0] or "application/octet-stream"
+    return web.FileResponse(
+        target,
+        headers={
+            **_cors_headers(),
+            "Content-Disposition": f'inline; filename="{target.name}"',
+            "Content-Type": content_type,
+        },
+    )
+
+
 async def handle_preview_file(request: web.Request) -> web.Response:
     """GET /api/files/preview?path= — Preview text file content (first 100KB)."""
     if not _check_web_auth(request):
@@ -923,6 +1014,218 @@ async def handle_preview_file(request: web.Request) -> web.Response:
         "name": target.name,
         "path": rel_path,
     })
+
+
+# ---------------------------------------------------------------------------
+# Production Trends — POD file activity dashboard
+# ---------------------------------------------------------------------------
+
+from datetime import datetime, timedelta, date as _date_type
+
+# Cache: {"data": ..., "expires": monotonic_time}
+_production_cache: dict[str, object] = {}
+_PRODUCTION_CACHE_TTL = 60  # seconds
+
+# Track latest mtime across all pod dirs for cache-busting
+_pod_last_mtime: float = 0.0
+
+
+def _scan_pod_files(project_key: str) -> list[dict]:
+    """Scan a project's pod/ dir and return [{date, filename, size, mtime}, ...]."""
+    pod_dir = PROJECTS_DIR / project_key / "pod"
+    if not pod_dir.is_dir():
+        return []
+
+    results = []
+    for entry in pod_dir.iterdir():
+        if not entry.is_file():
+            continue
+        name = entry.name
+        # Skip non-PDF files and hidden files
+        if not name.lower().endswith(".pdf") or name.startswith("."):
+            continue
+        # Parse date from filename prefix: YYYY-MM-DD_...
+        match = re.match(r"^(\d{4}-\d{2}-\d{2})_", name)
+        if not match:
+            continue
+        try:
+            file_date = datetime.strptime(match.group(1), "%Y-%m-%d").date()
+            st = entry.stat()
+            results.append({
+                "date": file_date.isoformat(),
+                "filename": name,
+                "size": st.st_size,
+                "mtime": st.st_mtime,
+            })
+        except (ValueError, OSError):
+            continue
+
+    results.sort(key=lambda r: r["date"], reverse=True)
+    return results
+
+
+def _get_pod_dirs_mtime() -> float:
+    """Return the latest mtime across all project pod/ directories."""
+    latest = 0.0
+    for key in PROJECTS:
+        pod_dir = PROJECTS_DIR / key / "pod"
+        if pod_dir.is_dir():
+            try:
+                mt = pod_dir.stat().st_mtime
+                if mt > latest:
+                    latest = mt
+            except OSError:
+                pass
+    return latest
+
+
+def _build_production_trends() -> dict:
+    """Build the full production trends response."""
+    today = datetime.now().date()
+    window_start = today - timedelta(days=6)  # 7-day window including today
+
+    date_range = []
+    for i in range(7):
+        d = window_start + timedelta(days=i)
+        date_range.append(d.isoformat())
+
+    projects_data = []
+
+    for key, info in sorted(PROJECTS.items(), key=lambda x: x[1]["number"]):
+        pod_files = _scan_pod_files(key)
+
+        # Build a date -> file count map
+        date_counts: dict[str, int] = {}
+        all_time_count = len(pod_files)
+        for pf in pod_files:
+            d = pf["date"]
+            date_counts[d] = date_counts.get(d, 0) + 1
+
+        # Daily data for the 7-day window
+        daily = []
+        for d in date_range:
+            daily.append({
+                "date": d,
+                "count": date_counts.get(d, 0),
+            })
+
+        # Today and yesterday
+        today_str = today.isoformat()
+        yesterday_str = (today - timedelta(days=1)).isoformat()
+        today_count = date_counts.get(today_str, 0)
+        yesterday_count = date_counts.get(yesterday_str, 0)
+
+        # Delta calculation
+        delta_units = today_count - yesterday_count
+        if yesterday_count > 0:
+            delta_pct = round((delta_units / yesterday_count) * 100, 1)
+        elif today_count > 0:
+            delta_pct = 100.0
+        else:
+            delta_pct = 0.0
+
+        # 7-day total
+        seven_day_total = sum(d["count"] for d in daily)
+
+        # Trend direction: compare last 3 days avg vs first 4 days avg
+        if seven_day_total == 0:
+            trend = "none"
+        else:
+            first_half = sum(d["count"] for d in daily[:4])
+            second_half = sum(d["count"] for d in daily[4:])
+            if second_half > first_half:
+                trend = "up"
+            elif second_half < first_half:
+                trend = "down"
+            else:
+                trend = "flat"
+
+        # Latest POD date
+        latest_pod = pod_files[0]["date"] if pod_files else None
+
+        # Days since last POD
+        if latest_pod:
+            days_since = (today - datetime.strptime(latest_pod, "%Y-%m-%d").date()).days
+        else:
+            days_since = None
+
+        projects_data.append({
+            "key": key,
+            "name": info["name"],
+            "number": info["number"],
+            "today": today_count,
+            "yesterday": yesterday_count,
+            "delta_units": delta_units,
+            "delta_pct": delta_pct,
+            "seven_day_total": seven_day_total,
+            "all_time_total": all_time_count,
+            "trend": trend,
+            "latest_pod_date": latest_pod,
+            "days_since_last_pod": days_since,
+            "daily": daily,
+        })
+
+    # Portfolio-wide summary
+    portfolio_today = sum(p["today"] for p in projects_data)
+    portfolio_yesterday = sum(p["yesterday"] for p in projects_data)
+    portfolio_7d = sum(p["seven_day_total"] for p in projects_data)
+    projects_reporting_today = sum(1 for p in projects_data if p["today"] > 0)
+    projects_with_data = sum(1 for p in projects_data if p["all_time_total"] > 0)
+
+    # Aggregate daily for chart (sum across all projects per date)
+    portfolio_daily = []
+    for i, d in enumerate(date_range):
+        total = sum(p["daily"][i]["count"] for p in projects_data)
+        portfolio_daily.append({"date": d, "count": total})
+
+    return {
+        "generated_at": datetime.now().isoformat(),
+        "date_range": {"start": date_range[0], "end": date_range[-1]},
+        "portfolio": {
+            "today": portfolio_today,
+            "yesterday": portfolio_yesterday,
+            "delta_units": portfolio_today - portfolio_yesterday,
+            "seven_day_total": portfolio_7d,
+            "projects_reporting_today": projects_reporting_today,
+            "total_projects": len(PROJECTS),
+            "projects_with_data": projects_with_data,
+            "daily": portfolio_daily,
+        },
+        "projects": projects_data,
+    }
+
+
+async def handle_production_trends(request: web.Request) -> web.Response:
+    """GET /api/production/trends — Production (POD) activity dashboard data."""
+    global _pod_last_mtime
+
+    if not _check_web_auth(request):
+        return _error("unauthorized", status=401)
+
+    try:
+        now = time.monotonic()
+
+        # Check if any pod directory has changed (cache bust)
+        current_mtime = _get_pod_dirs_mtime()
+        cache_valid = (
+            "data" in _production_cache
+            and _production_cache.get("expires", 0) > now
+            and current_mtime <= _pod_last_mtime
+        )
+
+        if cache_valid:
+            return _json(_production_cache["data"])
+
+        # Rebuild
+        data = _build_production_trends()
+        _production_cache["data"] = data
+        _production_cache["expires"] = now + _PRODUCTION_CACHE_TTL
+        _pod_last_mtime = current_mtime
+
+        return _json(data)
+    except Exception as e:
+        logger.exception("Failed to build production trends")
+        return _error(f"internal error: {str(e)[:200]}", status=500)
 
 
 # ---------------------------------------------------------------------------
@@ -970,6 +1273,10 @@ def setup_web_routes(app: web.Application) -> None:
     app.router.add_post("/api/files/upload-folder", handle_upload_folder)
     app.router.add_post("/api/files/mkdir", handle_mkdir)
     app.router.add_get("/api/files/preview", handle_preview_file)
+    app.router.add_get("/api/files/serve", handle_serve_file)
+
+    # Production trends (POD activity dashboard)
+    app.router.add_get("/api/production/trends", handle_production_trends)
 
     # --- Static file serving for frontend (SPA) ---
     _setup_static_serving(app)
@@ -977,7 +1284,7 @@ def setup_web_routes(app: web.Application) -> None:
     logger.info(
         "Web API routes registered: /api/health, /api/chat, /api/chat/stream, "
         "/api/conversations, /api/projects, /api/action-items, /api/agents, "
-        "/api/memories/search, /api/files + static frontend serving"
+        "/api/memories/search, /api/files, /api/production/trends + static frontend serving"
     )
 
 

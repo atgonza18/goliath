@@ -55,27 +55,73 @@ function PreviewTypeIcon({ type }: { type: PreviewType }) {
 // ── Sub-previews ─────────────────────────────────────────────────────────
 
 function PdfPreview({ filePath }: { filePath: string }) {
+  const [blobUrl, setBlobUrl] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(false);
-  const url = api.getFileServeUrl(filePath);
+  const [error, setError] = useState<string | null>(null);
+  const blobUrlRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    setLoading(true);
+    setError(null);
+
+    // Revoke any previous blob URL
+    if (blobUrlRef.current) {
+      URL.revokeObjectURL(blobUrlRef.current);
+      blobUrlRef.current = null;
+    }
+    setBlobUrl(null);
+
+    (async () => {
+      try {
+        const response = await fetch(api.getFileServeUrl(filePath));
+        if (!response.ok) throw new Error(`Failed to fetch PDF (${response.status})`);
+
+        // Detect SPA fallback or wrong content — server must return actual PDF bytes
+        const ct = response.headers.get('content-type') || '';
+        if (ct.includes('text/html')) {
+          throw new Error('Server returned HTML instead of PDF — the file may not exist or the server needs a restart');
+        }
+
+        const blob = await response.blob();
+        const url = URL.createObjectURL(blob);
+
+        if (!cancelled) {
+          blobUrlRef.current = url;
+          setBlobUrl(url);
+        } else {
+          URL.revokeObjectURL(url);
+        }
+      } catch (err) {
+        if (!cancelled) {
+          setError(err instanceof Error ? err.message : 'Failed to load PDF');
+        }
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+      if (blobUrlRef.current) {
+        URL.revokeObjectURL(blobUrlRef.current);
+        blobUrlRef.current = null;
+      }
+    };
+  }, [filePath]);
+
+  if (loading) return <div className="p-4"><ListSkeleton count={6} /></div>;
+  if (error) return <ErrorMsg message={error} />;
+  if (!blobUrl) return null;
+
+  // Use absolute positioning for bulletproof height — flex-1 on iframes
+  // can collapse to 0px in some browser/layout combinations.
   return (
     <div className="flex-1 min-h-0 relative">
-      {loading && (
-        <div className="absolute inset-0 flex items-center justify-center">
-          <ListSkeleton count={6} />
-        </div>
-      )}
-      {error && (
-        <div className="absolute inset-0 flex items-center justify-center">
-          <ErrorMsg message="Failed to load PDF" />
-        </div>
-      )}
       <iframe
-        src={url}
-        className="w-full h-full border-0"
+        src={blobUrl}
+        className="absolute inset-0 w-full h-full border-0"
         title="PDF Preview"
-        onLoad={() => setLoading(false)}
-        onError={() => { setLoading(false); setError(true); }}
       />
     </div>
   );
@@ -94,7 +140,7 @@ function MarkdownPreview({ filePath }: { filePath: string }) {
   const html = renderMarkdown(data.content);
 
   return (
-    <ScrollArea className="h-full">
+    <ScrollArea className="flex-1 min-h-0">
       <div className="p-5">
         <div
           className="prose prose-invert prose-sm max-w-none
@@ -138,7 +184,14 @@ function ExcelPreview({ filePath }: { filePath: string }) {
       try {
         const url = api.getFileServeUrl(filePath);
         const response = await fetch(url);
-        if (!response.ok) throw new Error(`Failed to fetch file: ${response.status}`);
+        if (!response.ok) throw new Error(`Failed to fetch file (${response.status})`);
+
+        // Detect SPA fallback — server returned HTML instead of spreadsheet bytes
+        const ct = response.headers.get('content-type') || '';
+        if (ct.includes('text/html')) {
+          throw new Error('Server returned HTML instead of spreadsheet — the file may not exist or the server needs a restart');
+        }
+
         const buffer = await response.arrayBuffer();
 
         // Dynamic import to keep xlsx out of the main bundle
@@ -175,7 +228,7 @@ function ExcelPreview({ filePath }: { filePath: string }) {
   const sheet = sheets[activeSheet];
 
   return (
-    <div className="flex flex-col h-full">
+    <div className="flex flex-col flex-1 min-h-0">
       {/* Sheet tabs (if multiple) */}
       {sheets.length > 1 && (
         <div className="flex items-center gap-1 px-3 py-1.5 border-b border-border overflow-x-auto shrink-0">
@@ -233,7 +286,7 @@ function ExcelPreview({ filePath }: { filePath: string }) {
 function ImagePreview({ filePath }: { filePath: string }) {
   const url = api.getFileServeUrl(filePath);
   return (
-    <ScrollArea className="h-full">
+    <ScrollArea className="flex-1 min-h-0">
       <div className="flex items-center justify-center p-6">
         <img
           src={url}
@@ -257,7 +310,7 @@ function TextPreview({ filePath }: { filePath: string }) {
   if (!data) return null;
 
   return (
-    <ScrollArea className="h-full">
+    <ScrollArea className="flex-1 min-h-0">
       <pre className="p-4 text-[11px] leading-relaxed font-mono text-foreground/80 whitespace-pre-wrap break-words">
         {data.content}
         {data.truncated && <TruncationNotice size={data.size} />}
@@ -268,7 +321,7 @@ function TextPreview({ filePath }: { filePath: string }) {
 
 function UnsupportedPreview({ fileName, onDownload }: { fileName: string; onDownload: () => void }) {
   return (
-    <div className="flex flex-col items-center justify-center h-full gap-4 p-8 text-center">
+    <div className="flex flex-col items-center justify-center flex-1 min-h-0 gap-4 p-8 text-center">
       <AlertCircle className="h-10 w-10 text-muted-foreground/40" />
       <div>
         <p className="text-sm text-foreground/80 font-medium mb-1">
