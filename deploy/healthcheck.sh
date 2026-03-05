@@ -2,6 +2,13 @@
 # Health check for GOLIATH bot
 # Can be called by cron or monitoring tools
 # Returns 0 if healthy, 1 if unhealthy
+#
+# IMPORTANT: This script must NEVER kill Claude CLI processes.
+# The runner.py SubagentRunner has its own 12-minute operational timeout
+# and circuit breaker. External process killing causes false positives
+# because grep/pkill -f matches system prompt text inside process args,
+# not just actual stuck processes. 1,644 confirmed false kills before
+# this was fixed on 2026-03-05.
 
 set -euo pipefail
 
@@ -28,26 +35,20 @@ if [ -f "$LOG_FILE" ]; then
     fi
 fi
 
-# Check 3: Are there stuck Claude CLI processes? (>15 min)
-stuck_count=$(find /proc -maxdepth 2 -name cmdline -exec grep -l "claude.*--print" {} \; 2>/dev/null | while read f; do
-    pid=$(echo "$f" | cut -d/ -f3)
-    # Check if process is older than 15 minutes (900 seconds)
-    if [ -f "/proc/$pid/stat" ]; then
-        start_time=$(awk '{print $22}' "/proc/$pid/stat" 2>/dev/null || echo 0)
-        uptime_ticks=$(awk '{print $1}' /proc/uptime 2>/dev/null | cut -d. -f1)
-        clk_tck=$(getconf CLK_TCK)
-        proc_age=$(( uptime_ticks - start_time / clk_tck ))
-        if [ "$proc_age" -gt 900 ]; then
-            echo "$pid"
-        fi
-    fi
-done | wc -l)
-
-if [ "$stuck_count" -gt 0 ]; then
-    echo "WARNING: $stuck_count stuck Claude CLI process(es) detected (>15 min)"
-    echo "Killing stuck processes..."
-    pkill -f "claude.*--print" --older 15m 2>/dev/null || true
-fi
+# NOTE: Stuck Claude CLI process detection was REMOVED on 2026-03-05.
+# Reason: pkill -f / grep against /proc/*/cmdline matches ANY process
+# whose command-line arguments contain "claude.*--print" — including
+# the DevOps agent, whose system prompt (passed via --system-prompt)
+# contains that exact text as documentation. This caused 1,644 false
+# kills of legitimate, actively-running agent processes.
+#
+# The runner.py already handles stuck processes correctly:
+#   - OPERATIONAL_TIMEOUT (12 min) kills genuinely stuck subagents
+#   - Circuit breaker backs off after 3 consecutive failures
+#   - asyncio.wait_for() enforces hard deadline per subprocess
+#
+# DO NOT re-add process killing here. If you need zombie cleanup,
+# implement it in runner.py using tracked PIDs, not pattern matching.
 
 echo "HEALTHY: $SERVICE is running"
 exit 0

@@ -186,10 +186,20 @@ sudo -u "$GOLIATH_USER" mkdir -p "$GOLIATH_ROOT/telegram-bot/data"
 sudo -u "$GOLIATH_USER" mkdir -p "$GOLIATH_ROOT/cron-jobs/reports"
 sudo -u "$GOLIATH_USER" mkdir -p "$GOLIATH_ROOT/.secrets"
 
-# Health check cron (every 5 minutes)
-HEALTHCHECK_CRON="*/5 * * * * $GOLIATH_ROOT/deploy/healthcheck.sh >> /var/log/goliath-health.log 2>&1"
+# Health check cron (every 10 minutes — service-alive check only, no process killing)
+# NOTE: healthcheck.sh only checks if systemd service is running + log freshness.
+# Stuck Claude CLI processes are handled by runner.py's built-in 12-min timeout.
+# DO NOT re-add process killing — see healthcheck.sh comments for full history.
+HEALTHCHECK_CRON="*/10 * * * * $GOLIATH_ROOT/deploy/healthcheck.sh >> /var/log/goliath-health.log 2>&1"
 (crontab -l 2>/dev/null | grep -v "healthcheck.sh"; echo "$HEALTHCHECK_CRON") | crontab -
-log "Health check cron installed (every 5 minutes)"
+log "Health check cron installed (every 10 minutes — service-alive only)"
+
+# TCP keepalive settings (prevents Hetzner NAT from dropping idle connections)
+if [ -f "$GOLIATH_ROOT/deploy/99-goliath-keepalive.conf" ]; then
+    cp "$GOLIATH_ROOT/deploy/99-goliath-keepalive.conf" /etc/sysctl.d/99-goliath-keepalive.conf
+    sysctl -p /etc/sysctl.d/99-goliath-keepalive.conf
+    log "TCP keepalive settings applied (60s idle, 10s interval, 6 probes)"
+fi
 
 # Set timezone to US Central
 timedatectl set-timezone America/Chicago 2>/dev/null || warn "Could not set timezone (may need manual setup)"
