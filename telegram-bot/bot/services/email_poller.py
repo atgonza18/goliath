@@ -36,6 +36,7 @@ import imaplib
 import logging
 import os
 import re
+import sys
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
@@ -699,7 +700,37 @@ class EmailPoller:
                 subject=subject,
                 files=saved_files,
             )
+            # Trigger async POD data extraction for saved PDF files
+            self._trigger_pod_extraction(saved_files, project_key)
         return bool(saved_files)
+
+    def _trigger_pod_extraction(self, files: list[Path], project_key: str) -> None:
+        """Kick off POD data extraction in a background thread (non-blocking)."""
+        import concurrent.futures
+        pdf_files = [f for f in files if f.suffix.lower() == ".pdf" and ".corrupted" not in f.name]
+        if not pdf_files:
+            return
+
+        def _run_extraction():
+            import subprocess
+            script = Path(__file__).resolve().parent.parent.parent.parent / "scripts" / "extract_pod_data.py"
+            if not script.exists():
+                logger.debug(f"POD extraction script not found: {script}")
+                return
+            for pdf in pdf_files:
+                try:
+                    subprocess.run(
+                        [sys.executable, str(script), "--file", str(pdf)],
+                        capture_output=True, timeout=180,
+                    )
+                except Exception:
+                    logger.debug(f"POD extraction failed for {pdf.name}", exc_info=True)
+
+        try:
+            executor = concurrent.futures.ThreadPoolExecutor(max_workers=1)
+            executor.submit(_run_extraction)
+        except Exception:
+            logger.debug("Could not start POD extraction thread", exc_info=True)
 
     async def _file_constraints_attachments(
         self, subject: str, sender: str, attachments: list[dict], today: str
@@ -810,12 +841,81 @@ class EmailPoller:
 
         return any_saved
 
+    def _validate_attachment(self, data: bytes, filename: str) -> tuple[bytes, str]:
+        """Validate an attachment payload and attempt repair if corrupted.
+
+        Returns (clean_data, status) where status is one of:
+          - 'clean': data is valid
+          - 'repaired': null prefix was stripped, data is now valid
+          - 'corrupted': data has irreparable corruption (UTF-8 mangling)
+        """
+        if not data:
+            return data, "clean"
+
+        # Check 1: null prefix (Power Automate sometimes prepends "null")
+        if data[:4] == b"null":
+            stripped = data[4:]
+            replacement_count = stripped.count(b"\xef\xbf\xbd")
+
+            # Check if stripping reveals valid content
+            if stripped[:5] == b"%PDF-" or stripped[:2] == b"PK":
+                if replacement_count > 50:
+                    # Has valid header after strip but deep corruption from
+                    # UTF-8 mangling. Still strip null so the file is more
+                    # usable — at least tools can try to open it.
+                    pct = (replacement_count * 3 / len(stripped)) * 100
+                    logger.warning(
+                        f"Attachment '{filename}' is corrupted: null prefix stripped "
+                        f"but {replacement_count:,} UTF-8 replacement chars (~{pct:.1f}%%) "
+                        f"— Power Automate binary mangling"
+                    )
+                    return stripped, "corrupted"
+                logger.warning(
+                    f"Attachment '{filename}' had 'null' prefix — stripped successfully"
+                )
+                return stripped, "repaired"
+
+            # Still not valid after stripping
+            if replacement_count > 50:
+                logger.warning(
+                    f"Attachment '{filename}' is corrupted: null prefix + "
+                    f"{replacement_count:,} UTF-8 replacement chars — lossy mangling"
+                )
+                return stripped, "corrupted"
+            logger.warning(
+                f"Attachment '{filename}' had 'null' prefix but unknown format after strip"
+            )
+            return stripped, "repaired"
+
+        # Check 2: excessive UTF-8 replacement characters (EF BF BD)
+        # This indicates binary data was round-tripped through text encoding
+        if filename.lower().endswith(".pdf"):
+            replacement_count = data.count(b"\xef\xbf\xbd")
+            if replacement_count > 100:
+                pct = (replacement_count * 3 / len(data)) * 100
+                logger.warning(
+                    f"Attachment '{filename}' has {replacement_count:,} UTF-8 "
+                    f"replacement chars (~{pct:.1f}% of file) — corrupted"
+                )
+                return data, "corrupted"
+
+            # Check 3: PDF should start with %PDF-
+            if not data[:5] == b"%PDF-":
+                # Could be other valid formats, only flag PDFs
+                logger.warning(
+                    f"PDF '{filename}' missing %%PDF- magic bytes. "
+                    f"First 20 bytes: {data[:20].hex()}"
+                )
+
+        return data, "clean"
+
     def _save_attachments(
         self, attachments: list[dict], target_dir: Path, today: str
     ) -> list[Path]:
         """Save a list of attachments to a target directory.
 
         Adds date prefix if filename doesn't already have one.
+        Validates attachments for corruption before saving.
         Avoids overwriting by appending a numeric suffix.
 
         Returns list of saved file paths.
@@ -825,6 +925,9 @@ class EmailPoller:
             filename = att["filename"]
             data = att["data"]
 
+            # Validate and attempt repair
+            clean_data, status = self._validate_attachment(data, filename)
+
             # Sanitize filename — keep alphanumeric, hyphens, dots, underscores, spaces, parens
             safe_name = re.sub(r'[^\w\-._() ]', '', filename).strip()
             if not safe_name:
@@ -833,6 +936,10 @@ class EmailPoller:
             # Add date prefix if filename doesn't already start with a date pattern
             if not re.match(r'^\d{4}[-_]\d{2}[-_]\d{2}', safe_name):
                 safe_name = f"{today}_{safe_name}"
+
+            # Corrupted files get .corrupted extension
+            if status == "corrupted":
+                safe_name = safe_name + ".corrupted"
 
             filepath = target_dir / safe_name
 
@@ -846,9 +953,34 @@ class EmailPoller:
                     counter += 1
 
             try:
-                filepath.write_bytes(data)
+                filepath.write_bytes(clean_data)
                 saved.append(filepath)
-                logger.info(f"Saved attachment: {filepath}")
+                log_msg = f"Saved attachment: {filepath}"
+                if status == "repaired":
+                    log_msg += " (repaired: null prefix stripped)"
+                elif status == "corrupted":
+                    log_msg += " (CORRUPTED — saved with .corrupted extension)"
+                logger.info(log_msg)
+
+                # Send Telegram alert for corrupted files
+                if status == "corrupted" and hasattr(self, '_bot') and self._bot:
+                    try:
+                        asyncio.get_event_loop().create_task(
+                            self._bot.send_message(
+                                chat_id=REPORT_CHAT_ID,
+                                text=(
+                                    f"<b>Corrupted attachment detected</b>\n"
+                                    f"<code>{filename}</code>\n"
+                                    f"Saved as: <code>{filepath.name}</code>\n"
+                                    f"The file has irreparable UTF-8 mangling. "
+                                    f"Check Power Automate email relay."
+                                ),
+                                parse_mode="HTML",
+                            )
+                        )
+                    except Exception:
+                        logger.debug("Could not send corruption alert to Telegram")
+
             except Exception:
                 logger.exception(f"Failed to save attachment {safe_name} to {target_dir}")
 
