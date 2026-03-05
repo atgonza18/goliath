@@ -13,6 +13,7 @@ ExecStop=/bin/kill -SIGTERM $MAINPID
 
 # Environment
 EnvironmentFile=/opt/goliath/.env
+Environment=TZ=America/Chicago
 
 # Auto-restart on crash
 Restart=always

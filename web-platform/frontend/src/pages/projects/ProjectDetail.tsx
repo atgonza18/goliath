@@ -6,6 +6,7 @@ import { StatusBadge } from '../../components/common/StatusBadge';
 import { LoadingSpinner } from '../../components/common/LoadingSpinner';
 import { ErrorState } from '../../components/common/ErrorState';
 import { Button } from '@/components/ui/button';
+import { parseLocalDate } from '@/lib/utils';
 import { Card, CardContent } from '@/components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
@@ -173,10 +174,10 @@ export function ProjectDetail({ projectKey, onBack }: ProjectDetailProps) {
                     </div>
                     <div className="flex items-center gap-4 mt-3 text-xs text-muted-foreground">
                       {constraint.createdAt && (
-                        <span>Logged: {new Date(constraint.createdAt).toLocaleDateString()}</span>
+                        <span>Logged: {parseLocalDate(constraint.createdAt).toLocaleDateString()}</span>
                       )}
                       {constraint.dueDate && (
-                        <span>Due: {new Date(constraint.dueDate).toLocaleDateString()}</span>
+                        <span>Due: {parseLocalDate(constraint.dueDate).toLocaleDateString()}</span>
                       )}
                     </div>
                     {constraint.notes && (
@@ -204,9 +205,9 @@ export function ProjectDetail({ projectKey, onBack }: ProjectDetailProps) {
                       </div>
                     </div>
                     <div className="flex items-center gap-4 mt-3 text-xs text-muted-foreground">
-                      <span>Logged: {new Date(constraint.dateLogged).toLocaleDateString()}</span>
+                      <span>Logged: {parseLocalDate(constraint.dateLogged).toLocaleDateString()}</span>
                       {constraint.dueDate && (
-                        <span>Due: {new Date(constraint.dueDate).toLocaleDateString()}</span>
+                        <span>Due: {parseLocalDate(constraint.dueDate).toLocaleDateString()}</span>
                       )}
                     </div>
                   </CardContent>

@@ -1021,6 +1021,9 @@ async def handle_preview_file(request: web.Request) -> web.Response:
 # ---------------------------------------------------------------------------
 
 from datetime import datetime, timedelta, date as _date_type
+from zoneinfo import ZoneInfo
+
+_CT = ZoneInfo("America/Chicago")
 
 # Cache: {"data": ..., "expires": monotonic_time}
 _production_cache: dict[str, object] = {}
@@ -1079,9 +1082,78 @@ def _get_pod_dirs_mtime() -> float:
     return latest
 
 
+def _scan_pod_corruption() -> dict:
+    """Scan all POD PDFs for corruption and return health summary.
+
+    Returns a dict with corruption diagnostics for the frontend to display
+    meaningful error messages instead of just showing empty/null data.
+    """
+    total_pdfs = 0
+    clean_count = 0
+    corrupted_count = 0
+    null_prefix_count = 0
+    projects_affected = set()
+
+    for key in PROJECTS:
+        pod_dir = PROJECTS_DIR / key / "pod"
+        if not pod_dir.is_dir():
+            continue
+        for pdf in pod_dir.glob("*.pdf"):
+            total_pdfs += 1
+            try:
+                header = pdf.read_bytes()[:20]
+                has_null = header[:4] == b"null"
+                repl_count = header.count(b"\xef\xbf\xbd")
+
+                if has_null:
+                    null_prefix_count += 1
+                    projects_affected.add(key)
+                elif repl_count > 2:
+                    corrupted_count += 1
+                    projects_affected.add(key)
+                else:
+                    clean_count += 1
+            except Exception:
+                corrupted_count += 1
+
+    # Also check extraction log
+    extraction_failures = 0
+    if _POD_DB_PATH.exists():
+        import sqlite3 as _sq3
+        try:
+            _conn = _sq3.connect(str(_POD_DB_PATH))
+            row = _conn.execute(
+                "SELECT COUNT(*) FROM pod_extraction_log WHERE status IN ('failed', 'corrupted')"
+            ).fetchone()
+            extraction_failures = row[0] if row else 0
+            _conn.close()
+        except Exception:
+            pass
+
+    is_healthy = clean_count > 0 or extraction_failures == 0
+    issue = None
+    if corrupted_count + null_prefix_count > 0 and clean_count == 0:
+        issue = (
+            f"All {total_pdfs} POD PDFs have UTF-8 corruption from the Power Automate "
+            f"email relay. Binary attachment data was irreversibly mangled during "
+            f"forwarding. Fix: update the PA flow to use contentBytes for attachments "
+            f"instead of text encoding, or re-download clean PDFs from Office 365."
+        )
+
+    return {
+        "healthy": is_healthy,
+        "total_pdfs": total_pdfs,
+        "clean": clean_count,
+        "corrupted": corrupted_count + null_prefix_count,
+        "extraction_failures": extraction_failures,
+        "projects_affected": sorted(projects_affected),
+        "issue": issue,
+    }
+
+
 def _build_production_trends() -> dict:
     """Build the full production trends response."""
-    today = datetime.now().date()
+    today = datetime.now(_CT).date()
     window_start = today - timedelta(days=6)  # 7-day window including today
 
     date_range = []
@@ -1179,7 +1251,7 @@ def _build_production_trends() -> dict:
         portfolio_daily.append({"date": d, "count": total})
 
     return {
-        "generated_at": datetime.now().isoformat(),
+        "generated_at": _now_iso(),
         "date_range": {"start": date_range[0], "end": date_range[-1]},
         "portfolio": {
             "today": portfolio_today,
@@ -1226,6 +1298,247 @@ async def handle_production_trends(request: web.Request) -> web.Response:
     except Exception as e:
         logger.exception("Failed to build production trends")
         return _error(f"internal error: {str(e)[:200]}", status=500)
+
+
+# ---------------------------------------------------------------------------
+# Production dashboard (extracted POD data from SQLite)
+# ---------------------------------------------------------------------------
+_POD_DB_PATH = REPO_ROOT / "web-platform" / "backend" / "data" / "pod_production.db"
+_dashboard_cache: dict = {}
+_DASHBOARD_CACHE_TTL = 60  # seconds
+
+
+async def handle_production_dashboard(request: web.Request) -> web.Response:
+    """GET /api/production/dashboard — Real production data from POD extraction."""
+    if not _check_web_auth(request):
+        return _error("unauthorized", status=401)
+
+    try:
+        days = min(max(int(request.query.get("days", "30")), 1), 365)
+        now = time.monotonic()
+
+        if _dashboard_cache.get("expires", 0) > now and "data" in _dashboard_cache:
+            return _json(_dashboard_cache["data"])
+
+        if not _POD_DB_PATH.exists():
+            return _json({
+                "generated_at": _now_iso(),
+                "portfolio": {
+                    "active_sites": 0,
+                    "total_projects": len(PROJECTS),
+                    "today_totals": {},
+                    "daily_series": [],
+                },
+                "projects": [
+                    {
+                        "key": k,
+                        "name": PROJECTS[k]["name"],
+                        "number": PROJECTS[k]["number"],
+                        "latest_date": None,
+                        "has_data": False,
+                        "activities": [],
+                        "daily_series": [],
+                    }
+                    for k in sorted(PROJECTS, key=lambda x: PROJECTS[x]["number"])
+                ],
+            })
+
+        import sqlite3
+        from datetime import datetime, timedelta
+        from zoneinfo import ZoneInfo
+
+        ct = ZoneInfo("America/Chicago")
+        today_str = datetime.now(ct).strftime("%Y-%m-%d")
+        cutoff = (datetime.now(ct) - timedelta(days=days)).strftime("%Y-%m-%d")
+
+        conn = sqlite3.connect(str(_POD_DB_PATH))
+        conn.row_factory = sqlite3.Row
+        rows = conn.execute(
+            """SELECT project_key, report_date, activity, quantity_today, unit,
+                      percent_complete, actual_rate, required_rate, blocks, notes
+               FROM pod_production WHERE report_date >= ?
+               ORDER BY report_date DESC, project_key, activity""",
+            (cutoff,),
+        ).fetchall()
+
+        # Build per-project data
+        project_map: dict = {}
+        for row in rows:
+            pk = row["project_key"]
+            if pk not in project_map:
+                project_map[pk] = {"activities": [], "daily": {}, "latest": None}
+            pm = project_map[pk]
+            rd = row["report_date"]
+            if not pm["latest"] or rd > pm["latest"]:
+                pm["latest"] = rd
+            pm["activities"].append(dict(row))
+            if rd not in pm["daily"]:
+                pm["daily"][rd] = {}
+            pm["daily"][rd][row["activity"]] = (
+                pm["daily"][rd].get(row["activity"], 0) + (row["quantity_today"] or 0)
+            )
+
+        # Build response
+        projects_out = []
+        portfolio_daily: dict = {}
+        active_sites = 0
+        today_totals: dict = {}
+
+        for k in sorted(PROJECTS, key=lambda x: PROJECTS[x]["number"]):
+            info = PROJECTS[k]
+            pd = project_map.get(k)
+            has_data = bool(pd and pd["activities"])
+
+            latest_activities = []
+            if pd and pd["latest"]:
+                latest_activities = [
+                    {
+                        "activity": a["activity"],
+                        "quantity_today": a["quantity_today"],
+                        "unit": a["unit"],
+                        "percent_complete": a["percent_complete"],
+                        "actual_rate": a["actual_rate"],
+                        "required_rate": a["required_rate"],
+                        "blocks": a["blocks"],
+                        "notes": a["notes"],
+                    }
+                    for a in pd["activities"]
+                    if a["report_date"] == pd["latest"]
+                ]
+
+            if pd and pd["latest"] == today_str:
+                active_sites += 1
+
+            # Today totals
+            if pd and today_str in pd["daily"]:
+                for act, qty in pd["daily"][today_str].items():
+                    if act in today_totals:
+                        today_totals[act]["quantity"] += qty
+                    else:
+                        unit = "units"
+                        for a in pd["activities"]:
+                            if a["activity"] == act and a["unit"]:
+                                unit = a["unit"]
+                                break
+                        today_totals[act] = {"quantity": qty, "unit": unit}
+
+            # Daily series
+            daily_series = []
+            if pd:
+                for date in sorted(pd["daily"]):
+                    activities = pd["daily"][date]
+                    total = sum(activities.values())
+                    daily_series.append({"date": date, "activities": activities, "total": total})
+                    # Portfolio aggregation
+                    if date not in portfolio_daily:
+                        portfolio_daily[date] = {}
+                    for act, qty in activities.items():
+                        portfolio_daily[date][act] = portfolio_daily[date].get(act, 0) + qty
+
+            projects_out.append({
+                "key": k,
+                "name": info["name"],
+                "number": info["number"],
+                "latest_date": pd["latest"] if pd else None,
+                "has_data": has_data,
+                "activities": latest_activities,
+                "daily_series": daily_series,
+            })
+
+        conn.close()
+
+        port_daily = [
+            {"date": d, "activities": a, "total": sum(a.values())}
+            for d, a in sorted(portfolio_daily.items())
+        ]
+
+        # ── Corruption scan: check if POD PDFs are extractable ─────
+        corruption_info = _scan_pod_corruption()
+
+        data = {
+            "generated_at": _now_iso(),
+            "portfolio": {
+                "active_sites": active_sites,
+                "total_projects": len(PROJECTS),
+                "today_totals": today_totals,
+                "daily_series": port_daily,
+            },
+            "projects": projects_out,
+            "extraction_health": corruption_info,
+        }
+
+        _dashboard_cache["data"] = data
+        _dashboard_cache["expires"] = now + _DASHBOARD_CACHE_TTL
+        return _json(data)
+
+    except Exception as e:
+        logger.exception("Failed to build production dashboard")
+        return _error(f"internal error: {str(e)[:200]}", status=500)
+
+
+async def handle_extraction_status(request: web.Request) -> web.Response:
+    """GET /api/production/extraction-status — Extraction pipeline health."""
+    if not _check_web_auth(request):
+        return _error("unauthorized", status=401)
+
+    try:
+        if not _POD_DB_PATH.exists():
+            return _json({
+                "generated_at": _now_iso(),
+                "summary": {
+                    "total_files_processed": 0,
+                    "success": 0, "failed": 0, "corrupted": 0,
+                    "total_activities_extracted": 0,
+                    "last_successful_extraction": None,
+                },
+                "recent_extractions": [],
+            })
+
+        import sqlite3
+
+        conn = sqlite3.connect(str(_POD_DB_PATH))
+        conn.row_factory = sqlite3.Row
+
+        totals = conn.execute(
+            "SELECT status, COUNT(*) as count FROM pod_extraction_log GROUP BY status"
+        ).fetchall()
+
+        recent = conn.execute(
+            """SELECT source_file, project_key, report_date, status, error_message, extracted_at
+               FROM pod_extraction_log ORDER BY extracted_at DESC LIMIT 20"""
+        ).fetchall()
+
+        last_row = conn.execute(
+            "SELECT MAX(extracted_at) as last FROM pod_extraction_log WHERE status = 'success'"
+        ).fetchone()
+
+        act_count = conn.execute("SELECT COUNT(*) as count FROM pod_production").fetchone()
+
+        conn.close()
+
+        status_map = {r["status"]: r["count"] for r in totals}
+
+        return _json({
+            "generated_at": _now_iso(),
+            "summary": {
+                "total_files_processed": sum(r["count"] for r in totals),
+                "success": status_map.get("success", 0),
+                "failed": status_map.get("failed", 0),
+                "corrupted": status_map.get("corrupted", 0),
+                "total_activities_extracted": act_count["count"] if act_count else 0,
+                "last_successful_extraction": last_row["last"] if last_row else None,
+            },
+            "recent_extractions": [dict(r) for r in recent],
+        })
+    except Exception as e:
+        logger.exception("Failed to get extraction status")
+        return _error(f"internal error: {str(e)[:200]}", status=500)
+
+
+def _now_iso() -> str:
+    from datetime import datetime
+    from zoneinfo import ZoneInfo
+    return datetime.now(ZoneInfo("America/Chicago")).isoformat()
 
 
 # ---------------------------------------------------------------------------
@@ -1277,6 +1590,8 @@ def setup_web_routes(app: web.Application) -> None:
 
     # Production trends (POD activity dashboard)
     app.router.add_get("/api/production/trends", handle_production_trends)
+    app.router.add_get("/api/production/dashboard", handle_production_dashboard)
+    app.router.add_get("/api/production/extraction-status", handle_extraction_status)
 
     # --- Static file serving for frontend (SPA) ---
     _setup_static_serving(app)

@@ -9,6 +9,7 @@ import {
   MoreVertical,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { parseLocalDate } from '@/lib/utils';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -55,7 +56,7 @@ function getFileIcon(item: FileItem) {
 }
 
 function formatDate(iso: string): string {
-  const d = new Date(iso);
+  const d = parseLocalDate(iso);
   const now = new Date();
   const diff = now.getTime() - d.getTime();
   const days = Math.floor(diff / (1000 * 60 * 60 * 24));

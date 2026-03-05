@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { Check, ChevronDown, User, Calendar } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { cn } from '@/lib/utils';
+import { cn, parseLocalDate } from '@/lib/utils';
 import type { ActionItem } from '../../types';
 import { StatusBadge } from '../../components/common/StatusBadge';
 
@@ -61,7 +61,7 @@ export function ActionItemRow({ item, onResolve }: ActionItemRowProps) {
           </p>
           <div className="flex items-center gap-3 mt-1">
             <span className="text-xs text-muted-foreground">
-              {new Date(item.date).toLocaleDateString()}
+              {parseLocalDate(item.date).toLocaleDateString()}
             </span>
             {item.project && (
               <Badge variant="secondary" className="text-[10px] px-1.5 py-0 h-4">
@@ -98,7 +98,7 @@ export function ActionItemRow({ item, onResolve }: ActionItemRowProps) {
               {item.dueDate && (
                 <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
                   <Calendar className="h-3 w-3" />
-                  Due: {new Date(item.dueDate).toLocaleDateString()}
+                  Due: {parseLocalDate(item.dueDate).toLocaleDateString()}
                 </div>
               )}
             </div>
