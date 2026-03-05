@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { NavLink, useLocation } from 'react-router-dom';
-import { MessageSquare, FolderKanban, CheckSquare, Bot, FolderOpen, Palette, Check } from 'lucide-react';
+import { MessageSquare, FolderKanban, BarChart3, CheckSquare, Bot, FolderOpen, Palette, Check } from 'lucide-react';
 import {
   Sidebar as ShadcnSidebar,
   SidebarContent,
@@ -19,9 +19,10 @@ import { useTheme, THEMES } from '@/contexts/ThemeContext';
 const navItems = [
   { to: '/', label: 'CHAT', icon: MessageSquare, color: 'var(--chart-1)' },
   { to: '/projects', label: 'PROJECTS', icon: FolderKanban, color: 'var(--chart-2)' },
-  { to: '/action-items', label: 'ACTIONS', icon: CheckSquare, color: 'var(--chart-3)' },
-  { to: '/agents', label: 'AGENTS', icon: Bot, color: 'var(--chart-4)' },
-  { to: '/files', label: 'FILES', icon: FolderOpen, color: 'var(--chart-5)' },
+  { to: '/production', label: 'PRODUCTION', icon: BarChart3, color: 'var(--chart-3)' },
+  { to: '/action-items', label: 'ACTIONS', icon: CheckSquare, color: 'var(--chart-4)' },
+  { to: '/agents', label: 'AGENTS', icon: Bot, color: 'var(--chart-5)' },
+  { to: '/files', label: 'FILES', icon: FolderOpen, color: 'var(--chart-1)' },
 ];
 
 export function AppSidebar() {
