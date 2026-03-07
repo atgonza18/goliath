@@ -84,20 +84,15 @@ def test_webhook_server() -> tuple[bool, str]:
 
 
 def test_web_api() -> tuple[bool, str]:
-    """Test if the web platform API responds."""
+    """Test if the web platform API responds on port 8000."""
     try:
         import requests
-        # Try port 80 first, then 3001
-        for port in [80, 3001]:
-            try:
-                resp = requests.get(f"http://localhost:{port}/api/health", timeout=5)
-                if resp.status_code == 200:
-                    return True, f"Web API responding on :{port}"
-            except Exception:
-                continue
-        return False, "Web API not responding on port 80 or 3001"
+        resp = requests.get("http://localhost:8000/api/health", timeout=5)
+        if resp.status_code == 200:
+            return True, "Web API responding on :8000"
+        return False, f"Web API returned status {resp.status_code} on port 8000"
     except Exception as e:
-        return False, f"Cannot test web API: {type(e).__name__}"
+        return False, f"Web API not responding on port 8000: {type(e).__name__}"
 
 
 def test_claude_cli() -> tuple[bool, str]:

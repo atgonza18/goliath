@@ -19,22 +19,18 @@ Race-condition prevention (the three-layer defense):
 Day-of-week schedule:
   Monday–Friday (workdays):
     - 12:05 AM CT — Create daily constraints folder (daily — runs every day)
-    - 5:00 AM CT  — Morning report (Bible verse + todo list + scan + trends)
+    - 5:00 AM CT  — Morning Brief (ConstraintsPro-driven: follow-up emails + call prep)
     - 6:00 AM CT  — Morning proactive thinking session
-    - 5:00 PM CT  — Daily Proactive Follow-Up PDF report (end-of-day, what to chase tomorrow)
     - 6:00 PM CT  — Evening proactive thinking session
     - 7:00 PM CT  — Folder cleanup scan
     - 11:00 PM CT — Daily scan (runs every day)
-    [DISABLED] Follow-up queue scans (10 AM, 4 PM) — replaced by consolidated PDF
   Saturday: Day off — only infrastructure tasks (email poll, etc.)
   Sunday:   Shifted schedule — reports/sessions fire at 4 PM CT
             (respects church in the morning, preps for Monday evening)
-    - 4:00 PM CT  — Morning report (Sunday edition)
+    - 4:00 PM CT  — Morning Brief (Sunday edition, Monday prep)
     - 4:00 PM CT  — Morning proactive thinking session (Sunday edition)
-    - 4:15 PM CT  — Daily Proactive Follow-Up PDF report (Sunday edition)
     - 6:00 PM CT  — Evening proactive thinking session (Sunday — same time)
     - 7:00 PM CT  — Folder cleanup scan (Sunday — same time)
-    [DISABLED] Follow-up queue scan (5 PM Sunday) — replaced by consolidated PDF
 
   Always-on tasks (every day, including Saturday):
     - Every 45s   — Poll Gmail IMAP for inbound [INBOX:] tagged emails
@@ -1421,21 +1417,23 @@ def _markdown_to_html(text: str) -> str:
 
 
 async def task_morning_report(scheduler: "Scheduler") -> None:
-    """5:00 AM CT — Generate morning report PDF and send as attachment.
+    """5:00 AM CT — Generate Morning Brief PDF and send as attachment.
 
-    Instead of sending the full report as inline text, this:
-      1. Gathers all data (action items, project health, constraints, follow-ups, scan)
-      2. Generates a PDF report
-      3. Sends a SHORT notification message to Telegram
-      4. Sends the PDF as a Telegram document attachment
+    Redesigned 2026-03-04: Now generates a "Morning Brief" driven entirely
+    by live ConstraintsPro data with two sections:
+      Section 1: FOLLOW-UP EMAILS — tiered-urgency, copy-paste-ready drafts
+      Section 2: TODAY'S CALL PREP — probing questions cross-referenced with POD/schedule
+
+    The old memory-based action items, portfolio health table, and constraint
+    movement sections have been replaced by the ConstraintsPro-first approach.
     """
     if not scheduler.bot:
-        logger.error("Morning report: no bot instance")
+        logger.error("Morning Brief: no bot instance")
         return
 
     chat_id = _get_chat_id()
     if not chat_id:
-        logger.error("Morning report: no chat ID configured (set REPORT_CHAT_ID)")
+        logger.error("Morning Brief: no chat ID configured (set REPORT_CHAT_ID)")
         return
 
     now_ct = datetime.now(CT)
@@ -1443,93 +1441,56 @@ async def task_morning_report(scheduler: "Scheduler") -> None:
     date_display = now_ct.strftime("%A, %B %d, %Y")
     is_sunday = now_ct.weekday() == 6  # 6 = Sunday
 
-    logger.info("Morning report: gathering data...")
+    logger.info("Morning Brief: starting generation...")
 
-    # ---- Step 1: Gather ALL structured data ----
+    # Gospel verse (kept from original)
     verse = _get_daily_verse(now_ct)
-    action_items = _gather_open_action_items()
-    project_health = _gather_project_health()
-    constraint_movement = _gather_constraint_movement()
-    followup_items = _gather_followup_items()
-    scan_content = _get_latest_scan_report()
 
-    # ---- Step 2: Build short notification summary ----
-    n_items = len(action_items)
-    n_changes = (len(constraint_movement.get("new", []))
-                 + len(constraint_movement.get("resolved", [])))
-    n_overdue = len(followup_items.get("overdue", []))
-    n_due = len(followup_items.get("due_today", []))
+    # Run the Morning Brief generator
+    try:
+        from bot.services.morning_brief import run_morning_brief
+        pdf_path = await run_morning_brief(verse)
+    except Exception:
+        logger.exception("Morning Brief: generation raised an exception")
+        pdf_path = None
 
-    summary_parts = []
-    if n_items > 0:
-        summary_parts.append(f"{n_items} open action items")
-    if n_changes > 0:
-        summary_parts.append(f"{n_changes} constraint changes overnight")
-    if n_overdue > 0:
-        summary_parts.append(f"{n_overdue} overdue follow-ups")
-    elif n_due > 0:
-        summary_parts.append(f"{n_due} follow-ups due today")
-    if not summary_parts:
-        summary_parts.append("all clear across the portfolio")
-
-    summary_line = "; ".join(summary_parts) + "."
-
+    # Build notification message
     if is_sunday:
         notification = (
-            f"\U0001f4cb Monday Prep Report ready \u2014 {date_display}.\n"
-            f"{summary_line}\n"
+            f"\U0001f4cb Monday Prep Brief ready \u2014 {date_display}.\n"
+            f"Follow-up emails + call prep questions inside.\n"
             f"PDF attached below."
         )
-        report_label = "Monday Prep Report"
-        file_slug = "monday-prep-report"
+        report_label = "Monday Prep Brief"
     else:
         notification = (
-            f"\u2600\ufe0f Morning report ready \u2014 {date_display}.\n"
-            f"{summary_line}\n"
+            f"\u2600\ufe0f Morning Brief ready \u2014 {date_display}.\n"
+            f"Follow-up emails + call prep questions inside.\n"
             f"PDF attached below."
         )
-        report_label = "Morning Report"
-        file_slug = "morning-report"
+        report_label = "Morning Brief"
 
-    # ---- Step 3: Generate PDF report ----
-    report_dir = REPORTS_DIR
-    report_dir.mkdir(parents=True, exist_ok=True)
-
-    pdf_path = report_dir / f"{date_iso}-{file_slug}.pdf"
-
-    # Generate PDF
-    logger.info("Morning report: generating PDF...")
-    try:
-        pdf_ok = _generate_morning_pdf(
-            pdf_path, date_iso, verse, action_items, project_health,
-            constraint_movement, followup_items, scan_content,
-        )
-    except Exception:
-        logger.exception("Morning report: PDF generation raised an exception")
-        pdf_ok = False
-
-    # ---- Step 4: Send short notification ----
+    # Send notification
     await _send_telegram(scheduler.bot, chat_id, notification)
-    logger.info(f"Morning report notification sent to chat_id={chat_id}")
+    logger.info(f"Morning Brief notification sent to chat_id={chat_id}")
 
-    # ---- Step 5: Send PDF attachment ----
+    # Send PDF attachment
     pdf_sent = False
-    if pdf_ok and pdf_path.exists():
+    if pdf_path and pdf_path.exists():
         pdf_sent = await _send_telegram_document(
             scheduler.bot, chat_id, pdf_path,
             caption=f"<b>{report_label} (PDF)</b> \u2014 {date_iso}",
         )
 
-    # ---- Summary log ----
     logger.info(
-        f"Morning report complete: PDF {'sent' if pdf_sent else 'FAILED'} "
-        f"({pdf_path.name})"
+        f"Morning Brief complete: PDF {'sent' if pdf_sent else 'FAILED'} "
+        f"({pdf_path.name if pdf_path else 'no file'})"
     )
 
     if not pdf_sent:
         await _send_telegram(
             scheduler.bot, chat_id,
-            f"<i>Note: Morning report PDF generation or delivery failed.</i>"
+            f"<i>Note: Morning Brief PDF generation or delivery failed.</i>"
         )
 
 
@@ -2096,10 +2057,10 @@ async def task_health_check(scheduler: "Scheduler") -> None:
     """Run the central health monitor and send results to Telegram.
 
     Executes health_monitor.py as a subprocess. The health monitor checks:
-      - systemd service status (goliath-bot, goliath-web)
+      - systemd service status (goliath-bot)
       - database freshness and integrity
       - disk usage
-      - network health (web API, Cloudflare tunnel)
+      - network health (web GUI on port 8000, Cloudflare tunnel)
       - cron job output files
     """
     script_path = CRON_JOBS_DIR / "health_monitor.py"
@@ -2142,6 +2103,92 @@ async def task_token_health_check(scheduler: "Scheduler") -> None:
 # ------------------------------------------------------------------
 # Self-Improvement Tasks (V3 Experience Replay + V4 Prompt Review)
 # ------------------------------------------------------------------
+
+async def task_routing_adjustment(scheduler: "Scheduler") -> None:
+    """Nightly 4:30 AM CT — Run learned model routing adjustment (GAP H3).
+
+    Analyses per-(agent, task_type, model) outcome stats for the last 30 days.
+    If failure rate exceeds the threshold, auto-escalates the model tier and
+    logs the override to model_routing_overrides table.
+    """
+    from bot.agents.model_router import run_routing_adjustment
+
+    try:
+        adjustments = await run_routing_adjustment()
+        if adjustments:
+            for adj in adjustments:
+                logger.warning(
+                    f"Routing auto-adjusted: {adj['agent_name']}/{adj['task_type']} "
+                    f"{adj['from_model']} → {adj['to_model']} "
+                    f"(failure_rate={adj['failure_rate']*100:.1f}%)"
+                )
+        else:
+            logger.info("Routing adjustment: no overrides needed")
+    except Exception as e:
+        logger.error(f"Routing adjustment task failed: {e}", exc_info=True)
+
+
+async def task_semantic_promotion(scheduler: "Scheduler") -> None:
+    """Daily 3:30 AM CT — Promote episodic memories to semantic (GAP H2).
+
+    Scans episodic_memories for pattern_keys that span ≥3 distinct projects
+    and promotes them to cross-project semantic_memories if not already done.
+    """
+    from bot.memory.tiered_memory import run_semantic_promotion
+
+    try:
+        promoted = await run_semantic_promotion()
+        if promoted:
+            logger.info(f"Semantic promotion: {len(promoted)} new semantic memory(ies) created")
+        else:
+            logger.info("Semantic promotion: no new patterns to promote")
+    except Exception as e:
+        logger.error(f"Semantic promotion task failed: {e}", exc_info=True)
+
+
+async def task_weekly_reliability_rollup(scheduler: "Scheduler") -> None:
+    """Monday 4 AM CT — Generate weekly reliability rollup and log to bot.log.
+
+    Queries the reliability_log table for the past 7 days and logs a structured
+    summary so it can be reviewed in the activity log or /reliability command.
+    If REPORT_CHAT_ID is configured, the rollup is also sent to Telegram.
+    """
+    from bot.config import MEMORY_DB_PATH, REPORT_CHAT_ID
+    from bot.memory.reliability_log import ReliabilityLogStore
+
+    try:
+        import aiosqlite
+        async with aiosqlite.connect(str(MEMORY_DB_PATH)) as db:
+            await db.execute("PRAGMA journal_mode = WAL")
+            store = ReliabilityLogStore(db)
+            await store.initialize()
+            rollup = await store.weekly_rollup(weeks_back=1)
+
+        logger.info(
+            f"Weekly reliability rollup: {rollup.get('total_calls', 0)} calls, "
+            f"{rollup.get('overall_success_rate', 0)*100:.1f}% success rate, "
+            f"{rollup.get('avg_latency_ms', 0):.0f}ms avg latency"
+        )
+
+        # Send to Telegram if REPORT_CHAT_ID configured
+        if REPORT_CHAT_ID and scheduler.bot:
+            try:
+                report = store.format_rollup_report(rollup)
+                # ReliabilityLogStore is stateless re: format, instantiate fresh
+                from bot.memory.reliability_log import ReliabilityLogStore as _RLS
+                dummy = _RLS.__new__(_RLS)
+                report = _RLS.format_rollup_report(dummy, rollup)
+                await scheduler.bot.send_message(
+                    chat_id=int(REPORT_CHAT_ID),
+                    text=report,
+                    parse_mode="HTML",
+                )
+            except Exception as send_err:
+                logger.warning(f"Could not send reliability rollup to Telegram: {send_err}")
+
+    except Exception as e:
+        logger.error(f"Weekly reliability rollup task failed: {e}", exc_info=True)
+
 
 async def task_experience_replay(scheduler: "Scheduler") -> None:
     """2 AM CT daily — Extract lessons from low-scoring reflections.
@@ -2216,7 +2263,7 @@ def create_scheduler(bot=None) -> Scheduler:
         hour=5,
         minute=0,
         callback=task_morning_report,
-        description="5 AM CT Mon-Fri — Morning report PDF with Bible verse, todo, health summary, scan results",
+        description="5 AM CT Mon-Fri — Morning Brief PDF: follow-up emails + call prep questions (ConstraintsPro-driven)",
         days_of_week=MON_FRI,
     )
 
@@ -2289,7 +2336,7 @@ def create_scheduler(bot=None) -> Scheduler:
         hour=16,
         minute=0,
         callback=task_morning_report,
-        description="4 PM CT Sunday — Morning report (Sunday edition, prep for Monday)",
+        description="4 PM CT Sunday — Morning Brief (Sunday edition, Monday prep)",
         days_of_week=SUN_ONLY,
     )
 
@@ -2365,6 +2412,34 @@ def create_scheduler(bot=None) -> Scheduler:
         minute=0,
         callback=task_experience_replay,
         description="2 AM CT daily — Extract lessons from low-scoring reflections (self-improvement V3)",
+    )
+
+    # Weekly reliability rollup — Monday 4 AM CT (GAP H1)
+    sched.add_task(
+        name="weekly_reliability_rollup",
+        hour=4,
+        minute=0,
+        callback=task_weekly_reliability_rollup,
+        description="Monday 4 AM CT — Weekly reliability rollup: success rates by agent and task type",
+        days_of_week={0},  # Monday only
+    )
+
+    # Daily semantic memory promotion — 3:30 AM CT (GAP H2)
+    sched.add_task(
+        name="semantic_promotion",
+        hour=3,
+        minute=30,
+        callback=task_semantic_promotion,
+        description="3:30 AM CT daily — Promote episodic patterns to cross-project semantic memories",
+    )
+
+    # Nightly routing adjustment — 4:30 AM CT (GAP H3)
+    sched.add_task(
+        name="routing_adjustment",
+        hour=4,
+        minute=30,
+        callback=task_routing_adjustment,
+        description="4:30 AM CT daily — Learned model routing: auto-escalate haiku→sonnet→opus on high failure rates",
     )
 
     sched.add_task(

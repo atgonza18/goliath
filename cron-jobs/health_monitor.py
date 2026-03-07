@@ -3,12 +3,12 @@
 GOLIATH Central Health Monitor — Comprehensive system health checking.
 
 Checks all critical subsystems and reports status:
-  - Service health (goliath-bot, goliath-web systemd units)
+  - Service health (goliath-bot systemd unit)
   - Scheduler task health (database freshness, webhook server)
   - Cron job health (expected report files)
   - Database health (size, integrity, corruption checks)
   - Disk usage
-  - Network health (web API, Cloudflare tunnel, Gmail credentials)
+  - Network health (web GUI on port 8000, Cloudflare tunnel, Gmail credentials)
 
 Designed to be both importable (returns structured dict) and standalone
 (sends formatted Telegram message when issues are found).
@@ -55,9 +55,10 @@ DATABASES = {
 }
 
 # Service definitions (name -> memory limit in MB)
+# NOTE: goliath-web was removed 2026-03-06 — the web GUI now runs on port 8000
+# as part of the bot process, not as a separate systemd service.
 SERVICES = {
     "goliath-bot": 1536,   # 1.5 GB
-    "goliath-web": 512,    # 512 MB
 }
 
 # Project list (for completeness checks)
@@ -76,7 +77,7 @@ MAX_MSG_LEN = 4000
 # ======================================================================
 
 def check_service_health() -> dict:
-    """Check systemd service status for goliath-bot and goliath-web.
+    """Check systemd service status for goliath-bot.
 
     Returns a dict with status for each service including:
       - active state (running/stopped/failed)
@@ -414,35 +415,31 @@ def check_disk() -> dict:
 
 
 def check_network() -> dict:
-    """Check network health: web platform, Cloudflare tunnel, credentials.
+    """Check network health: web GUI, Cloudflare tunnel, credentials.
 
     Checks:
-      - Web platform API responds on localhost (port 80 or 3001)
+      - Web GUI / API responds on localhost port 8000
       - cloudflared process is running
       - Gmail IMAP credentials are configured in environment
     """
     issues = []
     checks = {}
 
-    # Web platform health check
+    # Web GUI health check (port 8000)
     web_ok = False
-    web_port = None
-    for port in [80, 3001]:
-        try:
-            import requests
-            resp = requests.get(f"http://localhost:{port}/api/health", timeout=5)
-            if resp.status_code == 200:
-                web_ok = True
-                web_port = port
-                break
-        except Exception:
-            continue
+    try:
+        import requests
+        resp = requests.get("http://localhost:8000/api/health", timeout=5)
+        if resp.status_code == 200:
+            web_ok = True
+    except Exception:
+        pass
 
     if web_ok:
-        checks["web_platform"] = {"status": "ok", "detail": f"Responding on port {web_port}"}
+        checks["web_platform"] = {"status": "ok", "detail": "Responding on port 8000"}
     else:
-        checks["web_platform"] = {"status": "warning", "detail": "Not responding on port 80 or 3001"}
-        issues.append("Web platform not responding")
+        checks["web_platform"] = {"status": "warning", "detail": "Not responding on port 8000"}
+        issues.append("Web GUI not responding on port 8000")
 
     # Cloudflare tunnel check
     try:
@@ -545,10 +542,6 @@ def run_health_check() -> dict:
                 "status": bot_web.get("services", {}).get("goliath-bot", {}).get("status", "unknown"),
                 "detail": bot_web.get("services", {}).get("goliath-bot", {}).get("detail", "Unknown"),
             },
-            "web_service": {
-                "status": bot_web.get("services", {}).get("goliath-web", {}).get("status", "unknown"),
-                "detail": bot_web.get("services", {}).get("goliath-web", {}).get("detail", "Unknown"),
-            },
             "scheduler": {
                 "status": scheduler["status"],
                 "detail": scheduler["detail"],
@@ -592,13 +585,11 @@ def _build_recommendations(issues: list[str], services: dict, network: dict) -> 
         issue_lower = issue.lower()
 
         if "failed" in issue_lower and "service" in issue_lower:
-            svc = "goliath-bot" if "bot" in issue_lower else "goliath-web"
-            recs.append(f"Restart service: sudo systemctl restart {svc}")
-            recs.append(f"Check logs: journalctl -u {svc} --since '1 hour ago' --no-pager")
+            recs.append("Restart service: sudo systemctl restart goliath-bot")
+            recs.append("Check logs: journalctl -u goliath-bot --since '1 hour ago' --no-pager")
 
         elif "stopped" in issue_lower and "service" in issue_lower:
-            svc = "goliath-bot" if "bot" in issue_lower else "goliath-web"
-            recs.append(f"Start service: sudo systemctl start {svc}")
+            recs.append("Start service: sudo systemctl start goliath-bot")
 
         elif "memory" in issue_lower and "limit" in issue_lower:
             recs.append("Consider restarting the service to free memory")
@@ -671,12 +662,11 @@ def format_telegram_message(result: dict) -> str:
     # Individual check results
     check_labels = {
         "bot_service": "Bot Service",
-        "web_service": "Web Platform",
         "scheduler": "Scheduler",
         "cron_jobs": "Cron Jobs",
         "databases": "Databases",
         "disk": "Disk",
-        "network": "Network",
+        "network": "Network & Web GUI",
     }
 
     for key, label in check_labels.items():
