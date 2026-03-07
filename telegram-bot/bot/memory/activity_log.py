@@ -159,3 +159,25 @@ class ActivityLogStore:
             "avg_duration": row[2] or 0.0,
             "max_duration": row[3] or 0.0,
         }
+
+    async def get_period_stats(self, days: int = 30) -> dict:
+        """Return aggregate stats for a rolling window of N days."""
+        cursor = await self._db.execute(
+            "SELECT COUNT(*), "
+            "SUM(CASE WHEN success = 1 THEN 1 ELSE 0 END), "
+            "AVG(total_duration), "
+            "MAX(total_duration) "
+            "FROM activity_log "
+            "WHERE created_at >= datetime('now', ?)",
+            (f"-{days} days",),
+        )
+        row = await cursor.fetchone()
+        total = row[0] or 0
+        successful = row[1] or 0
+        return {
+            "total_runs": total,
+            "successful": successful,
+            "success_rate": round(successful / total * 100) if total else 0,
+            "avg_duration": round(row[2] or 0, 1),
+            "max_duration": round(row[3] or 0, 1),
+        }
