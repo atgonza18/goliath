@@ -50,13 +50,23 @@ export interface ChatResponse {
 
 // ---- Subagent Event types (real-time SSE) ----
 export interface SubagentEvent {
-  type: 'agent_start' | 'agent_complete' | 'pass';
+  type: 'agent_start' | 'agent_complete' | 'pass' | 'tool_start' | 'tool_done';
   agent?: string;
   task?: string;
   success?: boolean;
   duration?: number;
   pass?: number;
   status?: 'start' | 'complete';
+  tool?: string;
+  inputPreview?: string;
+  input_preview?: string;  // snake_case from backend
+}
+
+export interface ToolActivity {
+  tool: string;
+  inputPreview?: string;
+  startTime: number;
+  completed: boolean;
 }
 
 export interface ActiveAgent {
@@ -66,6 +76,7 @@ export interface ActiveAgent {
   success?: boolean;
   duration?: number;
   completed: boolean;
+  tools: ToolActivity[];
 }
 
 export interface AgentActivity {
@@ -194,6 +205,127 @@ export interface ConstraintStats {
     over14d: number;
     over30d: number;
   };
+}
+
+// ---- Stream types (persistent multi-stream SSE) ----
+export type StreamStatus = 'idle' | 'streaming' | 'complete' | 'error';
+
+export interface StreamState {
+  conversationId: string;
+  status: StreamStatus;
+  messages: Message[];
+  isThinking: boolean;
+  agentActivity: AgentActivity;
+  error: string | null;
+}
+
+export interface StreamMutableData {
+  streamingMsgId: string | null;
+  streamingText: string;
+  cleanupStream: (() => void) | null;
+  scrollRafId: number;
+}
+
+// ---- Production / POD trends types ----
+export interface DailyCount {
+  date: string;
+  count: number;
+}
+
+export interface ProjectTrend {
+  key: string;
+  name: string;
+  number: number;
+  today: number;
+  yesterday: number;
+  delta_units: number;
+  delta_pct: number;
+  seven_day_total: number;
+  all_time_total: number;
+  trend: 'up' | 'down' | 'flat' | 'none';
+  latest_pod_date: string | null;
+  days_since_last_pod: number | null;
+  daily: DailyCount[];
+}
+
+export interface PortfolioSummary {
+  today: number;
+  yesterday: number;
+  delta_units: number;
+  seven_day_total: number;
+  projects_reporting_today: number;
+  total_projects: number;
+  projects_with_data: number;
+  daily: DailyCount[];
+}
+
+export interface ProductionTrends {
+  generated_at: string;
+  date_range: { start: string; end: string };
+  portfolio: PortfolioSummary;
+  projects: ProjectTrend[];
+}
+
+// ---- Production Dashboard types (extracted POD data) ----
+export interface DailySeries {
+  date: string;
+  activities: Record<string, number>;
+  total: number;
+}
+
+export interface PodActivity {
+  activity_name: string;
+  qty_to_date: number | null;
+  qty_last_workday: number | null;
+  qty_completed_yesterday: number;
+  total_qty: number | null;
+  unit: string | null;
+  pct_complete: number | null;
+  today_location: string | null;
+  notes: string | null;
+}
+
+export interface PodCategory {
+  category: string;
+  activities: PodActivity[];
+}
+
+export interface CategorySummary {
+  category: string;
+  activity_count: number;
+  avg_pct_complete: number | null;
+}
+
+export interface ProjectProductionSummary {
+  key: string;
+  name: string;
+  number: number;
+  latest_date: string | null;
+  has_data: boolean;
+  activity_count: number;
+  category_count: number;
+  categories_summary: CategorySummary[];
+  overall_progress: number | null;
+}
+
+export interface ProjectProductionDetail {
+  key: string;
+  name: string;
+  number: number;
+  latest_date: string | null;
+  categories: PodCategory[];
+}
+
+export interface PortfolioProductionSummary {
+  active_sites: number;
+  total_projects: number;
+  projects_with_data: number;
+}
+
+export interface ProductionDashboardData {
+  generated_at: string;
+  portfolio: PortfolioProductionSummary;
+  projects: ProjectProductionSummary[];
 }
 
 // ---- API types ----

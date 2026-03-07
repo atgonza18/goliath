@@ -1309,16 +1309,27 @@ _DASHBOARD_CACHE_TTL = 60  # seconds
 
 
 async def handle_production_dashboard(request: web.Request) -> web.Response:
-    """GET /api/production/dashboard — Real production data from POD extraction."""
+    """GET /api/production/dashboard — Summary cards from POD extraction data."""
     if not _check_web_auth(request):
         return _error("unauthorized", status=401)
 
     try:
-        days = min(max(int(request.query.get("days", "30")), 1), 365)
         now = time.monotonic()
 
         if _dashboard_cache.get("expires", 0) > now and "data" in _dashboard_cache:
             return _json(_dashboard_cache["data"])
+
+        empty_project = lambda k: {
+            "key": k,
+            "name": PROJECTS[k]["name"],
+            "number": PROJECTS[k]["number"],
+            "latest_date": None,
+            "has_data": False,
+            "activity_count": 0,
+            "category_count": 0,
+            "categories_summary": [],
+            "overall_progress": None,
+        }
 
         if not _POD_DB_PATH.exists():
             return _json({
@@ -1326,145 +1337,95 @@ async def handle_production_dashboard(request: web.Request) -> web.Response:
                 "portfolio": {
                     "active_sites": 0,
                     "total_projects": len(PROJECTS),
-                    "today_totals": {},
-                    "daily_series": [],
+                    "projects_with_data": 0,
                 },
                 "projects": [
-                    {
-                        "key": k,
-                        "name": PROJECTS[k]["name"],
-                        "number": PROJECTS[k]["number"],
-                        "latest_date": None,
-                        "has_data": False,
-                        "activities": [],
-                        "daily_series": [],
-                    }
+                    empty_project(k)
                     for k in sorted(PROJECTS, key=lambda x: PROJECTS[x]["number"])
                 ],
             })
 
         import sqlite3
-        from datetime import datetime, timedelta
+        from datetime import datetime
         from zoneinfo import ZoneInfo
 
         ct = ZoneInfo("America/Chicago")
         today_str = datetime.now(ct).strftime("%Y-%m-%d")
-        cutoff = (datetime.now(ct) - timedelta(days=days)).strftime("%Y-%m-%d")
 
         conn = sqlite3.connect(str(_POD_DB_PATH))
         conn.row_factory = sqlite3.Row
-        rows = conn.execute(
-            """SELECT project_key, report_date, activity, quantity_today, unit,
-                      percent_complete, actual_rate, required_rate, blocks, notes
-               FROM pod_production WHERE report_date >= ?
-               ORDER BY report_date DESC, project_key, activity""",
-            (cutoff,),
+
+        # Get latest date per project and all activities for that date
+        latest_dates = conn.execute(
+            "SELECT project_key, MAX(report_date) as latest FROM pod_production GROUP BY project_key"
         ).fetchall()
+        latest_map = {r["project_key"]: r["latest"] for r in latest_dates}
 
-        # Build per-project data
-        project_map: dict = {}
-        for row in rows:
-            pk = row["project_key"]
-            if pk not in project_map:
-                project_map[pk] = {"activities": [], "daily": {}, "latest": None}
-            pm = project_map[pk]
-            rd = row["report_date"]
-            if not pm["latest"] or rd > pm["latest"]:
-                pm["latest"] = rd
-            pm["activities"].append(dict(row))
-            if rd not in pm["daily"]:
-                pm["daily"][rd] = {}
-            pm["daily"][rd][row["activity"]] = (
-                pm["daily"][rd].get(row["activity"], 0) + (row["quantity_today"] or 0)
-            )
-
-        # Build response
         projects_out = []
-        portfolio_daily: dict = {}
         active_sites = 0
-        today_totals: dict = {}
+        projects_with_data = 0
 
         for k in sorted(PROJECTS, key=lambda x: PROJECTS[x]["number"]):
             info = PROJECTS[k]
-            pd = project_map.get(k)
-            has_data = bool(pd and pd["activities"])
+            latest = latest_map.get(k)
 
-            latest_activities = []
-            if pd and pd["latest"]:
-                latest_activities = [
-                    {
-                        "activity": a["activity"],
-                        "quantity_today": a["quantity_today"],
-                        "unit": a["unit"],
-                        "percent_complete": a["percent_complete"],
-                        "actual_rate": a["actual_rate"],
-                        "required_rate": a["required_rate"],
-                        "blocks": a["blocks"],
-                        "notes": a["notes"],
-                    }
-                    for a in pd["activities"]
-                    if a["report_date"] == pd["latest"]
-                ]
+            if not latest:
+                projects_out.append(empty_project(k))
+                continue
 
-            if pd and pd["latest"] == today_str:
+            projects_with_data += 1
+
+            if latest == today_str:
                 active_sites += 1
 
-            # Today totals
-            if pd and today_str in pd["daily"]:
-                for act, qty in pd["daily"][today_str].items():
-                    if act in today_totals:
-                        today_totals[act]["quantity"] += qty
-                    else:
-                        unit = "units"
-                        for a in pd["activities"]:
-                            if a["activity"] == act and a["unit"]:
-                                unit = a["unit"]
-                                break
-                        today_totals[act] = {"quantity": qty, "unit": unit}
+            rows = conn.execute(
+                """SELECT activity_category, activity_name, pct_complete
+                   FROM pod_production WHERE project_key = ? AND report_date = ?""",
+                (k, latest),
+            ).fetchall()
 
-            # Daily series
-            daily_series = []
-            if pd:
-                for date in sorted(pd["daily"]):
-                    activities = pd["daily"][date]
-                    total = sum(activities.values())
-                    daily_series.append({"date": date, "activities": activities, "total": total})
-                    # Portfolio aggregation
-                    if date not in portfolio_daily:
-                        portfolio_daily[date] = {}
-                    for act, qty in activities.items():
-                        portfolio_daily[date][act] = portfolio_daily[date].get(act, 0) + qty
+            # Group by category
+            cat_map: dict[str, list] = {}
+            for r in rows:
+                cat = r["activity_category"] or "General"
+                cat_map.setdefault(cat, []).append(r["pct_complete"])
+
+            categories_summary = []
+            all_pcts = []
+            for cat, pcts in sorted(cat_map.items()):
+                valid_pcts = [p for p in pcts if p is not None]
+                avg = round(sum(valid_pcts) / len(valid_pcts), 1) if valid_pcts else None
+                categories_summary.append({
+                    "category": cat,
+                    "activity_count": len(pcts),
+                    "avg_pct_complete": avg,
+                })
+                all_pcts.extend(valid_pcts)
+
+            overall = round(sum(all_pcts) / len(all_pcts), 1) if all_pcts else None
 
             projects_out.append({
                 "key": k,
                 "name": info["name"],
                 "number": info["number"],
-                "latest_date": pd["latest"] if pd else None,
-                "has_data": has_data,
-                "activities": latest_activities,
-                "daily_series": daily_series,
+                "latest_date": latest,
+                "has_data": True,
+                "activity_count": len(rows),
+                "category_count": len(cat_map),
+                "categories_summary": categories_summary,
+                "overall_progress": overall,
             })
 
         conn.close()
-
-        port_daily = [
-            {"date": d, "activities": a, "total": sum(a.values())}
-            for d, a in sorted(portfolio_daily.items())
-        ]
-
-        # ── Corruption scan: check if POD PDFs are extractable ─────
-        corruption_info = _scan_pod_corruption()
 
         data = {
             "generated_at": _now_iso(),
             "portfolio": {
                 "active_sites": active_sites,
                 "total_projects": len(PROJECTS),
-                "today_totals": today_totals,
-                "daily_series": port_daily,
+                "projects_with_data": projects_with_data,
             },
             "projects": projects_out,
-            "extraction_health": corruption_info,
         }
 
         _dashboard_cache["data"] = data
@@ -1473,6 +1434,95 @@ async def handle_production_dashboard(request: web.Request) -> web.Response:
 
     except Exception as e:
         logger.exception("Failed to build production dashboard")
+        return _error(f"internal error: {str(e)[:200]}", status=500)
+
+
+async def handle_production_project_detail(request: web.Request) -> web.Response:
+    """GET /api/production/dashboard/{project_key} — Full activity detail for a project."""
+    if not _check_web_auth(request):
+        return _error("unauthorized", status=401)
+
+    project_key = request.match_info["project_key"]
+    if project_key not in PROJECTS:
+        return _error(f"Unknown project: {project_key}", status=404)
+
+    try:
+        info = PROJECTS[project_key]
+
+        if not _POD_DB_PATH.exists():
+            return _json({
+                "key": project_key,
+                "name": info["name"],
+                "number": info["number"],
+                "latest_date": None,
+                "categories": [],
+            })
+
+        import sqlite3
+        conn = sqlite3.connect(str(_POD_DB_PATH))
+        conn.row_factory = sqlite3.Row
+
+        # Get latest date for this project
+        row = conn.execute(
+            "SELECT MAX(report_date) as latest FROM pod_production WHERE project_key = ?",
+            (project_key,),
+        ).fetchone()
+        latest = row["latest"] if row else None
+
+        if not latest:
+            conn.close()
+            return _json({
+                "key": project_key,
+                "name": info["name"],
+                "number": info["number"],
+                "latest_date": None,
+                "categories": [],
+            })
+
+        rows = conn.execute(
+            """SELECT activity_category, activity_name, qty_to_date, qty_last_workday,
+                      qty_completed_yesterday, total_qty, unit, pct_complete,
+                      today_location, notes
+               FROM pod_production WHERE project_key = ? AND report_date = ?
+               ORDER BY activity_category, activity_name""",
+            (project_key, latest),
+        ).fetchall()
+        conn.close()
+
+        # Group by category
+        cat_map: dict[str, list] = {}
+        for r in rows:
+            cat = r["activity_category"] or "General"
+            # qty_completed_yesterday: blank/empty = 0 (not null)
+            raw_yest = r["qty_completed_yesterday"]
+            qty_yest = 0 if raw_yest is None else raw_yest
+            cat_map.setdefault(cat, []).append({
+                "activity_name": r["activity_name"],
+                "qty_to_date": r["qty_to_date"],
+                "qty_last_workday": r["qty_last_workday"],
+                "qty_completed_yesterday": qty_yest,
+                "total_qty": r["total_qty"],
+                "unit": r["unit"],
+                "pct_complete": r["pct_complete"],
+                "today_location": r["today_location"],
+                "notes": r["notes"],
+            })
+
+        categories = [
+            {"category": cat, "activities": acts}
+            for cat, acts in sorted(cat_map.items())
+        ]
+
+        return _json({
+            "key": project_key,
+            "name": info["name"],
+            "number": info["number"],
+            "latest_date": latest,
+            "categories": categories,
+        })
+
+    except Exception as e:
+        logger.exception("Failed to build project production detail")
         return _error(f"internal error: {str(e)[:200]}", status=500)
 
 
@@ -1542,6 +1592,58 @@ def _now_iso() -> str:
 
 
 # ---------------------------------------------------------------------------
+# POD extraction trigger
+# ---------------------------------------------------------------------------
+_extraction_lock = asyncio.Lock()
+
+
+async def handle_run_extraction(request: web.Request) -> web.Response:
+    """POST /api/production/extract — Run POD extraction on unprocessed PDFs.
+
+    Returns immediately with status, runs extraction in background.
+    Only one extraction can run at a time.
+    """
+    if not _check_web_auth(request):
+        return _error("unauthorized", status=401)
+
+    if _extraction_lock.locked():
+        return _json({"status": "already_running", "message": "Extraction is already in progress"})
+
+    async def _run():
+        async with _extraction_lock:
+            import subprocess
+            import sys
+            script = REPO_ROOT / "scripts" / "extract_pod_data.py"
+            if not script.exists():
+                logger.error(f"Extraction script not found: {script}")
+                return
+
+            try:
+                env = {k: v for k, v in os.environ.items() if k != "CLAUDECODE"}
+                result = subprocess.run(
+                    [sys.executable, str(script)],
+                    capture_output=True, text=True, timeout=600, env=env,
+                    cwd=str(REPO_ROOT),
+                )
+                if result.stdout:
+                    for line in result.stdout.strip().split("\n")[-15:]:
+                        logger.info(f"[pod-extract] {line}")
+                if result.returncode != 0 and result.stderr:
+                    logger.warning(f"[pod-extract] stderr: {result.stderr[:500]}")
+            except subprocess.TimeoutExpired:
+                logger.warning("[pod-extract] timed out (600s)")
+            except Exception as e:
+                logger.exception(f"[pod-extract] failed: {e}")
+
+            # Bust dashboard cache so next request gets fresh data
+            _dashboard_cache.clear()
+
+    asyncio.ensure_future(_run())
+
+    return _json({"status": "started", "message": "Extraction started in background"})
+
+
+# ---------------------------------------------------------------------------
 # Route registration
 # ---------------------------------------------------------------------------
 
@@ -1591,7 +1693,9 @@ def setup_web_routes(app: web.Application) -> None:
     # Production trends (POD activity dashboard)
     app.router.add_get("/api/production/trends", handle_production_trends)
     app.router.add_get("/api/production/dashboard", handle_production_dashboard)
+    app.router.add_get("/api/production/dashboard/{project_key}", handle_production_project_detail)
     app.router.add_get("/api/production/extraction-status", handle_extraction_status)
+    app.router.add_post("/api/production/extract", handle_run_extraction)
 
     # --- Static file serving for frontend (SPA) ---
     _setup_static_serving(app)

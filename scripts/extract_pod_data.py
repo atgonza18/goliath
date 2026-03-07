@@ -49,41 +49,45 @@ MAX_CORRUPTION_PCT = 70.0
 
 EXTRACTION_PROMPT = """You are analyzing a Plan of the Day (POD) / Daily Production Report from a solar construction site.
 
-Extract ALL production activities and quantities from this document. Return ONLY valid JSON (no markdown fences, no explanation).
+Extract EVERY production activity row individually from this document. Return ONLY valid JSON (no markdown fences, no explanation).
 
 Required JSON structure:
 {
   "report_date": "YYYY-MM-DD",
+  "contractor_format": "white_construction" | "mastec" | "unknown",
   "activities": [
     {
-      "activity": "<normalized activity name>",
-      "quantity_today": <number or null>,
-      "unit": "<unit of measure>",
-      "percent_complete": <number 0-100 or null>,
-      "actual_rate": <number or null>,
-      "required_rate": <number or null>,
-      "blocks": "<block/area identifiers or null>",
-      "notes": "<any relevant notes or null>"
+      "activity_category": "<parent group>",
+      "activity_name": "<specific line item exactly as shown>",
+      "qty_to_date": <cumulative quantity completed to date, number or null>,
+      "qty_last_workday": <value from prior day column, number or null>,
+      "qty_completed_yesterday": <daily production quantity completed yesterday, number or 0>,
+      "total_qty": <total scope/target quantity, number or null>,
+      "unit": "<EA, LF, Block, etc. or null>",
+      "pct_complete": <percentage 0-100, number or null>,
+      "today_location": "<text from TODAY column describing work plan/location, or null>",
+      "notes": "<status text like On Hold, Completed, Rained Out, or null>"
     }
   ]
 }
 
-Normalize activity names to one of these standard categories when possible:
-- Piling (pile driving, posts, foundations)
-- Racking (tracker assembly, torque tube, motor installation)
-- Module Installation (panel placement, module mounting)
-- DC Electrical (stringing, harnessing, DC wiring)
-- AC Electrical (inverters, transformers, MV/HV)
-- Civil (grading, roads, drainage, fencing)
-- Commissioning (testing, energization)
-
-If the exact activity doesn't fit these categories, use the name from the document.
-
-If you cannot determine the report date, use null.
-If a field is not present in the document, use null for that field.
-Always include quantity_today and unit if any quantity data is present.
-
-IMPORTANT: Only extract data that is explicitly stated in the document. Do not fabricate or estimate values."""
+CRITICAL INSTRUCTIONS:
+- Extract EVERY row individually. Do NOT consolidate, aggregate, or merge sub-activities.
+- activity_category = parent group heading (e.g., "Array Construction", "Electrical", "Civil", "Tracker Installation", "Module Installation")
+- activity_name = specific line item exactly as written (e.g., "Tracker Pile Installation", "DC Trenching", "MV Cable Pulling")
+- qty_to_date = the "QTY TO DATE" or cumulative quantity column. This is NOT today's production — it is all-time cumulative.
+- qty_last_workday = the value from the previous day column. For White Construction PODs this is cumulative; for MasTec PODs it may be a daily increment.
+- qty_completed_yesterday = the daily production quantity from the "Completed Yesterday", "Qty Yesterday", "Yesterday's Production", or similar column. This is a DIRECT field — the field team reports daily production explicitly. It is NOT a computed delta from cumulative totals. If the cell is blank or empty, use 0. A blank cell means ZERO production for that activity that day, not missing data.
+- total_qty = total scope / target quantity for the entire project
+- pct_complete = percentage complete (often qty_to_date / total_qty * 100)
+- today_location = the text from the "TODAY" column. This is a work plan or location description, NOT a number.
+- Handle "#DIV/0!" or "N/A" as null
+- Parse comma-separated numbers (e.g., "39,653" → 39653)
+- If a row has dual-crew quantities (e.g., "Crew A: 150 / Crew B: 200"), extract as a single row with the combined total
+- Only extract rows that have at least one numeric value. Skip header rows and completely empty rows.
+- Only extract data explicitly stated in the document. Do not fabricate or estimate values.
+- If you cannot determine the report date, use null.
+- IMPORTANT: For qty_completed_yesterday, blank/empty cells MUST be 0, not null. Only use null if the column itself does not exist in the document."""
 
 
 # ---------------------------------------------------------------------------
@@ -91,28 +95,50 @@ IMPORTANT: Only extract data that is explicitly stated in the document. Do not f
 # ---------------------------------------------------------------------------
 
 def init_db():
-    """Initialize the SQLite database with required tables."""
+    """Initialize the SQLite database with required tables.
+
+    Auto-migrates from old schema (detects 'quantity_today' column) by
+    dropping the production table and clearing extraction log to force
+    re-extraction.
+    """
     DB_PATH.parent.mkdir(parents=True, exist_ok=True)
     conn = sqlite3.connect(str(DB_PATH))
     conn.execute("PRAGMA journal_mode=WAL")
+
+    # Auto-migration: detect old schema and drop if needed
+    try:
+        cols = [r[1] for r in conn.execute("PRAGMA table_info(pod_production)").fetchall()]
+        if "quantity_today" in cols:
+            print("  [migrate] Old schema detected (quantity_today column). Dropping table and clearing log...")
+            conn.execute("DROP TABLE IF EXISTS pod_production")
+            conn.execute("DELETE FROM pod_extraction_log")
+            conn.commit()
+        # Add qty_completed_yesterday column if missing (non-destructive migration)
+        elif "qty_completed_yesterday" not in cols and len(cols) > 0:
+            print("  [migrate] Adding qty_completed_yesterday column...")
+            conn.execute("ALTER TABLE pod_production ADD COLUMN qty_completed_yesterday REAL DEFAULT 0")
+            conn.commit()
+    except Exception:
+        pass  # Table doesn't exist yet — fine
 
     conn.executescript("""
         CREATE TABLE IF NOT EXISTS pod_production (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             project_key TEXT NOT NULL,
             report_date TEXT NOT NULL,
-            activity TEXT NOT NULL,
-            phase TEXT,
-            quantity_today REAL,
+            activity_category TEXT NOT NULL DEFAULT 'General',
+            activity_name TEXT NOT NULL,
+            qty_to_date REAL,
+            qty_last_workday REAL,
+            qty_completed_yesterday REAL DEFAULT 0,
+            total_qty REAL,
             unit TEXT,
-            percent_complete REAL,
-            actual_rate REAL,
-            required_rate REAL,
-            blocks TEXT,
+            pct_complete REAL,
+            today_location TEXT,
             notes TEXT,
             extracted_at TEXT NOT NULL,
             source_file TEXT NOT NULL,
-            UNIQUE(project_key, report_date, activity)
+            UNIQUE(project_key, report_date, activity_category, activity_name)
         );
 
         CREATE TABLE IF NOT EXISTS pod_extraction_log (
@@ -320,15 +346,24 @@ def render_pdf_to_png(pdf_path: Path, output_dir: Path) -> list[Path]:
 def _get_anthropic_client():
     """Get an Anthropic client instance.
 
-    Tries ANTHROPIC_API_KEY env var first. Returns None if no auth available.
+    Tries ANTHROPIC_API_KEY env var first, then falls back to Claude's
+    OAuth token from ~/.claude/.credentials.json (Claude Max subscription).
     """
     try:
         import anthropic
         api_key = os.environ.get("ANTHROPIC_API_KEY")
+        if not api_key:
+            # Read OAuth token from Claude credentials
+            creds_path = Path.home() / ".claude" / ".credentials.json"
+            if creds_path.exists():
+                try:
+                    creds = json.loads(creds_path.read_text())
+                    api_key = creds.get("claudeAiOauth", {}).get("accessToken")
+                except Exception:
+                    pass
         if api_key:
             return anthropic.Anthropic(api_key=api_key)
-        # Try default auth (may use config file)
-        return anthropic.Anthropic()
+        return None
     except Exception:
         return None
 
@@ -342,7 +377,7 @@ def call_claude_text(text: str, pdf_filename: str) -> dict | None:
         try:
             response = client.messages.create(
                 model="claude-sonnet-4-6",
-                max_tokens=4096,
+                max_tokens=16384,
                 messages=[{"role": "user", "content": prompt}],
             )
             response_text = response.content[0].text
@@ -407,7 +442,7 @@ def call_claude_vision(image_paths: list[Path], pdf_filename: str) -> dict | Non
 
             response = client.messages.create(
                 model="claude-sonnet-4-6",
-                max_tokens=4096,
+                max_tokens=16384,
                 messages=[{"role": "user", "content": content}],
             )
             response_text = response.content[0].text
@@ -569,36 +604,45 @@ def process_pdf(pdf_path: Path, project_key: str, conn: sqlite3.Connection) -> b
         report_date = datetime.now(CT).strftime("%Y-%m-%d")
 
     activities = extraction_data.get("activities", [])
-    print(f"    Extracted {len(activities)} activities for date {report_date}")
+    print(f"    Extracted {len(activities)} activity rows for date {report_date}")
 
-    # Store in database
+    # Store each activity row directly — no aggregation
+    stored = 0
     for act in activities:
-        activity_name = act.get("activity", "Unknown")
+        category = act.get("activity_category") or "General"
+        name = act.get("activity_name") or act.get("activity") or "Unknown"
         try:
+            # qty_completed_yesterday: blank/empty = 0 (not null).
+            # This is a direct field from the POD, not a computed delta.
+            raw_yesterday = act.get("qty_completed_yesterday")
+            qty_yesterday = 0 if raw_yesterday is None or raw_yesterday == "" else raw_yesterday
+
             conn.execute(
                 """INSERT OR REPLACE INTO pod_production
-                   (project_key, report_date, activity, phase, quantity_today, unit,
-                    percent_complete, actual_rate, required_rate, blocks, notes,
+                   (project_key, report_date, activity_category, activity_name,
+                    qty_to_date, qty_last_workday, qty_completed_yesterday, total_qty, unit,
+                    pct_complete, today_location, notes,
                     extracted_at, source_file)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                 (
                     project_key,
                     report_date,
-                    activity_name,
-                    act.get("phase"),
-                    act.get("quantity_today"),
+                    category,
+                    name,
+                    act.get("qty_to_date"),
+                    act.get("qty_last_workday"),
+                    qty_yesterday,
+                    act.get("total_qty"),
                     act.get("unit"),
-                    act.get("percent_complete"),
-                    act.get("actual_rate"),
-                    act.get("required_rate"),
-                    act.get("blocks"),
+                    act.get("pct_complete") or act.get("percent_complete"),
+                    act.get("today_location"),
                     act.get("notes"),
                     now,
                     str(pdf_path),
                 ),
             )
+            stored += 1
         except sqlite3.IntegrityError:
-            # UNIQUE constraint — update existing
             pass
 
     # Log success
@@ -606,18 +650,23 @@ def process_pdf(pdf_path: Path, project_key: str, conn: sqlite3.Connection) -> b
         """INSERT OR REPLACE INTO pod_extraction_log
            (source_file, project_key, report_date, status, activities_count, extracted_at)
            VALUES (?, ?, ?, 'success', ?, ?)""",
-        (str(pdf_path), project_key, report_date, len(activities), now),
+        (str(pdf_path), project_key, report_date, stored, now),
     )
     conn.commit()
 
     for act in activities:
-        qty = act.get("quantity_today")
+        cat = act.get("activity_category") or ""
+        name = act.get("activity_name") or act.get("activity") or "?"
+        qty = act.get("qty_to_date")
+        total = act.get("total_qty")
         unit = act.get("unit", "")
-        pct = act.get("percent_complete")
-        name = act.get("activity", "?")
-        parts = [f"    - {name}"]
+        pct = act.get("pct_complete") or act.get("percent_complete")
+        parts = [f"    - [{cat}] {name}"]
         if qty is not None:
-            parts.append(f": {qty} {unit}")
+            parts.append(f": {qty:,.0f}")
+            if total is not None:
+                parts.append(f"/{total:,.0f}")
+            parts.append(f" {unit}")
         if pct is not None:
             parts.append(f" ({pct}%)")
         print("".join(parts))
