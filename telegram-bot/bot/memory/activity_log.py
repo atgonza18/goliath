@@ -113,6 +113,37 @@ class ActivityLogStore:
             "error": row[10],
         }
 
+    async def get_agent_usage_counts(self, days: int = 30) -> dict:
+        """Return per-agent usage counts and last-used timestamps.
+
+        Parses the comma-separated subagents_dispatched column.
+        Returns {agent_name: {"count": N, "last_used": "YYYY-MM-DDTHH:MM:SS"}}.
+        """
+        cursor = await self._db.execute(
+            "SELECT subagents_dispatched, created_at "
+            "FROM activity_log "
+            "WHERE success = 1 "
+            "  AND subagents_dispatched IS NOT NULL "
+            "  AND subagents_dispatched != '' "
+            "  AND created_at >= datetime('now', ?)",
+            (f"-{days} days",),
+        )
+        rows = await cursor.fetchall()
+
+        counts: dict[str, dict] = {}
+        for row in rows:
+            dispatched_str = row[0]
+            created_at = row[1]
+            agents = [a.strip() for a in dispatched_str.split(",") if a.strip()]
+            for agent in agents:
+                if agent not in counts:
+                    counts[agent] = {"count": 0, "last_used": created_at}
+                counts[agent]["count"] += 1
+                if created_at > counts[agent]["last_used"]:
+                    counts[agent]["last_used"] = created_at
+
+        return counts
+
     async def get_stats(self) -> dict:
         cursor = await self._db.execute(
             "SELECT COUNT(*), "
