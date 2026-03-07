@@ -83,6 +83,8 @@ export function ChatPage() {
           content: m.content,
           timestamp: m.timestamp || new Date().toISOString(),
           metadata: m.metadata || null,
+          attachments: m.attachments || null,
+          attachment: m.attachments?.[0] || null,
         }));
         setLoadedMessages(mapped);
       } catch { /* Silently fail */ }

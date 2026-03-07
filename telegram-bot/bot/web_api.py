@@ -187,15 +187,20 @@ class WebConversationStore:
             (conversation_id,),
         )
         rows = await cursor.fetchall()
-        return [
-            {
+        messages = []
+        for row in rows:
+            meta = json.loads(row[2]) if row[2] else None
+            msg: dict = {
                 "role": row[0],
                 "content": row[1],
-                "metadata": json.loads(row[2]) if row[2] else None,
+                "metadata": meta,
                 "timestamp": row[3],
             }
-            for row in rows
-        ]
+            # Surface persisted attachments so the frontend can render them
+            if meta and "attachments" in meta:
+                msg["attachments"] = meta["attachments"]
+            messages.append(msg)
+        return messages
 
     async def conversation_exists(self, conversation_id: str) -> bool:
         cursor = await self._db.execute(
@@ -379,20 +384,76 @@ async def handle_api_health(request: web.Request) -> web.Response:
 
 
 async def handle_chat(request: web.Request) -> web.Response:
-    """POST /api/chat — Send a message to Nimrod."""
+    """POST /api/chat — Send a message to Nimrod.
+
+    Accepts either:
+      - application/json  → {"message": "...", "conversation_id": "..."}
+      - multipart/form-data → message field + optional file(s)
+    """
     if not _check_web_auth(request):
         return _error("unauthorized", status=401)
 
-    try:
-        data = await request.json()
-    except Exception:
-        return _error("invalid JSON body")
+    content_type = request.content_type or ""
+    attachments_meta: list[dict] = []
 
-    message = data.get("message", "").strip()
-    if not message:
+    if content_type.startswith("multipart/"):
+        # ── Multipart: message + optional file attachments ──────────
+        reader = await request.multipart()
+        message = ""
+        conversation_id = ""
+        uploaded_files: list[Path] = []
+
+        while True:
+            part = await reader.next()
+            if part is None:
+                break
+            if part.name == "message":
+                message = (await part.text()).strip()
+            elif part.name == "conversation_id":
+                conversation_id = (await part.text()).strip()
+            elif part.name == "files":
+                # Save each uploaded file to the uploads directory
+                filename = part.filename or f"upload-{uuid.uuid4().hex[:8]}"
+                # Sanitise filename — strip path separators
+                safe_name = Path(filename).name
+                if not safe_name:
+                    safe_name = f"upload-{uuid.uuid4().hex[:8]}"
+                dest = _UPLOADS_DIR / f"{uuid.uuid4().hex[:8]}_{safe_name}"
+                size = 0
+                with open(dest, "wb") as f:
+                    while True:
+                        chunk = await part.read_chunk(8192)
+                        if not chunk:
+                            break
+                        f.write(chunk)
+                        size += len(chunk)
+                uploaded_files.append(dest)
+                # Determine attachment type
+                mime = part.headers.get(_aiohttp_lib.hdrs.CONTENT_TYPE, "application/octet-stream")
+                att_type = "image" if mime.startswith("image/") else "pdf"
+                serve_url = f"/api/files/serve?path={dest.relative_to(_FILES_ROOT)}"
+                attachments_meta.append({
+                    "type": att_type,
+                    "filename": dest.name,
+                    "originalName": safe_name,
+                    "url": serve_url,
+                    "mimeType": mime,
+                })
+                logger.info(f"Chat upload saved: {dest} ({size} bytes)")
+
+        if not conversation_id:
+            conversation_id = str(uuid.uuid4())
+    else:
+        # ── JSON (no files) ─────────────────────────────────────────
+        try:
+            data = await request.json()
+        except Exception:
+            return _error("invalid JSON body")
+        message = data.get("message", "").strip()
+        conversation_id = data.get("conversation_id") or str(uuid.uuid4())
+
+    if not message and not attachments_meta:
         return _error("message is required")
-
-    conversation_id = data.get("conversation_id") or str(uuid.uuid4())
 
     memory_store = request.app["memory"]
     web_conversations: WebConversationStore = request.app["web_conversations"]
@@ -403,24 +464,46 @@ async def handle_chat(request: web.Request) -> web.Response:
         title = message[:100] + ("..." if len(message) > 100 else "")
         await web_conversations.create_conversation(conversation_id, title)
 
-    # Save user message
-    await web_conversations.add_message(conversation_id, "user", message)
+    # Save user message with attachment metadata so it survives page reloads
+    user_meta = {"attachments": attachments_meta} if attachments_meta else None
+    await web_conversations.add_message(conversation_id, "user", message, metadata=user_meta)
+
+    # Build the prompt — inject file paths so Claude can read the uploaded files
+    orchestration_message = message
+    if attachments_meta:
+        file_lines = []
+        for att in attachments_meta:
+            # Resolve absolute path from the serve URL for Claude
+            rel = att["url"].split("path=")[-1] if "path=" in att["url"] else att["filename"]
+            abs_path = _FILES_ROOT / rel
+            file_lines.append(
+                f"[Uploaded file: {att['originalName']} — saved to: {abs_path}]"
+            )
+        orchestration_message = (
+            f"{message}\n\n"
+            + "\n".join(file_lines)
+            + "\nRead and analyze the uploaded file(s)."
+        )
 
     # Kick off orchestration as a background task
     asyncio.create_task(
         _run_web_orchestration(
             conversation_id,
-            message,
+            orchestration_message,
             memory_store,
             web_conversations,
             token_tracker=token_tracker,
         )
     )
 
-    return _json({
+    response_data: dict = {
         "conversation_id": conversation_id,
         "stream_url": f"/api/chat/stream/{conversation_id}",
-    })
+    }
+    if attachments_meta:
+        response_data["attachments"] = attachments_meta
+
+    return _json(response_data)
 
 
 async def handle_chat_stream(request: web.Request) -> web.StreamResponse:
@@ -647,18 +730,143 @@ async def handle_resolve_action_item(request: web.Request) -> web.Response:
 
 
 async def handle_list_agents(request: web.Request) -> web.Response:
-    """GET /api/agents — List available agents with descriptions."""
+    """GET /api/agents — List available agents with rich status/activity data.
+
+    Returns the schema the React AgentsPage expects:
+      name, role, description, status, lastActive, tasksCompleted,
+      category (Analysis|Domain Experts|Production|Research & Ops),
+      model (sonnet|opus) for the ⚡ badge.
+    """
     if not _check_web_auth(request):
         return _error("unauthorized", status=401)
 
+    # Category groupings — determines section headers and border accent colors
+    _CATEGORY: dict[str, str] = {
+        "nimrod":               "Analysis",
+        "schedule_analyst":     "Analysis",
+        "constraints_manager":  "Analysis",
+        "pod_analyst":          "Production",
+        "report_writer":        "Analysis",
+        "excel_expert":         "Analysis",
+        "construction_manager": "Domain Experts",
+        "scheduling_expert":    "Domain Experts",
+        "cost_analyst":         "Domain Experts",
+        "devops":               "Research & Ops",
+        "researcher":           "Research & Ops",
+        "folder_organizer":     "Research & Ops",
+        "transcript_processor": "Research & Ops",
+    }
+
+    # Human-readable role labels for each agent
+    _ROLE: dict[str, str] = {
+        "nimrod":               "Chief Operating Officer",
+        "schedule_analyst":     "Schedule Analysis & Tracking",
+        "constraints_manager":  "Constraint Tracking & Escalation",
+        "pod_analyst":          "Plan of the Day Analysis",
+        "report_writer":        "Report Generation",
+        "excel_expert":         "Spreadsheet Analysis",
+        "construction_manager": "Construction Operations",
+        "scheduling_expert":    "P6/Schedule Expertise",
+        "cost_analyst":         "Cost & Budget Analysis",
+        "devops":               "System Operations",
+        "researcher":           "Information Research",
+        "folder_organizer":     "File & Folder Management",
+        "transcript_processor": "Meeting Transcript Analysis",
+    }
+
+    # Agents that run on Opus (heavy model) — shown with ⚡ badge in the UI
+    _OPUS_AGENTS = {
+        "constraints_manager", "construction_manager", "cost_analyst",
+        "devops", "scheduling_expert", "transcript_processor",
+    }
+
+    # Query activity_log for last-used and dispatch counts.
+    # The DB is at the well-known MEMORY_DB_PATH.
+    import sqlite3 as _sq3
+    from bot.config import MEMORY_DB_PATH
+    _activity: dict[str, dict] = {}  # key -> {last_active: str|None, count: int}
+    try:
+        with _sq3.connect(str(MEMORY_DB_PATH), timeout=3) as conn:
+            # Nimrod runs on every turn
+            row = conn.execute(
+                "SELECT created_at, COUNT(*) as cnt FROM activity_log LIMIT 1"
+            ).fetchone()
+            if row:
+                _activity["nimrod"] = {"last_active": row[0], "count": row[1]}
+            else:
+                _activity["nimrod"] = {"last_active": None, "count": 0}
+
+            # Refetch total count separately for Nimrod (the above only gets 1 row)
+            cnt_row = conn.execute("SELECT COUNT(*) FROM activity_log").fetchone()
+            _activity["nimrod"]["count"] = cnt_row[0] if cnt_row else 0
+
+            # Last entry for Nimrod's lastActive
+            last_row = conn.execute(
+                "SELECT created_at FROM activity_log ORDER BY created_at DESC LIMIT 1"
+            ).fetchone()
+            _activity["nimrod"]["last_active"] = last_row[0] if last_row else None
+
+            # Subagents: look for their slug in subagents_dispatched
+            for key in ALL_AGENTS:
+                if key == "nimrod":
+                    continue
+                last_r = conn.execute(
+                    "SELECT created_at FROM activity_log "
+                    "WHERE subagents_dispatched LIKE ? "
+                    "ORDER BY created_at DESC LIMIT 1",
+                    (f"%{key}%",),
+                ).fetchone()
+                cnt_r = conn.execute(
+                    "SELECT COUNT(*) FROM activity_log "
+                    "WHERE subagents_dispatched LIKE ?",
+                    (f"%{key}%",),
+                ).fetchone()
+                _activity[key] = {
+                    "last_active": last_r[0] if last_r else None,
+                    "count": cnt_r[0] if cnt_r else 0,
+                }
+    except Exception as e:
+        logger.warning(f"[agents] Failed to query activity_log: {e}")
+        # Fill with empty defaults so the rest of the handler works
+        for key in ALL_AGENTS:
+            if key not in _activity:
+                _activity[key] = {"last_active": None, "count": 0}
+
     agents = []
     for key, agent_def in ALL_AGENTS.items():
+        act = _activity.get(key, {"last_active": None, "count": 0})
+        last_active = act["last_active"]  # ISO string or None
+        tasks_completed = act["count"]
+
+        # Determine status: active if used in last 24 h; Nimrod always active
+        status: str = "idle"
+        if key == "nimrod":
+            status = "active"
+        elif last_active:
+            try:
+                ts = last_active if last_active.endswith("Z") else last_active + "Z"
+                hours_since = (time.time() - time.mktime(
+                    time.strptime(ts, "%Y-%m-%dT%H:%M:%SZ")
+                )) / 3600
+                status = "active" if hours_since < 24 else "idle"
+            except Exception:
+                status = "idle"
+
         agents.append({
-            "name": agent_def.name,
+            # Legacy fields (keep for backward compat)
             "display_name": agent_def.display_name,
-            "description": agent_def.description,
             "is_subagent": key != "nimrod",
             "can_write_files": agent_def.can_write_files,
+            # Fields the React AgentsPage expects
+            "name": agent_def.display_name,   # frontend uses agent.name for display
+            "slug": key,
+            "role": _ROLE.get(key, agent_def.name),
+            "description": agent_def.description,
+            "status": status,
+            "lastActive": last_active,
+            "tasksCompleted": tasks_completed,
+            "category": _CATEGORY.get(key, "Research & Ops"),
+            "model": "opus" if key in _OPUS_AGENTS else "sonnet",
         })
 
     return _json(agents)
@@ -725,6 +933,10 @@ async def handle_search_memories(request: web.Request) -> web.Response:
 # ---------------------------------------------------------------------------
 
 _FILES_ROOT = Path("/opt/goliath/")
+
+# Directory for web chat file uploads (shared with Telegram uploads)
+_UPLOADS_DIR = _FILES_ROOT / "telegram-bot" / "data" / "uploads"
+_UPLOADS_DIR.mkdir(parents=True, exist_ok=True)
 
 _BLACKLIST_PATTERNS = [".env", ".secrets", ".git/objects", "node_modules", "venv", "__pycache__"]
 

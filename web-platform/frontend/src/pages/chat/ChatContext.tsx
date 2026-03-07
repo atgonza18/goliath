@@ -394,6 +394,8 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
                 content: m.content,
                 timestamp: m.timestamp || new Date().toISOString(),
                 metadata: m.metadata || null,
+                attachments: m.attachments || null,
+                attachment: m.attachments?.[0] || null,
               }));
               setStreams(prev => {
                 const s = prev[resolvedId];
