@@ -6,6 +6,22 @@ REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 cd "$SCRIPT_DIR"
 
 # ──────────────────────────────────────────────────
+# RESTART STRATEGY:
+# The bot runs under systemd (goliath-bot.service) with Restart=always.
+# To restart, we ONLY kill the process — systemd brings it back after
+# RestartSec=10 seconds. We do NOT launch a new process ourselves;
+# doing so would create duplicate instances that fight over Telegram
+# getUpdates, causing a Conflict restart loop.
+#
+# For manual/non-systemd use (dev), pass --standalone flag.
+# ──────────────────────────────────────────────────
+
+STANDALONE=false
+if [[ "${1:-}" == "--standalone" ]]; then
+    STANDALONE=true
+fi
+
+# ──────────────────────────────────────────────────
 # Kill existing bot and its child subagent processes
 # to prevent duplicate instances / double responses
 #
@@ -16,16 +32,12 @@ cd "$SCRIPT_DIR"
 # including agents whose system prompts mention it.
 # ──────────────────────────────────────────────────
 
-# Step 1: Record the bot's PID (if running) so we can find its children
-OLD_BOT_PID=$(cat bot.pid 2>/dev/null || echo "")
-OLD_BOT_PIDS=$(pgrep -f "python -m bot.main" 2>/dev/null || echo "")
-
-# Step 2: Kill the bot process(es)
+# Step 1: Kill the bot process(es)
 echo "Killing all existing bot.main processes..."
 pkill -f "python -m bot.main" 2>/dev/null || true
 sleep 1
 
-# Step 3: Kill orphaned claude subprocesses that were children of the old bot.
+# Step 2: Kill orphaned claude subprocesses that were children of the old bot.
 # After the bot dies, its child claude processes become children of init (ppid=1).
 # We find claude processes with ppid=1 that have "--print" AND "--system-prompt"
 # in their actual command — these are subagent invocations, not other claude sessions.
@@ -43,7 +55,7 @@ for pid in $(pgrep -x "claude" 2>/dev/null || true); do
 done
 sleep 2
 
-# Step 4: Escalate to SIGKILL for stubborn bot processes
+# Step 3: Escalate to SIGKILL for stubborn bot processes
 if pgrep -f "python -m bot.main" > /dev/null 2>&1; then
     echo "Stubborn bot processes found, sending SIGKILL..."
     pkill -9 -f "python -m bot.main" 2>/dev/null || true
@@ -71,16 +83,26 @@ fi
 rm -f bot.pid
 echo "All old processes cleared."
 
-# Activate venv if present (Hetzner uses /opt/goliath/venv)
-if [ -d "$REPO_ROOT/venv" ]; then
-    source "$REPO_ROOT/venv/bin/activate"
+# ──────────────────────────────────────────────────
+# If running under systemd (default), we're done.
+# systemd's Restart=always will bring the bot back in ~10 seconds.
+# If running standalone (dev/manual), launch the bot ourselves.
+# ──────────────────────────────────────────────────
+
+if [ "$STANDALONE" = true ]; then
+    # Activate venv if present (Hetzner uses /opt/goliath/venv)
+    if [ -d "$REPO_ROOT/venv" ]; then
+        source "$REPO_ROOT/venv/bin/activate"
+    fi
+
+    # Install dependencies (fast if already installed)
+    pip install -q -r requirements.txt
+
+    # Start the bot in the background
+    echo "Starting GOLIATH Telegram Bot (standalone mode)..."
+    nohup python -m bot.main > bot.log 2>&1 &
+    echo $! > bot.pid
+    echo "Bot started with PID $(cat bot.pid)"
+else
+    echo "Systemd will restart the bot in ~10 seconds (Restart=always, RestartSec=10)."
 fi
-
-# Install dependencies (fast if already installed)
-pip install -q -r requirements.txt
-
-# Start the bot in the background
-echo "Starting GOLIATH Telegram Bot..."
-nohup python -m bot.main > bot.log 2>&1 &
-echo $! > bot.pid
-echo "Bot started with PID $(cat bot.pid)"

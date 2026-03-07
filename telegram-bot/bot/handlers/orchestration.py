@@ -347,6 +347,8 @@ async def _run_orchestrator(
     activity_log = context.bot_data.get("activity_log")
     token_tracker = context.bot_data.get("token_tracker")
     experience_replay = context.bot_data.get("experience_replay")
+    reliability_log = context.bot_data.get("reliability_log")
+    tiered_memory = context.bot_data.get("tiered_memory")
     preferences = context.bot_data.get("preferences")
     chat_id = update.effective_chat.id
 
@@ -363,7 +365,7 @@ async def _run_orchestrator(
     if conversation:
         conv_history = await conversation.format_for_prompt(chat_id)
 
-    orchestrator = NimrodOrchestrator(memory=memory, token_tracker=token_tracker, experience_replay=experience_replay)
+    orchestrator = NimrodOrchestrator(memory=memory, token_tracker=token_tracker, experience_replay=experience_replay, chat_id=chat_id, reliability_log=reliability_log, tiered_memory=tiered_memory)
 
     working_msg = await update.message.reply_text(
         random.choice(STATUS_MESSAGES)
@@ -429,7 +431,7 @@ async def _run_orchestrator(
             restart_reason = orch_result.restart_reason or "Code changes applied"
             await update.message.reply_text(
                 f"<b>Restarting bot...</b>\n<i>{restart_reason}</i>\n\n"
-                f"Give me ~5 seconds, then I'll be back with the changes live.",
+                f"Give me ~15 seconds, then I'll be back with the changes live.",
                 parse_mode="HTML",
             )
             logger.info(f"Restart requested: {restart_reason}")
@@ -460,9 +462,10 @@ async def _run_orchestrator(
 
     except asyncio.TimeoutError:
         run_success = False
-        run_error = "Timed out after 30 minutes"
+        run_error = "Timed out after 2 hours"
         await working_msg.edit_text(
-            "Damn, that one timed out after 30 minutes. Try breaking it into a smaller task."
+            "That one timed out after 2 hours — something went badly wrong or got truly stuck. "
+            "Try breaking it into a smaller task or check the logs."
         )
     except Exception as e:
         run_success = False
