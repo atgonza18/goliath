@@ -1,26 +1,91 @@
 import asyncio
 import json
 import logging
+import os
 import re
 import time
+import uuid
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Callable, Optional
+
+import aiohttp
 
 from bot.agents.definitions import NIMROD, CONSTRAINTS_MANAGER
 from bot.agents.registry import AgentRegistry
 from bot.agents.runner import get_runner, AgentResult
 from bot.memory.store import MemoryStore
+from bot.memory.reliability_log import classify_task_type
+from bot.agents.tool_registry import get_tool_registry
 
-# Pending constraint sync proposals are saved here for approval
+# Pending constraint sync proposals are saved per-session (chat_id / conversation_id)
+# so that two users running concurrently never cross-contaminate each other's sync state.
 _DATA_DIR = Path(__file__).resolve().parent.parent / "data"
+
+# Legacy path — kept only for backward-compatibility migration (see _pending_sync_path).
 PENDING_SYNC_PATH = _DATA_DIR / "pending_constraint_sync.json"
+
+
+def _pending_sync_path(chat_id) -> Path:
+    """Return the per-session pending sync file path for the given chat_id.
+
+    chat_id can be an int (Telegram) or a string (web conversation_id).
+    A sanitised string form is used in the filename so it's safe for all OSes.
+    Falls back to the legacy shared path when chat_id is None so that callers
+    that haven't been updated yet continue to work correctly.
+    """
+    if chat_id is None:
+        return PENDING_SYNC_PATH
+    safe = re.sub(r"[^\w\-]", "_", str(chat_id))
+    return _DATA_DIR / f"pending_constraint_sync_{safe}.json"
 
 logger = logging.getLogger(__name__)
 
 # Limit concurrent Claude subprocesses — bumped to 8 for parallel request handling.
 # Multiple user messages can now run concurrently, each spawning subagents.
 _semaphore = asyncio.Semaphore(8)
+
+# ---------------------------------------------------------------------------
+# Swarm state management — shared JSON file for cross-process visibility
+# ---------------------------------------------------------------------------
+_SWARM_STATE_PATH = _DATA_DIR / "swarm_state.json"
+
+
+def _write_swarm_state(state: dict) -> None:
+    """Write swarm state to shared JSON file (atomic via tmp+rename)."""
+    try:
+        _DATA_DIR.mkdir(parents=True, exist_ok=True)
+        tmp = _SWARM_STATE_PATH.with_suffix(".tmp")
+        tmp.write_text(json.dumps(state, indent=2))
+        tmp.rename(_SWARM_STATE_PATH)
+    except Exception:
+        logger.debug("Failed to write swarm state file", exc_info=True)
+
+
+def read_swarm_state() -> dict:
+    """Read current swarm state. Returns idle state if file missing/corrupt."""
+    try:
+        if _SWARM_STATE_PATH.exists():
+            return json.loads(_SWARM_STATE_PATH.read_text())
+    except Exception:
+        logger.debug("Failed to read swarm state file", exc_info=True)
+    return {"status": "idle"}
+
+
+async def _notify_telegram_swarm(message: str) -> None:
+    """Fire-and-forget Telegram notification for swarm events."""
+    token = os.environ.get("TELEGRAM_BOT_TOKEN", "")
+    chat_id = os.environ.get("REPORT_CHAT_ID", "")
+    if not token or not chat_id:
+        return
+    try:
+        url = f"https://api.telegram.org/bot{token}/sendMessage"
+        payload = {"chat_id": chat_id, "text": message, "parse_mode": "HTML"}
+        async with aiohttp.ClientSession() as session:
+            async with session.post(url, json=payload, timeout=aiohttp.ClientTimeout(total=10)):
+                pass  # Fire and forget
+    except Exception:
+        logger.debug("Failed to send swarm Telegram notification", exc_info=True)
 
 
 @dataclass
@@ -59,12 +124,17 @@ class NimrodOrchestrator:
     Memory is injected into prompts and saved from MEMORY_SAVE blocks.
     """
 
-    def __init__(self, memory: MemoryStore, token_tracker=None, experience_replay=None):
+    def __init__(self, memory: MemoryStore, token_tracker=None, experience_replay=None, chat_id=None, reliability_log=None, tiered_memory=None):
         self.memory = memory
         self.registry = AgentRegistry()
         self.runner = get_runner()
         self._token_tracker = token_tracker
         self._experience_replay = experience_replay
+        self._reliability_log = reliability_log  # ReliabilityLogStore or None
+        self._tiered_memory = tiered_memory  # TieredMemoryStore or None (GAP H2)
+        # Per-session identity — scopes pending constraint sync state so two users
+        # cannot interfere with each other's approval/rejection flow.
+        self._chat_id = chat_id  # int for Telegram, str for web, None for legacy callers
         # Activity log instrumentation (read by orchestration handler)
         self._pass1_duration: Optional[float] = None
         self._pass2_duration: Optional[float] = None
@@ -77,7 +147,7 @@ class NimrodOrchestrator:
             "agents": [],
         }
 
-    async def handle_message(self, user_message: str, conversation_history: str = "", on_agent_event: Optional[Callable] = None) -> OrchestrationResult:
+    async def handle_message(self, user_message: str, conversation_history: str = "", on_agent_event: Optional[Callable] = None, on_text_chunk: Optional[Callable] = None, on_tool_event: Optional[Callable] = None, source: str = "telegram") -> OrchestrationResult:
         all_file_paths: list[str] = []
 
         # --- FAST PATH: Constraint sync approval/rejection ---
@@ -89,18 +159,20 @@ class NimrodOrchestrator:
         memory_context = await self._build_memory_context(user_message)
 
         # --- PASS 1: Nimrod routing ---
-        pass1_prompt = await self._build_nimrod_prompt(user_message, memory_context, conversation_history)
+        pass1_prompt = await self._build_nimrod_prompt(user_message, memory_context, conversation_history, source=source)
 
         if on_agent_event:
             await on_agent_event({"type": "pass", "pass": 1, "status": "start"})
 
         # Pass 1: Nimrod has full tool access but is prompted to delegate complex work
+        # Stream text chunks for Pass 1 only if it might be a direct answer
         p1_start = time.monotonic()
         async with _semaphore:
             nimrod_result = await self.runner.run(
                 agent=NIMROD,
                 task_prompt=pass1_prompt,
                 no_tools=False,
+                on_text_chunk=on_text_chunk,
             )
         self._pass1_duration = time.monotonic() - p1_start
         await self._track_agent_tokens(NIMROD.name)
@@ -147,12 +219,92 @@ class NimrodOrchestrator:
             )
 
         # --- DISPATCH SUBAGENTS ---
+        agent_names = [r.agent_name for r in subagent_requests]
+        is_swarm = len(subagent_requests) >= 2
+        swarm_id = str(uuid.uuid4())[:8] if is_swarm else None
+
         logger.info(
-            f"Nimrod dispatching {len(subagent_requests)} subagent(s): "
-            f"{[r.agent_name for r in subagent_requests]}"
+            f"Nimrod dispatching {len(subagent_requests)} subagent(s): {agent_names}"
+            + (f" [swarm:{swarm_id}]" if swarm_id else "")
         )
 
-        results = await self._run_subagents(subagent_requests, user_message, on_agent_event=on_agent_event)
+        # --- SWARM: emit start event + write state + Telegram notification ---
+        if is_swarm:
+            swarm_state = {
+                "status": "active",
+                "swarm_id": swarm_id,
+                "agents": agent_names,
+                "count": len(agent_names),
+                "started_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+                "completed_at": None,
+                "duration_ms": None,
+                "agent_status": {name: {"status": "running"} for name in agent_names},
+            }
+            _write_swarm_state(swarm_state)
+
+            if on_agent_event:
+                await on_agent_event({
+                    "type": "swarm_started",
+                    "swarm_id": swarm_id,
+                    "agents": agent_names,
+                    "count": len(agent_names),
+                })
+
+            # Telegram notification: swarm dispatched
+            agent_list_str = ", ".join(agent_names)
+            asyncio.create_task(_notify_telegram_swarm(
+                f"⚡ <b>Swarm launched</b> — {len(agent_names)} agents running in parallel:\n"
+                f"<code>{agent_list_str}</code>"
+            ))
+
+        swarm_start_t = time.monotonic()
+        results = await self._run_subagents(subagent_requests, user_message, on_agent_event=on_agent_event, on_tool_event=on_tool_event)
+
+        # --- SWARM: emit completion event + write state + Telegram notification ---
+        if is_swarm:
+            swarm_duration_ms = int((time.monotonic() - swarm_start_t) * 1000)
+            succeeded = sum(1 for r in results if r.success)
+            failed = sum(1 for r in results if not r.success)
+
+            # Read the latest per-agent status (updated as each agent completed)
+            latest_agent_status = read_swarm_state().get("agent_status", {})
+            swarm_complete_state = {
+                "status": "completed",
+                "swarm_id": swarm_id,
+                "agents": agent_names,
+                "count": len(agent_names),
+                "started_at": swarm_state["started_at"],
+                "completed_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+                "duration_ms": swarm_duration_ms,
+                "succeeded": succeeded,
+                "failed": failed,
+                "agent_status": latest_agent_status,
+            }
+            _write_swarm_state(swarm_complete_state)
+
+            if on_agent_event:
+                await on_agent_event({
+                    "type": "swarm_completed",
+                    "swarm_id": swarm_id,
+                    "duration_ms": swarm_duration_ms,
+                    "succeeded": succeeded,
+                    "failed": failed,
+                })
+
+            # Telegram notification: swarm complete
+            status_emoji = "✅" if failed == 0 else "⚠️"
+            asyncio.create_task(_notify_telegram_swarm(
+                f"{status_emoji} <b>Swarm complete</b> — all {len(agent_names)} agents finished in "
+                f"<b>{swarm_duration_ms / 1000:.1f}s</b>. Results synthesized."
+                + (f"\n⚠️ <b>{failed}</b> agent(s) failed" if failed > 0 else "")
+            ))
+
+            # After 10 seconds, reset to idle so the indicator clears
+            async def _reset_swarm_state():
+                await asyncio.sleep(10)
+                _write_swarm_state({"status": "idle"})
+
+            asyncio.create_task(_reset_swarm_state())
 
         # Track token usage for each dispatched subagent
         for r in results:
@@ -255,6 +407,7 @@ class NimrodOrchestrator:
                 agent=NIMROD,
                 task_prompt=synthesis_prompt,
                 no_tools=False,
+                on_text_chunk=on_text_chunk,
             )
         self._pass2_duration = time.monotonic() - p2_start
         await self._track_agent_tokens(NIMROD.name)
@@ -298,7 +451,7 @@ class NimrodOrchestrator:
             )
             clean_synthesis = self._strip_structured_blocks(synthesis_text)
 
-            followup_results = await self._run_subagents(followup_requests, user_message, on_agent_event=on_agent_event)
+            followup_results = await self._run_subagents(followup_requests, user_message, on_agent_event=on_agent_event, on_tool_event=on_tool_event)
 
             # Track token usage for follow-up subagents
             for r in followup_results:
@@ -335,6 +488,7 @@ class NimrodOrchestrator:
                     agent=NIMROD,
                     task_prompt=final_prompt,
                     no_tools=False,
+                    on_text_chunk=on_text_chunk,
                 )
             await self._track_agent_tokens(NIMROD.name)
 
@@ -436,10 +590,24 @@ class NimrodOrchestrator:
         return "PERSISTENT MEMORY:\n" + "\n\n".join(parts)
 
     async def _build_nimrod_prompt(
-        self, user_message: str, memory_context: str, conversation_history: str = ""
+        self, user_message: str, memory_context: str, conversation_history: str = "", source: str = "telegram"
     ) -> str:
         subagent_list = self.registry.subagent_descriptions()
-        parts = [f"{memory_context}\n\n---\n\n"]
+        source_context = {
+            "web": (
+                "INTERFACE: Web GUI (browser dashboard at goliath web platform). "
+                "The user is on the web interface — NOT Telegram. "
+                "Do NOT reference Telegram features (inline keyboards, /commands, reply markup). "
+                "You can use rich markdown formatting (headers, tables, code blocks). "
+                "File links and long-form responses work well here."
+            ),
+            "telegram": (
+                "INTERFACE: Telegram. "
+                "The user is chatting via Telegram. "
+                "Keep responses concise for mobile. Use Telegram-compatible HTML formatting."
+            ),
+        }.get(source, f"INTERFACE: {source}")
+        parts = [f"{source_context}\n\n---\n\n{memory_context}\n\n---\n\n"]
 
         # Inject lessons from experience replay (self-improvement V3)
         if self._experience_replay:
@@ -449,6 +617,24 @@ class NimrodOrchestrator:
                     parts.append(f"{lessons_block}\n\n---\n\n")
             except Exception:
                 logger.debug("Failed to inject experience replay lessons", exc_info=True)
+
+        # Inject cross-project semantic patterns (GAP H2)
+        if self._tiered_memory:
+            try:
+                semantic_block = await self._tiered_memory.format_semantic_for_prompt(limit=5)
+                if semantic_block:
+                    parts.append(f"{semantic_block}\n\n---\n\n")
+            except Exception:
+                logger.debug("Failed to inject semantic memories", exc_info=True)
+
+        # GAP H4: Inject runtime tool descriptions for Nimrod
+        try:
+            tool_reg = get_tool_registry()
+            tool_desc = tool_reg.tool_descriptions_for_agent("nimrod")
+            if tool_desc:
+                parts.append(f"{tool_desc}\n\n---\n\n")
+        except Exception:
+            logger.debug("Failed to inject tool registry descriptions", exc_info=True)
 
         # Inject pending constraint sync status if one exists
         pending_sync = self.get_pending_sync_summary()
@@ -464,6 +650,60 @@ class NimrodOrchestrator:
         )
         return "".join(parts)
 
+    # Maximum total characters of subagent output to pass into the synthesis
+    # prompt.  If all agents' combined output exceeds this, each agent's output
+    # is trimmed proportionally so the most important content (first N chars per
+    # agent) is kept and token overflow is avoided silently.
+    _SYNTHESIS_OUTPUT_BUDGET = 8000  # chars (~2000 tokens, leaves room for the rest of the prompt)
+
+    @staticmethod
+    def _compress_agent_outputs(results: list[AgentResult], budget: int) -> list[AgentResult]:
+        """Intelligently compress subagent outputs to fit within a character budget.
+
+        Strategy:
+        1. Measure total chars across successful results.
+        2. If under budget — return unchanged (no compression needed).
+        3. If over budget — allocate budget proportionally by agent output length
+           (larger agents give up more chars), keep the leading portion of each
+           output (which typically contains the key findings before verbose detail).
+        4. Append a "[...truncated for synthesis — N chars omitted...]" suffix on
+           any trimmed output so Nimrod knows it's seeing a compressed view.
+        5. Failed agents are never modified.
+        """
+        successful = [r for r in results if r.success and r.output]
+        total_chars = sum(len(r.output) for r in successful)
+
+        if total_chars <= budget:
+            return results  # No compression needed
+
+        logger.info(
+            f"Synthesis output budget exceeded: {total_chars} chars across "
+            f"{len(successful)} agent(s) — compressing to {budget} chars to "
+            f"prevent token overflow."
+        )
+
+        # Build a lookup of compressed outputs keyed by agent_name.
+        # Proportion: each agent gets (its_share / total) * budget chars.
+        compressed: dict[str, str] = {}
+        for r in successful:
+            share = len(r.output) / total_chars
+            alloc = max(500, int(share * budget))  # minimum 500 chars per agent
+            if len(r.output) > alloc:
+                omitted = len(r.output) - alloc
+                compressed[r.agent_name] = (
+                    r.output[:alloc]
+                    + f"\n[...truncated for synthesis — {omitted} chars omitted...]"
+                )
+            else:
+                compressed[r.agent_name] = r.output
+
+        # Return new AgentResult objects with replaced output (originals untouched)
+        from dataclasses import replace as dc_replace
+        return [
+            dc_replace(r, output=compressed[r.agent_name]) if r.agent_name in compressed else r
+            for r in results
+        ]
+
     def _build_synthesis_prompt(
         self,
         user_message: str,
@@ -473,6 +713,9 @@ class NimrodOrchestrator:
         conversation_history: str = "",
         sync_proposal_context: str = "",
     ) -> str:
+        # Compress subagent outputs if they would overflow the synthesis prompt.
+        results = self._compress_agent_outputs(results, self._SYNTHESIS_OUTPUT_BUDGET)
+
         parts = [f"{memory_context}\n\n---\n\n"]
         if conversation_history:
             parts.append(f"{conversation_history}\n\n---\n\n")
@@ -538,7 +781,7 @@ class NimrodOrchestrator:
         return "".join(parts)
 
     async def _run_subagents(
-        self, requests: list[SubagentRequest], user_message: str, on_agent_event: Optional[Callable] = None
+        self, requests: list[SubagentRequest], user_message: str, on_agent_event: Optional[Callable] = None, on_tool_event: Optional[Callable] = None
     ) -> list[AgentResult]:
         async def _run_one(req: SubagentRequest) -> AgentResult:
             agent_def = self.registry.get_subagent(req.agent_name)
@@ -568,7 +811,21 @@ class NimrodOrchestrator:
                 except Exception:
                     pass
 
+            # GAP H4: Inject runtime tool descriptions from the ToolRegistry
+            try:
+                tool_reg = get_tool_registry()
+                tool_desc = tool_reg.tool_descriptions_for_agent(req.agent_name)
+                if tool_desc:
+                    context_parts.append(tool_desc)
+            except Exception:
+                pass  # Never let tool registry lookup crash dispatch
+
             context = "\n".join(context_parts)
+
+            # Per-agent tool event wrapper: tags each event with the agent name
+            async def _agent_tool_cb(event, _name=req.agent_name):
+                event["agent"] = _name
+                await on_tool_event(event)
 
             start_t = time.monotonic()
             async with _semaphore:
@@ -576,15 +833,46 @@ class NimrodOrchestrator:
                     agent=agent_def,
                     task_prompt=req.task,
                     context=context,
+                    on_tool_event=_agent_tool_cb if on_tool_event else None,
                 )
+
+            elapsed_ms = int((time.monotonic() - start_t) * 1000)
+
+            # --- Reliability logging (fire-and-forget, never blocks) ---
+            if self._reliability_log is not None:
+                try:
+                    task_type = classify_task_type(req.task)
+                    await self._reliability_log.log_call(
+                        agent_name=req.agent_name,
+                        success=result.success,
+                        latency_ms=elapsed_ms,
+                        task_type=task_type,
+                        user_id=str(self._chat_id or ""),
+                        error=result.error if not result.success else None,
+                        model_used=getattr(agent_def, "model", None),
+                    )
+                except Exception:
+                    pass  # Never let reliability logging crash agent dispatch
 
             if on_agent_event:
                 await on_agent_event({
                     "type": "agent_complete",
                     "agent": req.agent_name,
                     "success": result.success,
-                    "duration": round(time.monotonic() - start_t, 1),
+                    "duration": round(elapsed_ms / 1000, 1),
                 })
+
+            # Update per-agent status in swarm state file for GUI polling
+            try:
+                current_state = read_swarm_state()
+                if current_state.get("status") == "active" and "agent_status" in current_state:
+                    current_state["agent_status"][req.agent_name] = {
+                        "status": "completed" if result.success else "failed",
+                        "duration_ms": elapsed_ms,
+                    }
+                    _write_swarm_state(current_state)
+            except Exception:
+                pass  # Never let state bookkeeping crash agent dispatch
 
             return result
 
@@ -669,84 +957,135 @@ class NimrodOrchestrator:
 
     # --- Parsing methods ---
 
-    def _parse_subagent_requests(self, text: str) -> list[SubagentRequest]:
-        pattern = r"```SUBAGENT_REQUEST\s*\n(.*?)```"
-        matches = re.findall(pattern, text, re.DOTALL)
+    @staticmethod
+    def _find_blocks(text: str, block_type: str) -> list[str]:
+        """Extract structured block contents with robust pattern matching.
 
-        requests = []
-        for block in matches:
-            fields = self._parse_block_fields(block)
-            agent = fields.get("agent", "").strip()
-            task = fields.get("task", "").strip()
-            if agent and task:
-                proj = fields.get("project", "").strip()
-                requests.append(
-                    SubagentRequest(
-                        agent_name=agent,
-                        task=task,
-                        project_key=proj if proj and proj != "null" else None,
-                    )
+        Handles both well-formed blocks (```TYPE\\n...```) and blocks where
+        the agent forgot the closing backticks (matches until next block or EOF).
+        Wraps in try/except so malformed output never crashes the orchestrator.
+        """
+        try:
+            # Primary pattern: well-formed fenced blocks
+            pattern = rf"```{block_type}\s*\n(.*?)```"
+            matches = re.findall(pattern, text, re.DOTALL)
+            if matches:
+                return matches
+
+            # Fallback: block without closing backticks — grab until next
+            # structured block or end of text (greedy but bounded)
+            fallback = rf"```{block_type}\s*\n(.*?)(?=```[A-Z_]|\Z)"
+            matches = re.findall(fallback, text, re.DOTALL)
+            if matches:
+                logger.warning(
+                    f"Block parser: found {len(matches)} {block_type} block(s) "
+                    f"with missing closing backticks — recovered via fallback pattern"
                 )
+            return matches
 
-        return requests
+        except Exception:
+            logger.exception(f"Block parser failed for block_type={block_type}")
+            return []
+
+    def _parse_subagent_requests(self, text: str) -> list[SubagentRequest]:
+        try:
+            matches = self._find_blocks(text, "SUBAGENT_REQUEST")
+            requests = []
+            for block in matches:
+                fields = self._parse_block_fields(block)
+                agent = fields.get("agent", "").strip()
+                task = fields.get("task", "").strip()
+                if agent and task:
+                    proj = fields.get("project", "").strip()
+                    requests.append(
+                        SubagentRequest(
+                            agent_name=agent,
+                            task=task,
+                            project_key=proj if proj and proj != "null" else None,
+                        )
+                    )
+                elif agent or task:
+                    logger.warning(
+                        f"Malformed SUBAGENT_REQUEST: agent={agent!r}, task={task!r} "
+                        f"(both required) — skipping this block"
+                    )
+            return requests
+        except Exception:
+            logger.exception("_parse_subagent_requests crashed — returning empty list")
+            return []
 
     def _parse_memory_saves(self, text: str) -> list[MemorySaveRequest]:
-        pattern = r"```MEMORY_SAVE\s*\n(.*?)```"
-        matches = re.findall(pattern, text, re.DOTALL)
-
-        saves = []
-        for block in matches:
-            fields = self._parse_block_fields(block)
-            category = fields.get("category", "").strip()
-            summary = fields.get("summary", "").strip()
-            if category and summary:
-                proj = fields.get("project", "").strip()
-                saves.append(
-                    MemorySaveRequest(
-                        category=category,
-                        summary=summary,
-                        detail=fields.get("detail", "").strip() or None,
-                        project_key=proj if proj and proj != "null" else None,
-                        tags=fields.get("tags", "").strip() or None,
+        try:
+            matches = self._find_blocks(text, "MEMORY_SAVE")
+            saves = []
+            for block in matches:
+                fields = self._parse_block_fields(block)
+                category = fields.get("category", "").strip()
+                summary = fields.get("summary", "").strip()
+                if category and summary:
+                    proj = fields.get("project", "").strip()
+                    saves.append(
+                        MemorySaveRequest(
+                            category=category,
+                            summary=summary,
+                            detail=fields.get("detail", "").strip() or None,
+                            project_key=proj if proj and proj != "null" else None,
+                            tags=fields.get("tags", "").strip() or None,
+                        )
                     )
-                )
-
-        return saves
+                elif category or summary:
+                    logger.warning(
+                        f"Malformed MEMORY_SAVE: category={category!r}, summary={summary!r} "
+                        f"(both required) — skipping"
+                    )
+            return saves
+        except Exception:
+            logger.exception("_parse_memory_saves crashed — returning empty list")
+            return []
 
     def _parse_file_created(self, text: str) -> list[str]:
-        pattern = r"```FILE_CREATED\s*\n(.*?)```"
-        matches = re.findall(pattern, text, re.DOTALL)
-
-        paths = []
-        for block in matches:
-            fields = self._parse_block_fields(block)
-            path = fields.get("path", "").strip()
-            if path:
-                paths.append(path)
-        return paths
+        try:
+            matches = self._find_blocks(text, "FILE_CREATED")
+            paths = []
+            for block in matches:
+                fields = self._parse_block_fields(block)
+                path = fields.get("path", "").strip()
+                if path:
+                    paths.append(path)
+            return paths
+        except Exception:
+            logger.exception("_parse_file_created crashed — returning empty list")
+            return []
 
     def _parse_restart_required(self, text: str) -> tuple[bool, str]:
         """Check for RESTART_REQUIRED block in agent output."""
-        pattern = r"```RESTART_REQUIRED\s*\n(.*?)```"
-        match = re.search(pattern, text, re.DOTALL)
-        if match:
-            fields = self._parse_block_fields(match.group(1))
-            reason = fields.get("reason", "Code changes applied").strip()
-            return True, reason
-        return False, ""
+        try:
+            matches = self._find_blocks(text, "RESTART_REQUIRED")
+            if matches:
+                fields = self._parse_block_fields(matches[0])
+                reason = fields.get("reason", "Code changes applied").strip()
+                return True, reason
+            return False, ""
+        except Exception:
+            logger.exception("_parse_restart_required crashed — returning False")
+            return False, ""
 
     def _parse_resolve_actions(self, text: str) -> list[int]:
         """Parse RESOLVE_ACTION blocks from agent output. Returns list of memory IDs."""
-        pattern = r"```RESOLVE_ACTION\s*\n(.*?)```"
-        matches = re.findall(pattern, text, re.DOTALL)
-
-        ids = []
-        for block in matches:
-            fields = self._parse_block_fields(block)
-            raw_id = fields.get("id", "").strip()
-            if raw_id.isdigit():
-                ids.append(int(raw_id))
-        return ids
+        try:
+            matches = self._find_blocks(text, "RESOLVE_ACTION")
+            ids = []
+            for block in matches:
+                fields = self._parse_block_fields(block)
+                raw_id = fields.get("id", "").strip()
+                if raw_id.isdigit():
+                    ids.append(int(raw_id))
+                elif raw_id:
+                    logger.warning(f"Malformed RESOLVE_ACTION id: {raw_id!r} — not a digit")
+            return ids
+        except Exception:
+            logger.exception("_parse_resolve_actions crashed — returning empty list")
+            return []
 
     async def _process_resolve_actions(self, memory_ids: list[int]) -> None:
         """Mark the given action item memory IDs as resolved."""
@@ -860,12 +1199,14 @@ class NimrodOrchestrator:
 
         Returns dict with 'project' and 'constraints' (list) or None.
         """
-        pattern = r"```CONSTRAINTS_SYNC\s*\n(.*?)```"
-        match = re.search(pattern, text, re.DOTALL)
-        if not match:
+        try:
+            blocks = self._find_blocks(text, "CONSTRAINTS_SYNC")
+            if not blocks:
+                return None
+            block = blocks[0]
+        except Exception:
+            logger.exception("_parse_constraints_sync failed to find block")
             return None
-
-        block = match.group(1)
 
         # Extract project field (first line typically)
         project = ""
@@ -1007,25 +1348,25 @@ The JSON must be valid and on a single line after "actions: ".
 
         try:
             _DATA_DIR.mkdir(parents=True, exist_ok=True)
-            with open(PENDING_SYNC_PATH, "w") as f:
+            sync_path = _pending_sync_path(self._chat_id)
+            with open(sync_path, "w") as f:
                 json.dump(pending, f, indent=2)
-            logger.info(f"Saved pending constraint sync to {PENDING_SYNC_PATH}")
+            logger.info(f"Saved pending constraint sync to {sync_path} (chat_id={self._chat_id})")
         except Exception:
             logger.exception("Failed to save pending constraint sync")
 
     def _parse_sync_proposal_data(self, text: str) -> Optional[dict]:
         """Parse SYNC_PROPOSAL block and return structured data."""
-        pattern = r"```SYNC_PROPOSAL\s*\n(.*?)```"
-        match = re.search(pattern, text, re.DOTALL)
-        if not match:
+        try:
+            blocks = self._find_blocks(text, "SYNC_PROPOSAL")
+            if not blocks:
+                return None
+            block = blocks[0]
+        except Exception:
+            logger.exception("_parse_sync_proposal_data failed to find block")
             return None
 
-        block = match.group(1)
-        fields = {}
-        for line in block.strip().split("\n"):
-            if ":" in line:
-                key, _, value = line.partition(":")
-                fields[key.strip()] = value.strip()
+        fields = self._parse_block_fields(block)
 
         raw_actions = fields.get("actions", "").strip()
         actions = []
@@ -1053,8 +1394,8 @@ The JSON must be valid and on a single line after "actions: ".
         """
         proposal = self._parse_sync_proposal_data(text)
         if not proposal or not proposal.get("actions"):
-            # Even without a structured proposal, check if a pending sync was saved
-            if PENDING_SYNC_PATH.exists():
+            # Even without a structured proposal, check if a per-chat pending sync was saved
+            if _pending_sync_path(self._chat_id).exists():
                 return (
                     "<b>ConstraintsPro Sync Ready</b>\n"
                     "Constraints from this transcript have been cross-referenced against "
@@ -1121,12 +1462,13 @@ The JSON must be valid and on a single line after "actions: ".
         Reads the pending sync data from disk and dispatches constraints_manager
         with WRITE permissions to actually create/update/close constraints.
         """
-        if not PENDING_SYNC_PATH.exists():
-            logger.warning("No pending constraint sync found")
+        sync_path = _pending_sync_path(self._chat_id)
+        if not sync_path.exists():
+            logger.warning(f"No pending constraint sync found (chat_id={self._chat_id}, path={sync_path})")
             return None
 
         try:
-            with open(PENDING_SYNC_PATH, "r") as f:
+            with open(sync_path, "r") as f:
                 pending = json.load(f)
         except Exception:
             logger.exception("Failed to read pending constraint sync")
@@ -1214,10 +1556,10 @@ details: <brief description of what was synced>
             logger.info(
                 f"Approved constraints sync completed in {result.duration_seconds:.1f}s"
             )
-            # Clean up the pending file
+            # Clean up the per-chat pending file
             try:
-                PENDING_SYNC_PATH.unlink(missing_ok=True)
-                logger.info("Cleaned up pending constraint sync file")
+                sync_path.unlink(missing_ok=True)
+                logger.info(f"Cleaned up pending constraint sync file: {sync_path}")
             except Exception:
                 logger.exception("Failed to clean up pending sync file")
         else:
@@ -1229,27 +1571,27 @@ details: <brief description of what was synced>
 
     def discard_pending_sync(self) -> bool:
         """Discard a pending constraint sync proposal (user rejected it)."""
-        if PENDING_SYNC_PATH.exists():
+        sync_path = _pending_sync_path(self._chat_id)
+        if sync_path.exists():
             try:
-                PENDING_SYNC_PATH.unlink()
-                logger.info("Discarded pending constraint sync")
+                sync_path.unlink()
+                logger.info(f"Discarded pending constraint sync (chat_id={self._chat_id})")
                 return True
             except Exception:
                 logger.exception("Failed to discard pending sync")
         return False
 
-    @staticmethod
-    def has_pending_sync() -> bool:
-        """Check if there is a pending constraint sync awaiting approval."""
-        return PENDING_SYNC_PATH.exists()
+    def has_pending_sync(self) -> bool:
+        """Check if there is a pending constraint sync awaiting approval for this session."""
+        return _pending_sync_path(self._chat_id).exists()
 
-    @staticmethod
-    def get_pending_sync_summary() -> Optional[str]:
-        """Get a brief summary of the pending sync for Nimrod's context."""
-        if not PENDING_SYNC_PATH.exists():
+    def get_pending_sync_summary(self) -> Optional[str]:
+        """Get a brief summary of the pending sync for Nimrod's context (session-scoped)."""
+        sync_path = _pending_sync_path(self._chat_id)
+        if not sync_path.exists():
             return None
         try:
-            with open(PENDING_SYNC_PATH, "r") as f:
+            with open(sync_path, "r") as f:
                 pending = json.load(f)
             project = pending.get("project", "unknown")
             created_at = pending.get("created_at", "unknown")
@@ -1270,12 +1612,14 @@ details: <brief description of what was synced>
     def _parse_sync_summary(self, text: str) -> Optional[str]:
         """Extract SYNC_SUMMARY block from constraints_manager output
         and format it as an HTML notification for the user."""
-        pattern = r"```SYNC_SUMMARY\s*\n(.*?)```"
-        match = re.search(pattern, text, re.DOTALL)
-        if not match:
+        try:
+            blocks = self._find_blocks(text, "SYNC_SUMMARY")
+            if not blocks:
+                return None
+            fields = self._parse_block_fields(blocks[0])
+        except Exception:
+            logger.exception("_parse_sync_summary failed")
             return None
-
-        fields = self._parse_block_fields(match.group(1))
         created = fields.get("created", "0")
         updated = fields.get("updated", "0")
         closed = fields.get("closed", "0")
@@ -1317,9 +1661,60 @@ details: <brief description of what was synced>
 
     @staticmethod
     def _parse_block_fields(block: str) -> dict[str, str]:
-        fields = {}
-        for line in block.strip().split("\n"):
-            if ":" in line:
-                key, _, value = line.partition(":")
-                fields[key.strip()] = value.strip()
-        return fields
+        """Parse key: value fields from a structured block.
+
+        HIGH-SEVERITY ENGINE GAP FIX: The old implementation broke on multi-line
+        values (e.g., task fields spanning several lines) because it treated every
+        line with a colon as a new key. The new version:
+          1. Recognises known field keys and only splits on those.
+          2. Accumulates subsequent non-key lines as continuation of the previous value.
+          3. Falls back to the simple key:value parser for unknown formats.
+          4. Wraps in try/except so malformed blocks never crash the orchestrator.
+
+        Known field keys (case-insensitive): agent, task, project, category,
+        summary, detail, tags, path, description, reason, id, action,
+        created, updated, closed, details.
+        """
+        _KNOWN_KEYS = {
+            "agent", "task", "project", "category", "summary", "detail",
+            "tags", "path", "description", "reason", "id", "action",
+            "created", "updated", "closed", "details",
+        }
+        try:
+            fields: dict[str, str] = {}
+            current_key: str | None = None
+            current_value_lines: list[str] = []
+
+            for line in block.strip().split("\n"):
+                # Check if this line starts a new known field
+                if ":" in line:
+                    candidate_key, _, candidate_value = line.partition(":")
+                    candidate_key_stripped = candidate_key.strip().lower()
+
+                    if candidate_key_stripped in _KNOWN_KEYS:
+                        # Save previous field
+                        if current_key is not None:
+                            fields[current_key] = "\n".join(current_value_lines).strip()
+                        current_key = candidate_key.strip()
+                        current_value_lines = [candidate_value.strip()]
+                        continue
+
+                # If no known key matched, this is a continuation line
+                if current_key is not None:
+                    current_value_lines.append(line)
+                else:
+                    # No current key yet — try simple key:value as fallback
+                    if ":" in line:
+                        key, _, value = line.partition(":")
+                        fields[key.strip()] = value.strip()
+
+            # Save the last field
+            if current_key is not None:
+                fields[current_key] = "\n".join(current_value_lines).strip()
+
+            return fields
+
+        except Exception:
+            # Absolute last resort: never let parsing crash the orchestrator
+            logger.exception("_parse_block_fields failed on block — returning empty")
+            return {}
