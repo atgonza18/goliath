@@ -18,7 +18,7 @@ interface ChatContextValue {
 
   // Stream management
   streams: Record<string, StreamState>;
-  sendMessage: (convId: string | null, content: string, file?: File) => string;
+  sendMessage: (convId: string | null, content: string, files?: File[]) => string;
   stopGenerating: (convId: string) => void;
   getStreamState: (convId: string) => StreamState | null;
   getStreamData: (convId: string) => StreamMutableData | null;
@@ -73,22 +73,24 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
 
   // ---- sendMessage ----
 
-  const sendMessage = useCallback((convId: string | null, content: string, file?: File): string => {
+  const sendMessage = useCallback((convId: string | null, content: string, files?: File[]): string => {
     // Generate a temp ID for new conversations
     const tempId = convId || `temp-${generateId()}`;
     const assistantId = generateId();
 
     // Build attachment metadata for the user message (for display)
-    let attachment: MessageAttachment | null = null;
-    if (file) {
-      const isImage = file.type.startsWith('image/');
-      attachment = {
-        type: isImage ? 'image' : 'pdf',
-        filename: file.name,
-        originalName: file.name,
-        url: URL.createObjectURL(file), // local preview URL
-        mimeType: file.type,
-      };
+    let attachments: MessageAttachment[] | undefined;
+    if (files && files.length > 0) {
+      attachments = files.map((file) => {
+        const isImage = file.type.startsWith('image/');
+        return {
+          type: isImage ? 'image' : 'pdf' as 'image' | 'pdf',
+          filename: file.name,
+          originalName: file.name,
+          url: URL.createObjectURL(file), // local preview URL
+          mimeType: file.type,
+        };
+      });
     }
 
     // Initialize stream state
@@ -97,7 +99,8 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
       role: 'user',
       content,
       timestamp: new Date().toISOString(),
-      attachment,
+      attachment: attachments?.[0] || null,       // backward compat
+      attachments: attachments || null,            // multi-file
     };
 
     const newStreamState: StreamState = {
@@ -152,25 +155,41 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
       },
 
       onAttachmentUrl: (att) => {
-        // Replace the blob: URL in the user message with the permanent server URL
+        // Replace blob: URLs in the user message with permanent server URLs
+        // att can be a single attachment or an array of attachments
+        const attArray = Array.isArray(att) ? att : [att];
         const resolvedId = findConvId(tempId);
         setStreams(prev => {
           const s = prev[resolvedId];
           if (!s) return prev;
           const updatedMessages = s.messages.map(m => {
-            if (m.role === 'user' && m.attachment) {
-              // Revoke the old blob URL
-              if (m.attachment.url.startsWith('blob:')) {
-                URL.revokeObjectURL(m.attachment.url);
+            if (m.role === 'user' && (m.attachments || m.attachment)) {
+              // Update attachments array
+              if (m.attachments && m.attachments.length > 0) {
+                const updatedAttachments = m.attachments.map((existing, idx) => {
+                  const serverAtt = attArray[idx];
+                  if (serverAtt && existing.url.startsWith('blob:')) {
+                    URL.revokeObjectURL(existing.url);
+                    return { ...existing, url: serverAtt.url, filename: serverAtt.filename };
+                  }
+                  return existing;
+                });
+                return {
+                  ...m,
+                  attachments: updatedAttachments,
+                  attachment: updatedAttachments[0] || null, // keep backward compat
+                };
               }
-              return {
-                ...m,
-                attachment: {
-                  ...m.attachment,
-                  url: att.url,
-                  filename: att.filename,
-                },
-              };
+              // Legacy single attachment fallback
+              if (m.attachment && attArray[0]) {
+                if (m.attachment.url.startsWith('blob:')) {
+                  URL.revokeObjectURL(m.attachment.url);
+                }
+                return {
+                  ...m,
+                  attachment: { ...m.attachment, url: attArray[0].url, filename: attArray[0].filename },
+                };
+              }
             }
             return m;
           });
@@ -425,7 +444,7 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
           mutData.cleanupStream = null;
         }
       },
-    }, file);
+    }, files);
 
     streamDataRef.current[tempId].cleanupStream = cleanup;
 

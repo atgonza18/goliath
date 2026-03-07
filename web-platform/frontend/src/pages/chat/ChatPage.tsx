@@ -106,10 +106,10 @@ export function ChatPage() {
     });
   }, [activeConversationId, ctx]);
 
-  const handleSendMessage = useCallback((content: string, file?: File) => {
+  const handleSendMessage = useCallback((content: string, files?: File[]) => {
     if (!ctx) return;
     userScrolledUpRef.current = false;
-    ctx.sendMessage(activeConversationId, content, file);
+    ctx.sendMessage(activeConversationId, content, files);
   }, [ctx, activeConversationId]);
 
   const handleStopGenerating = useCallback(() => {

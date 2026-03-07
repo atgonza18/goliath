@@ -14,7 +14,8 @@ export interface Message {
   timestamp: string;
   streaming?: boolean;
   metadata?: MessageMetadata | null;
-  attachment?: MessageAttachment | null;
+  attachment?: MessageAttachment | null;       // legacy single-file (backward compat)
+  attachments?: MessageAttachment[] | null;    // multi-file support
 }
 
 export interface MessageMetadata {

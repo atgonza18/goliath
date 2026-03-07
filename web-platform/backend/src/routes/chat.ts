@@ -87,7 +87,8 @@ interface SessionMessage {
   role: 'user' | 'assistant';
   content: string;
   timestamp: string;
-  attachment?: SessionMessageAttachment;
+  attachment?: SessionMessageAttachment;          // legacy single-file (backward compat)
+  attachments?: SessionMessageAttachment[];       // multi-file support
 }
 
 const sessions = new Map<string, ChatSession>();
@@ -472,6 +473,13 @@ chatRouter.get('/chat/sessions/:id', (req: Request, res: Response) => {
           url: m.attachment.url,
           mimeType: m.attachment.mimeType,
         } : undefined,
+        attachments: m.attachments ? m.attachments.map(a => ({
+          type: a.type,
+          filename: a.filename,
+          originalName: a.originalName,
+          url: a.url,
+          mimeType: a.mimeType,
+        })) : undefined,
       })),
     });
   } catch (err) {
@@ -737,33 +745,51 @@ chatRouter.get('/chat/uploads/:filename', (req: Request, res: Response) => {
 // Now also handles multipart/form-data for file attachments
 // ---------------------------------------------------------------------------
 
-chatRouter.post('/chat', chatUpload.single('file'), async (req: Request, res: Response) => {
+chatRouter.post('/chat', chatUpload.array('files', 10), async (req: Request, res: Response) => {
   try {
     // Support both JSON (Content-Type: application/json) and FormData (multipart)
     const message = (req.body?.message as string) || '';
     const conversationId = (req.body?.conversationId || req.body?.conversation_id) as string | undefined;
 
-    // Build attachment metadata if a file was uploaded
-    let attachment: SessionMessageAttachment | undefined;
+    // Build attachment metadata if files were uploaded
+    const attachments: SessionMessageAttachment[] = [];
     let augmentedMessage = message.trim();
-    const uploadedFile = req.file;
+    const uploadedFiles = (req.files as Express.Multer.File[]) || [];
 
-    if (uploadedFile) {
-      const isImage = uploadedFile.mimetype.startsWith('image/');
-      attachment = {
-        type: isImage ? 'image' : 'pdf',
-        filename: uploadedFile.filename,
-        originalName: uploadedFile.originalname,
-        mimeType: uploadedFile.mimetype,
-        path: uploadedFile.path,
-        url: `/api/chat/uploads/${uploadedFile.filename}`,
-      };
+    // Also support legacy single-file uploads via 'file' field (backward compat)
+    const legacyFile = (req as any).file as Express.Multer.File | undefined;
+    if (legacyFile) {
+      uploadedFiles.push(legacyFile);
+    }
 
-      // Augment the prompt so Claude knows about the attachment
-      if (isImage) {
-        augmentedMessage = `${augmentedMessage}\n\n[The user has attached an image file. You can view it using the Read tool at: ${uploadedFile.path}]`.trim();
+    if (uploadedFiles.length > 0) {
+      const fileDescriptions: string[] = [];
+
+      for (const uploadedFile of uploadedFiles) {
+        const isImage = uploadedFile.mimetype.startsWith('image/');
+        attachments.push({
+          type: isImage ? 'image' : 'pdf',
+          filename: uploadedFile.filename,
+          originalName: uploadedFile.originalname,
+          mimeType: uploadedFile.mimetype,
+          path: uploadedFile.path,
+          url: `/api/chat/uploads/${uploadedFile.filename}`,
+        });
+
+        if (isImage) {
+          fileDescriptions.push(`Image: ${uploadedFile.originalname} → ${uploadedFile.path}`);
+        } else {
+          fileDescriptions.push(`PDF: ${uploadedFile.originalname} → ${uploadedFile.path}`);
+        }
+      }
+
+      // Augment the prompt so Claude/Nimrod sees ALL attached files
+      if (uploadedFiles.length === 1) {
+        const f = uploadedFiles[0];
+        const isImage = f.mimetype.startsWith('image/');
+        augmentedMessage = `${augmentedMessage}\n\n[The user has attached ${isImage ? 'an image' : 'a PDF'} file. You can view it using the Read tool at: ${f.path}]`.trim();
       } else {
-        augmentedMessage = `${augmentedMessage}\n\n[The user has attached a PDF file. You can read it using the Read tool at: ${uploadedFile.path}]`.trim();
+        augmentedMessage = `${augmentedMessage}\n\n[The user has attached ${uploadedFiles.length} files. You can view them using the Read tool at these paths:\n${fileDescriptions.map((d, i) => `  ${i + 1}. ${d}`).join('\n')}]`.trim();
       }
     }
 
@@ -778,7 +804,8 @@ chatRouter.post('/chat', chatUpload.single('file'), async (req: Request, res: Re
       session = sessions.get(conversationId)!;
     } else {
       const newId = conversationId || uuidv4();
-      const titleSource = message.trim() || (uploadedFile ? `[Attached: ${uploadedFile.originalname}]` : 'New Chat');
+      const firstFile = uploadedFiles[0];
+      const titleSource = message.trim() || (firstFile ? `[Attached: ${firstFile.originalname}${uploadedFiles.length > 1 ? ` +${uploadedFiles.length - 1} more` : ''}]` : 'New Chat');
       session = {
         id: newId,
         cliSessionId: null,
@@ -792,7 +819,8 @@ chatRouter.post('/chat', chatUpload.single('file'), async (req: Request, res: Re
     }
 
     if (session.title === 'New Chat' && session.messages.length === 0) {
-      const titleSource = message.trim() || (uploadedFile ? `[Attached: ${uploadedFile.originalname}]` : 'New Chat');
+      const firstFile = uploadedFiles[0];
+      const titleSource = message.trim() || (firstFile ? `[Attached: ${firstFile.originalname}${uploadedFiles.length > 1 ? ` +${uploadedFiles.length - 1} more` : ''}]` : 'New Chat');
       session.title = titleSource.slice(0, 80) + (titleSource.length > 80 ? '...' : '');
     }
 
@@ -801,7 +829,8 @@ chatRouter.post('/chat', chatUpload.single('file'), async (req: Request, res: Re
       role: 'user',
       content: message.trim(),
       timestamp: new Date().toISOString(),
-      attachment,
+      attachment: attachments[0] || undefined,       // backward compat
+      attachments: attachments.length > 0 ? attachments : undefined,
     };
     session.messages.push(userMsg);
     session.updatedAt = new Date().toISOString();
@@ -821,14 +850,21 @@ chatRouter.post('/chat', chatUpload.single('file'), async (req: Request, res: Re
       message: '',
       conversationId: session.id,
       streamUrl: `/api/chat/stream/${streamId}`,
-      // Send attachment info back so frontend can update the message URL
-      attachment: attachment ? {
-        type: attachment.type,
-        filename: attachment.filename,
-        originalName: attachment.originalName,
-        url: attachment.url,
-        mimeType: attachment.mimeType,
+      // Send attachment info back so frontend can update message URLs
+      attachment: attachments[0] ? {
+        type: attachments[0].type,
+        filename: attachments[0].filename,
+        originalName: attachments[0].originalName,
+        url: attachments[0].url,
+        mimeType: attachments[0].mimeType,
       } : undefined,
+      attachments: attachments.length > 0 ? attachments.map(a => ({
+        type: a.type,
+        filename: a.filename,
+        originalName: a.originalName,
+        url: a.url,
+        mimeType: a.mimeType,
+      })) : undefined,
     });
   } catch (err) {
     console.error('[POST /api/chat]', err);

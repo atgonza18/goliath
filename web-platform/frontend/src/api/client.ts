@@ -24,7 +24,7 @@ export interface SSECallbacks {
   onChunk?: (chunk: string) => void;
   onComplete?: (data: { text: string; file_paths?: string[]; subagents?: any[]; conversation_id?: string }) => void;
   onError?: (error: string) => void;
-  onAttachmentUrl?: (attachment: { type: string; filename: string; originalName: string; url: string; mimeType: string }) => void;
+  onAttachmentUrl?: (attachments: Array<{ type: string; filename: string; originalName: string; url: string; mimeType: string }> | { type: string; filename: string; originalName: string; url: string; mimeType: string }) => void;
 }
 
 class ApiClient {
@@ -84,22 +84,24 @@ class ApiClient {
     conversationId: string | null,
     message: string,
     callbacks: SSECallbacks,
-    file?: File,
+    files?: File[],
   ): () => void {
     const abortController = new AbortController();
     let done = false;
 
     const run = async () => {
       try {
-        // Step 1: POST the message (use FormData if file attached, JSON otherwise)
+        // Step 1: POST the message (use FormData if files attached, JSON otherwise)
         let postBody: BodyInit;
         let postHeaders: Record<string, string> = {};
 
-        if (file) {
+        if (files && files.length > 0) {
           const formData = new FormData();
           formData.append('message', message);
           if (conversationId) formData.append('conversation_id', conversationId);
-          formData.append('file', file);
+          for (const file of files) {
+            formData.append('files', file);
+          }
           postBody = formData;
           // Don't set Content-Type — browser sets it with boundary for multipart
         } else {
@@ -126,9 +128,12 @@ class ApiClient {
         const conversation_id = postData.conversation_id || postData.conversationId;
         const streamUrl = postData.stream_url || postData.streamUrl;
 
-        // Notify about server-side attachment URL (replaces blob: URL with permanent URL)
-        if (postData.attachment) {
-          callbacks.onAttachmentUrl?.(postData.attachment);
+        // Notify about server-side attachment URLs (replaces blob: URLs with permanent URLs)
+        if (postData.attachments && postData.attachments.length > 0) {
+          callbacks.onAttachmentUrl?.(postData.attachments);
+        } else if (postData.attachment) {
+          // Legacy single-attachment backward compat
+          callbacks.onAttachmentUrl?.([postData.attachment]);
         }
 
         // Step 2: Connect to the SSE stream
