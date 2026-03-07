@@ -1,4 +1,12 @@
 // ---- Chat types ----
+export interface MessageAttachment {
+  type: 'image' | 'pdf';
+  filename: string;
+  originalName: string;
+  url: string;
+  mimeType: string;
+}
+
 export interface Message {
   id: string;
   role: 'user' | 'assistant';
@@ -6,6 +14,7 @@ export interface Message {
   timestamp: string;
   streaming?: boolean;
   metadata?: MessageMetadata | null;
+  attachment?: MessageAttachment | null;
 }
 
 export interface MessageMetadata {
@@ -141,11 +150,14 @@ export interface ActionItem {
 // ---- Agent types ----
 export interface Agent {
   name: string;
+  slug?: string;
   role: string;
   description: string;
   status: 'active' | 'idle' | 'error';
   lastActive?: string;
   tasksCompleted?: number;
+  category?: string;
+  model?: 'sonnet' | 'opus';
 }
 
 // ---- File Explorer types ----

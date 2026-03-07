@@ -2,9 +2,62 @@ import { Router, Request, Response } from 'express';
 import { v4 as uuidv4 } from 'uuid';
 import { spawn, ChildProcess } from 'child_process';
 import path from 'path';
+import fs from 'fs';
+import multer from 'multer';
 import type { WebSocket } from 'ws';
 
 export const chatRouter = Router();
+
+// ---------------------------------------------------------------------------
+// File upload configuration for chat attachments
+// ---------------------------------------------------------------------------
+
+const CHAT_UPLOADS_DIR = '/opt/goliath/uploads/chat';
+
+// Ensure uploads directory exists
+if (!fs.existsSync(CHAT_UPLOADS_DIR)) {
+  fs.mkdirSync(CHAT_UPLOADS_DIR, { recursive: true });
+}
+
+const chatUpload = multer({
+  storage: multer.diskStorage({
+    destination: CHAT_UPLOADS_DIR,
+    filename: (_req, file, cb) => {
+      const timestamp = Date.now();
+      const safeName = file.originalname.replace(/[^a-zA-Z0-9._-]/g, '_');
+      cb(null, `${timestamp}_${safeName}`);
+    },
+  }),
+  limits: { fileSize: 20 * 1024 * 1024 }, // 20 MB
+  fileFilter: (_req, file, cb) => {
+    const allowed = [
+      'image/png', 'image/jpeg', 'image/jpg', 'image/gif', 'image/webp',
+      'application/pdf',
+    ];
+    cb(null, allowed.includes(file.mimetype));
+  },
+});
+
+// ---------------------------------------------------------------------------
+// Telegram notification on agent completion
+// ---------------------------------------------------------------------------
+
+const TG_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN || '';
+const TG_CHAT_ID = process.env.REPORT_CHAT_ID || '';
+
+async function notifyTelegram(title: string, preview: string): Promise<void> {
+  if (!TG_BOT_TOKEN || !TG_CHAT_ID) return;
+  try {
+    const text = `✅ <b>Agent task complete!</b>\n\n<b>Chat:</b> ${title}\n<b>Preview:</b> <code>${preview.slice(0, 200)}</code>\n\nOpen the GUI to see the full response.`;
+    await fetch(`https://api.telegram.org/bot${TG_BOT_TOKEN}/sendMessage`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ chat_id: TG_CHAT_ID, text, parse_mode: 'HTML' }),
+    });
+  } catch (err) {
+    console.error('[telegram-notify]', err);
+  }
+}
 
 // ---------------------------------------------------------------------------
 // Session management — maps our web session IDs to Claude CLI session IDs
@@ -20,11 +73,21 @@ interface ChatSession {
   activeProcess: ChildProcess | null;
 }
 
+interface SessionMessageAttachment {
+  type: 'image' | 'pdf';
+  filename: string;
+  originalName: string;
+  mimeType: string;
+  path: string;        // disk path
+  url: string;         // web-accessible URL
+}
+
 interface SessionMessage {
   id: string;
   role: 'user' | 'assistant';
   content: string;
   timestamp: string;
+  attachment?: SessionMessageAttachment;
 }
 
 const sessions = new Map<string, ChatSession>();
@@ -215,6 +278,9 @@ function spawnClaude(
           });
           session.updatedAt = new Date().toISOString();
           session.activeProcess = null;
+
+          // Notify via Telegram
+          notifyTelegram(session.title, fullText.slice(0, 200));
         }
       } catch {
         // Skip non-JSON lines
@@ -256,6 +322,9 @@ function spawnClaude(
       timestamp: new Date().toISOString(),
     });
     session.activeProcess = null;
+
+    // Notify via Telegram (error)
+    notifyTelegram(session.title, '❌ ' + fallback);
   });
 
   child.on('close', (code) => {
@@ -298,6 +367,9 @@ function spawnClaude(
         });
       }
       session.activeProcess = null;
+
+      // Notify via Telegram
+      notifyTelegram(session.title, stream.text.slice(0, 200));
     }
   });
 
@@ -391,7 +463,16 @@ chatRouter.get('/chat/sessions/:id', (req: Request, res: Response) => {
       title: session.title,
       createdAt: session.createdAt,
       updatedAt: session.updatedAt,
-      messages: session.messages,
+      messages: session.messages.map(m => ({
+        ...m,
+        attachment: m.attachment ? {
+          type: m.attachment.type,
+          filename: m.attachment.filename,
+          originalName: m.attachment.originalName,
+          url: m.attachment.url,
+          mimeType: m.attachment.mimeType,
+        } : undefined,
+      })),
     });
   } catch (err) {
     console.error('[GET /api/chat/sessions/:id]', err);
@@ -620,17 +701,73 @@ chatRouter.get('/chat/stream/:streamId', (req: Request, res: Response) => {
 });
 
 // ---------------------------------------------------------------------------
-// Legacy route — keep the old POST /api/chat working for backward compat
+// Serve uploaded chat attachments
 // ---------------------------------------------------------------------------
 
-chatRouter.post('/chat', async (req: Request, res: Response) => {
-  try {
-    const { message, conversationId } = req.body as {
-      message?: string;
-      conversationId?: string;
-    };
+chatRouter.get('/chat/uploads/:filename', (req: Request, res: Response) => {
+  const filename = req.params.filename as string;
+  // Prevent directory traversal
+  if (filename.includes('..') || filename.includes('/') || filename.includes('\\')) {
+    res.status(400).json({ error: 'Invalid filename' });
+    return;
+  }
+  const filePath = path.join(CHAT_UPLOADS_DIR, filename);
+  if (!fs.existsSync(filePath)) {
+    res.status(404).json({ error: 'File not found' });
+    return;
+  }
+  // Determine MIME type
+  const ext = path.extname(filename).toLowerCase();
+  const mimeTypes: Record<string, string> = {
+    '.png': 'image/png',
+    '.jpg': 'image/jpeg',
+    '.jpeg': 'image/jpeg',
+    '.gif': 'image/gif',
+    '.webp': 'image/webp',
+    '.pdf': 'application/pdf',
+  };
+  const contentType = mimeTypes[ext] || 'application/octet-stream';
+  res.setHeader('Content-Type', contentType);
+  res.setHeader('Cache-Control', 'public, max-age=86400'); // 1 day
+  res.sendFile(filePath);
+});
 
-    if (!message || typeof message !== 'string' || !message.trim()) {
+// ---------------------------------------------------------------------------
+// Legacy route — keep the old POST /api/chat working for backward compat
+// Now also handles multipart/form-data for file attachments
+// ---------------------------------------------------------------------------
+
+chatRouter.post('/chat', chatUpload.single('file'), async (req: Request, res: Response) => {
+  try {
+    // Support both JSON (Content-Type: application/json) and FormData (multipart)
+    const message = (req.body?.message as string) || '';
+    const conversationId = (req.body?.conversationId || req.body?.conversation_id) as string | undefined;
+
+    // Build attachment metadata if a file was uploaded
+    let attachment: SessionMessageAttachment | undefined;
+    let augmentedMessage = message.trim();
+    const uploadedFile = req.file;
+
+    if (uploadedFile) {
+      const isImage = uploadedFile.mimetype.startsWith('image/');
+      attachment = {
+        type: isImage ? 'image' : 'pdf',
+        filename: uploadedFile.filename,
+        originalName: uploadedFile.originalname,
+        mimeType: uploadedFile.mimetype,
+        path: uploadedFile.path,
+        url: `/api/chat/uploads/${uploadedFile.filename}`,
+      };
+
+      // Augment the prompt so Claude knows about the attachment
+      if (isImage) {
+        augmentedMessage = `${augmentedMessage}\n\n[The user has attached an image file. You can view it using the Read tool at: ${uploadedFile.path}]`.trim();
+      } else {
+        augmentedMessage = `${augmentedMessage}\n\n[The user has attached a PDF file. You can read it using the Read tool at: ${uploadedFile.path}]`.trim();
+      }
+    }
+
+    if (!augmentedMessage) {
       res.status(400).json({ error: 'message is required' });
       return;
     }
@@ -641,10 +778,11 @@ chatRouter.post('/chat', async (req: Request, res: Response) => {
       session = sessions.get(conversationId)!;
     } else {
       const newId = conversationId || uuidv4();
+      const titleSource = message.trim() || (uploadedFile ? `[Attached: ${uploadedFile.originalname}]` : 'New Chat');
       session = {
         id: newId,
         cliSessionId: null,
-        title: message.slice(0, 80) + (message.length > 80 ? '...' : ''),
+        title: titleSource.slice(0, 80) + (titleSource.length > 80 ? '...' : ''),
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
         messages: [],
@@ -654,7 +792,8 @@ chatRouter.post('/chat', async (req: Request, res: Response) => {
     }
 
     if (session.title === 'New Chat' && session.messages.length === 0) {
-      session.title = message.slice(0, 80) + (message.length > 80 ? '...' : '');
+      const titleSource = message.trim() || (uploadedFile ? `[Attached: ${uploadedFile.originalname}]` : 'New Chat');
+      session.title = titleSource.slice(0, 80) + (titleSource.length > 80 ? '...' : '');
     }
 
     const userMsg: SessionMessage = {
@@ -662,6 +801,7 @@ chatRouter.post('/chat', async (req: Request, res: Response) => {
       role: 'user',
       content: message.trim(),
       timestamp: new Date().toISOString(),
+      attachment,
     };
     session.messages.push(userMsg);
     session.updatedAt = new Date().toISOString();
@@ -672,7 +812,7 @@ chatRouter.post('/chat', async (req: Request, res: Response) => {
       done: false,
       streaming: true,
       started: false,
-      pendingMessage: message.trim(),
+      pendingMessage: augmentedMessage,
       pendingSession: session,
     });
 
@@ -681,6 +821,14 @@ chatRouter.post('/chat', async (req: Request, res: Response) => {
       message: '',
       conversationId: session.id,
       streamUrl: `/api/chat/stream/${streamId}`,
+      // Send attachment info back so frontend can update the message URL
+      attachment: attachment ? {
+        type: attachment.type,
+        filename: attachment.filename,
+        originalName: attachment.originalName,
+        url: attachment.url,
+        mimeType: attachment.mimeType,
+      } : undefined,
     });
   } catch (err) {
     console.error('[POST /api/chat]', err);

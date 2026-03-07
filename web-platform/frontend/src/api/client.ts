@@ -10,8 +10,11 @@ import type {
   FileItem,
   HealthResponse,
   Message,
+  ProductionDashboardData,
+  ProductionTrends,
   Project,
   ProjectDetail,
+  ProjectProductionDetail,
   UploadResult,
 } from '../types';
 
@@ -21,6 +24,7 @@ export interface SSECallbacks {
   onChunk?: (chunk: string) => void;
   onComplete?: (data: { text: string; file_paths?: string[]; subagents?: any[]; conversation_id?: string }) => void;
   onError?: (error: string) => void;
+  onAttachmentUrl?: (attachment: { type: string; filename: string; originalName: string; url: string; mimeType: string }) => void;
 }
 
 class ApiClient {
@@ -80,20 +84,36 @@ class ApiClient {
     conversationId: string | null,
     message: string,
     callbacks: SSECallbacks,
+    file?: File,
   ): () => void {
     const abortController = new AbortController();
     let done = false;
 
     const run = async () => {
       try {
-        // Step 1: POST the message
-        const postResponse = await fetch(`${this.baseUrl}/chat`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
+        // Step 1: POST the message (use FormData if file attached, JSON otherwise)
+        let postBody: BodyInit;
+        let postHeaders: Record<string, string> = {};
+
+        if (file) {
+          const formData = new FormData();
+          formData.append('message', message);
+          if (conversationId) formData.append('conversation_id', conversationId);
+          formData.append('file', file);
+          postBody = formData;
+          // Don't set Content-Type — browser sets it with boundary for multipart
+        } else {
+          postHeaders['Content-Type'] = 'application/json';
+          postBody = JSON.stringify({
             message,
             conversation_id: conversationId,
-          }),
+          });
+        }
+
+        const postResponse = await fetch(`${this.baseUrl}/chat`, {
+          method: 'POST',
+          headers: postHeaders,
+          body: postBody,
           signal: abortController.signal,
         });
 
@@ -102,10 +122,17 @@ class ApiClient {
           throw new Error(`Failed to send message: ${errText}`);
         }
 
-        const { conversation_id, stream_url } = await postResponse.json();
+        const postData = await postResponse.json();
+        const conversation_id = postData.conversation_id || postData.conversationId;
+        const streamUrl = postData.stream_url || postData.streamUrl;
+
+        // Notify about server-side attachment URL (replaces blob: URL with permanent URL)
+        if (postData.attachment) {
+          callbacks.onAttachmentUrl?.(postData.attachment);
+        }
 
         // Step 2: Connect to the SSE stream
-        const sseResponse = await fetch(stream_url, {
+        const sseResponse = await fetch(streamUrl, {
           signal: abortController.signal,
           headers: {
             'Accept': 'text/event-stream',
@@ -353,6 +380,27 @@ class ApiClient {
     return this.request<ConvexConstraint[]>(`/constraints/by-project/${projectKey}`);
   }
 
+  // Production trends
+  async getProductionTrends(): Promise<ProductionTrends> {
+    return this.request<ProductionTrends>('/production/trends');
+  }
+
+  // Production dashboard (extracted POD data)
+  async getProductionDashboard(days = 30): Promise<ProductionDashboardData> {
+    return this.request<ProductionDashboardData>(`/production/dashboard?days=${days}`);
+  }
+
+  async getProductionProjectDetail(projectKey: string): Promise<ProjectProductionDetail> {
+    return this.request<ProjectProductionDetail>(`/production/dashboard/${projectKey}`);
+  }
+
+  // Trigger POD extraction
+  async runPodExtraction(): Promise<{ status: string; message: string }> {
+    return this.request<{ status: string; message: string }>('/production/extract', {
+      method: 'POST',
+    });
+  }
+
   // Memory search
   async searchMemories(
     query: string
@@ -360,6 +408,21 @@ class ApiClient {
     return this.request<{ results: { content: string; score: number }[] }>(
       `/memories/search?q=${encodeURIComponent(query)}`
     );
+  }
+
+  // Swarm status
+  async getSwarmStatus(): Promise<{
+    status: 'idle' | 'active' | 'completed';
+    swarm_id?: string;
+    agents?: string[];
+    count?: number;
+    started_at?: string;
+    completed_at?: string;
+    duration_ms?: number;
+    succeeded?: number;
+    failed?: number;
+  }> {
+    return this.request('/swarm/status');
   }
 }
 

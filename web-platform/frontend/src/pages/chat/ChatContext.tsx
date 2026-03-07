@@ -1,6 +1,6 @@
 import { createContext, useContext, useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { api } from '../../api/client';
-import type { Conversation, StreamState, StreamMutableData, Message, SubagentEvent } from '../../types';
+import type { Conversation, StreamState, StreamMutableData, Message, MessageAttachment, SubagentEvent } from '../../types';
 
 function generateId(): string {
   return Date.now().toString(36) + Math.random().toString(36).substring(2, 8);
@@ -18,7 +18,7 @@ interface ChatContextValue {
 
   // Stream management
   streams: Record<string, StreamState>;
-  sendMessage: (convId: string | null, content: string) => string;
+  sendMessage: (convId: string | null, content: string, file?: File) => string;
   stopGenerating: (convId: string) => void;
   getStreamState: (convId: string) => StreamState | null;
   getStreamData: (convId: string) => StreamMutableData | null;
@@ -73,10 +73,23 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
 
   // ---- sendMessage ----
 
-  const sendMessage = useCallback((convId: string | null, content: string): string => {
+  const sendMessage = useCallback((convId: string | null, content: string, file?: File): string => {
     // Generate a temp ID for new conversations
     const tempId = convId || `temp-${generateId()}`;
     const assistantId = generateId();
+
+    // Build attachment metadata for the user message (for display)
+    let attachment: MessageAttachment | null = null;
+    if (file) {
+      const isImage = file.type.startsWith('image/');
+      attachment = {
+        type: isImage ? 'image' : 'pdf',
+        filename: file.name,
+        originalName: file.name,
+        url: URL.createObjectURL(file), // local preview URL
+        mimeType: file.type,
+      };
+    }
 
     // Initialize stream state
     const userMessage: Message = {
@@ -84,6 +97,7 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
       role: 'user',
       content,
       timestamp: new Date().toISOString(),
+      attachment,
     };
 
     const newStreamState: StreamState = {
@@ -134,6 +148,33 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
           const s = prev[resolvedId];
           if (!s) return prev;
           return { ...prev, [resolvedId]: { ...s, agentActivity: { ...s.agentActivity, thinkingMessage: message } } };
+        });
+      },
+
+      onAttachmentUrl: (att) => {
+        // Replace the blob: URL in the user message with the permanent server URL
+        const resolvedId = findConvId(tempId);
+        setStreams(prev => {
+          const s = prev[resolvedId];
+          if (!s) return prev;
+          const updatedMessages = s.messages.map(m => {
+            if (m.role === 'user' && m.attachment) {
+              // Revoke the old blob URL
+              if (m.attachment.url.startsWith('blob:')) {
+                URL.revokeObjectURL(m.attachment.url);
+              }
+              return {
+                ...m,
+                attachment: {
+                  ...m.attachment,
+                  url: att.url,
+                  filename: att.filename,
+                },
+              };
+            }
+            return m;
+          });
+          return { ...prev, [resolvedId]: { ...s, messages: updatedMessages } };
         });
       },
 
@@ -298,39 +339,93 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
 
         if (mutData?.scrollRafId) cancelAnimationFrame(mutData.scrollRafId);
 
-        setStreams(prev => {
-          const s = prev[resolvedId] || prev[tempId];
-          if (!s) return prev;
+        // Detect connection loss (network error, not a server error)
+        const isConnectionLoss = /fetch|network|abort|failed to send/i.test(error);
 
-          const errorText = mutData?.streamingText || `**Error:** ${error}`;
-          let finalMessages: Message[];
-          if (mutData?.streamingMsgId) {
-            finalMessages = s.messages.map(m =>
-              m.id === assistantId ? { ...m, content: errorText, streaming: false } : m
-            );
-          } else {
-            finalMessages = [...s.messages, { id: assistantId, role: 'assistant', content: errorText, timestamp: new Date().toISOString() }];
-          }
+        if (isConnectionLoss && resolvedId && !resolvedId.startsWith('temp-')) {
+          // Connection lost — the agent likely continued on the server.
+          // Try to reload the conversation from the server after a short delay.
+          const recoveryMsg = '**Connection lost.** The agent may still be working on the server. Reloading...';
 
-          return {
-            ...prev,
-            [resolvedId]: {
-              ...s,
-              status: 'error',
-              messages: finalMessages,
-              isThinking: false,
-              agentActivity: { ...s.agentActivity, isProcessing: false },
-              error,
-            },
-          };
-        });
+          setStreams(prev => {
+            const s = prev[resolvedId];
+            if (!s) return prev;
+            const partialText = mutData?.streamingText || '';
+            let finalMessages: Message[];
+            if (mutData?.streamingMsgId) {
+              finalMessages = s.messages.map(m =>
+                m.id === assistantId ? { ...m, content: partialText || recoveryMsg, streaming: false } : m
+              );
+            } else {
+              finalMessages = [...s.messages, { id: assistantId, role: 'assistant', content: recoveryMsg, timestamp: new Date().toISOString() }];
+            }
+            return {
+              ...prev,
+              [resolvedId]: { ...s, status: 'error', messages: finalMessages, isThinking: false, agentActivity: { ...s.agentActivity, isProcessing: false }, error: 'Connection lost — reloading' },
+            };
+          });
+
+          // Auto-reload conversation from server after 3 seconds
+          setTimeout(async () => {
+            try {
+              const data = await api.getConversation(resolvedId);
+              const mapped: Message[] = data.map((m: any, i: number) => ({
+                id: `${resolvedId}-${i}`,
+                role: m.role,
+                content: m.content,
+                timestamp: m.timestamp || new Date().toISOString(),
+                metadata: m.metadata || null,
+              }));
+              setStreams(prev => {
+                const s = prev[resolvedId];
+                if (!s) return prev;
+                return { ...prev, [resolvedId]: { ...s, status: 'complete', messages: mapped, error: null } };
+              });
+            } catch {
+              // Server not reachable yet — user can manually reload
+              setStreams(prev => {
+                const s = prev[resolvedId];
+                if (!s) return prev;
+                return { ...prev, [resolvedId]: { ...s, error: 'Connection lost. Refresh the page to see if the agent completed.' } };
+              });
+            }
+          }, 3000);
+        } else {
+          // Regular server error — show as before
+          setStreams(prev => {
+            const s = prev[resolvedId] || prev[tempId];
+            if (!s) return prev;
+
+            const errorText = mutData?.streamingText || `**Error:** ${error}`;
+            let finalMessages: Message[];
+            if (mutData?.streamingMsgId) {
+              finalMessages = s.messages.map(m =>
+                m.id === assistantId ? { ...m, content: errorText, streaming: false } : m
+              );
+            } else {
+              finalMessages = [...s.messages, { id: assistantId, role: 'assistant', content: errorText, timestamp: new Date().toISOString() }];
+            }
+
+            return {
+              ...prev,
+              [resolvedId]: {
+                ...s,
+                status: 'error',
+                messages: finalMessages,
+                isThinking: false,
+                agentActivity: { ...s.agentActivity, isProcessing: false },
+                error,
+              },
+            };
+          });
+        }
 
         if (mutData) {
           mutData.streamingMsgId = null;
           mutData.cleanupStream = null;
         }
       },
-    });
+    }, file);
 
     streamDataRef.current[tempId].cleanupStream = cleanup;
 

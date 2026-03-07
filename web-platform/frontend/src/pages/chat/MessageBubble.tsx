@@ -1,8 +1,7 @@
 import { useRef, useEffect, useCallback, useState } from 'react';
-import { ChevronDown, Coins } from 'lucide-react';
+import { ChevronDown, Coins, Zap, FileText } from 'lucide-react';
 import type { Message } from '../../types';
 import { renderMarkdown } from '../../utils/markdown';
-import { cn } from '@/lib/utils';
 
 interface MessageBubbleProps {
   message: Message;
@@ -10,16 +9,13 @@ interface MessageBubbleProps {
 
 function formatTime(ts: string): string {
   const date = new Date(ts);
-  return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }).toUpperCase();
 }
 
 function StreamingContent({ message }: { message: Message }) {
   const contentRef = useRef<HTMLDivElement>(null);
   const rawTextRef = useRef<string>(message.content);
   const renderTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const isStreamingRef = useRef(message.streaming);
-
-  isStreamingRef.current = message.streaming;
 
   const scheduleRender = useCallback(() => {
     if (renderTimerRef.current) return;
@@ -28,13 +24,16 @@ function StreamingContent({ message }: { message: Message }) {
       if (contentRef.current) {
         contentRef.current.innerHTML = renderMarkdown(rawTextRef.current);
       }
-    }, 100);
+    }, 80);
   }, []);
 
   useEffect(() => {
     const el = contentRef.current;
     if (!el) return;
 
+    // Backend sends individual words as separate SSE "chunk" events,
+    // so each __appendDelta call is already ~1 word. Just accumulate
+    // and re-render markdown periodically.
     (el as any).__appendDelta = (delta: string) => {
       rawTextRef.current += delta;
       scheduleRender();
@@ -70,11 +69,15 @@ function StreamingContent({ message }: { message: Message }) {
     <div>
       <div
         ref={contentRef}
-        className="message-content text-[13px] text-foreground/85 leading-relaxed"
+        className="message-content text-[13px] leading-relaxed"
+        style={{ color: 'var(--theme-text-muted)' }}
         data-streaming-content={message.id}
       />
       {message.streaming && (
-        <span className="inline-block w-[2px] h-[14px] bg-zinc-400 ml-0.5 animate-pulse align-middle rounded-full" />
+        <span
+          className="inline-block w-[3px] h-[14px] ml-0.5 align-middle"
+          style={{ background: 'var(--chart-2)', animation: 'cursor-blink 0.6s steps(1) infinite' }}
+        />
       )}
     </div>
   );
@@ -88,38 +91,41 @@ function AgentBadge({ message }: { message: Message }) {
   const successCount = subagents.filter((s) => s.success).length;
   const totalDuration = subagents.reduce((sum, s) => sum + (s.duration || 0), 0);
 
+  const agentColors = ['var(--chart-1)', 'var(--chart-2)', 'var(--chart-5)', 'var(--chart-3)', 'var(--chart-4)'];
+
   return (
-    <div className="mt-2.5">
+    <div className="mt-3">
       <button
         onClick={() => setExpanded(!expanded)}
-        className="flex items-center gap-1.5 text-[11px] text-zinc-600 hover:text-zinc-400 transition-colors"
+        className="flex items-center gap-2 text-[11px] tracking-wider transition-colors group"
+        style={{ color: 'var(--theme-text-dim)' }}
       >
-        <div className="h-1 w-1 rounded-full bg-zinc-600" />
-        <span>
-          {successCount}/{subagents.length} agents &middot; {(totalDuration / 1000).toFixed(1)}s
+        <Zap className="h-3 w-3" style={{ color: 'var(--chart-3)' }} />
+        <span className="group-hover:text-[var(--chart-3)] transition-colors font-bold">
+          {successCount}/{subagents.length} AGENTS &middot; {(totalDuration / 1000).toFixed(1)}S
         </span>
         <ChevronDown
-          className={`h-3 w-3 transition-transform duration-200 ${expanded ? 'rotate-180' : ''}`}
+          className={`h-3 w-3 transition-transform duration-100 ${expanded ? 'rotate-180' : ''}`}
         />
       </button>
       {expanded && (
-        <div className="mt-1.5 space-y-0.5 animate-expand pl-3 border-l border-zinc-800">
+        <div className="mt-2 animate-expand">
           {subagents.map((agent, i) => (
             <div
               key={`${agent.agent}-${i}`}
-              className="flex items-center gap-2 text-[11px] py-0.5"
+              className="flex items-center gap-2.5 text-[11px] py-1.5 animate-timeline-enter"
+              style={{
+                animationDelay: `${i * 40}ms`,
+                borderLeft: `3px solid ${agent.success ? agentColors[i % agentColors.length] : 'var(--destructive)'}`,
+                paddingLeft: '10px',
+                marginLeft: '4px',
+              }}
             >
-              <span
-                className={cn(
-                  'w-1 h-1 rounded-full',
-                  agent.success ? 'bg-emerald-500/60' : 'bg-red-400/60'
-                )}
-              />
-              <span className="text-zinc-500">
-                {agent.agent.replace(/_/g, ' ')}
+              <span style={{ color: 'var(--theme-text-dim)' }}>
+                {agent.agent.replace(/_/g, ' ').toUpperCase()}
               </span>
-              <span className="text-zinc-700 ml-auto font-mono">
-                {agent.duration != null ? `${(agent.duration / 1000).toFixed(1)}s` : ''}
+              <span className="font-bold ml-auto" style={{ color: agent.success ? agentColors[i % agentColors.length] : 'var(--destructive)' }}>
+                {agent.duration != null ? `${(agent.duration / 1000).toFixed(1)}S` : ''}
               </span>
             </div>
           ))}
@@ -134,14 +140,17 @@ function TokenBadge({ message }: { message: Message }) {
   if (!tokens) return null;
 
   return (
-    <div className="group relative inline-flex items-center gap-1 text-[10px] text-zinc-700 ml-2 cursor-default">
+    <div className="group relative inline-flex items-center gap-1 text-[10px] ml-2 cursor-default" style={{ color: 'var(--theme-border)' }}>
       <Coins className="h-2.5 w-2.5" />
-      <span>{(tokens.total_tokens / 1000).toFixed(1)}k</span>
+      <span>{(tokens.total_tokens / 1000).toFixed(1)}K</span>
       <div className="absolute bottom-full left-0 mb-1 hidden group-hover:block z-10">
-        <div className="bg-zinc-900 border border-zinc-800 rounded-md px-2.5 py-1.5 text-[10px] shadow-xl whitespace-nowrap text-zinc-400">
-          <div>Input: {tokens.total_input.toLocaleString()}</div>
-          <div>Output: {tokens.total_output.toLocaleString()}</div>
-          <div>Cost: ${tokens.total_cost_usd.toFixed(4)}</div>
+        <div
+          className="px-3 py-2 text-[10px] whitespace-nowrap"
+          style={{ background: 'var(--card)', border: '2px solid var(--theme-border)', color: 'var(--theme-text-muted)' }}
+        >
+          <div>INPUT: {tokens.total_input.toLocaleString()}</div>
+          <div>OUTPUT: {tokens.total_output.toLocaleString()}</div>
+          <div className="pt-0.5 font-bold" style={{ color: 'var(--theme-accent)' }}>COST: ${tokens.total_cost_usd.toFixed(4)}</div>
         </div>
       </div>
     </div>
@@ -154,36 +163,73 @@ export function MessageBubble({ message }: MessageBubbleProps) {
   return (
     <div className="animate-fade-in">
       {isUser ? (
-        /* User message — right-aligned, minimal */
         <div className="flex justify-end">
-          <div className="max-w-[75%]">
-            <div className="rounded-2xl rounded-br-sm bg-zinc-800/80 px-4 py-2.5">
-              <p className="text-[13px] text-zinc-200 whitespace-pre-wrap leading-relaxed">
-                {message.content}
-              </p>
+          <div className="max-w-[80%]">
+            <div
+              className="px-4 py-3"
+              style={{ background: 'var(--card)', border: '2px solid var(--chart-2)', borderLeft: '4px solid var(--chart-2)' }}
+            >
+              {/* Attachment preview */}
+              {message.attachment && (
+                <div className="mb-2">
+                  {message.attachment.type === 'image' ? (
+                    <img
+                      src={message.attachment.url}
+                      alt={message.attachment.originalName || message.attachment.filename}
+                      className="max-w-full rounded"
+                      style={{
+                        maxHeight: '280px',
+                        border: '2px solid var(--theme-border)',
+                        borderRadius: '2px',
+                      }}
+                      loading="lazy"
+                    />
+                  ) : (
+                    <div
+                      className="flex items-center gap-2 px-3 py-2"
+                      style={{
+                        background: 'var(--theme-bg-tertiary)',
+                        border: '2px solid var(--chart-1)',
+                        borderRadius: '2px',
+                      }}
+                    >
+                      <FileText className="h-4 w-4 shrink-0" style={{ color: 'var(--chart-1)' }} />
+                      <span className="text-[11px] font-bold tracking-wider truncate" style={{ color: 'var(--chart-1)' }}>
+                        {message.attachment.originalName || message.attachment.filename}
+                      </span>
+                    </div>
+                  )}
+                </div>
+              )}
+              {message.content && (
+                <p className="text-[13px] whitespace-pre-wrap leading-relaxed" style={{ color: 'var(--foreground)' }}>
+                  {message.content}
+                </p>
+              )}
             </div>
-            <div className="flex justify-end mt-1">
-              <span className="text-[10px] text-zinc-700">
+            <div className="flex justify-end mt-1.5 pr-1">
+              <span className="text-[10px] font-bold tracking-wider" style={{ color: 'var(--chart-2)', opacity: 0.4 }}>
                 {formatTime(message.timestamp)}
               </span>
             </div>
           </div>
         </div>
       ) : (
-        /* Assistant message — left-aligned, clean */
-        <div className="flex gap-3">
-          {/* Avatar */}
-          <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-zinc-800 mt-0.5">
-            <span className="text-[10px] font-semibold text-zinc-400">N</span>
+        <div className="flex gap-3.5">
+          {/* Nimrod avatar */}
+          <div
+            className="flex h-7 w-7 shrink-0 items-center justify-center mt-0.5"
+            style={{ background: 'var(--theme-bg-primary)', border: '2px solid var(--theme-accent)' }}
+          >
+            <span className="text-[10px] font-bold" style={{ color: 'var(--theme-accent)' }}>N</span>
           </div>
 
-          <div className="flex-1 min-w-0 max-w-[85%]">
-            {/* Meta row */}
-            <div className="flex items-center gap-2 mb-1">
-              <span className="text-[11px] font-medium text-zinc-500">
-                Nimrod
+          <div className="flex-1 min-w-0">
+            <div className="flex items-center gap-2 mb-1.5">
+              <span className="text-[11px] font-bold tracking-widest" style={{ color: 'var(--theme-accent)' }}>
+                NIMROD
               </span>
-              <span className="text-[10px] text-zinc-700">
+              <span className="text-[10px] font-bold tracking-wider" style={{ color: 'var(--theme-border)' }}>
                 {formatTime(message.timestamp)}
               </span>
               <TokenBadge message={message} />
