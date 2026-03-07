@@ -530,7 +530,8 @@ class EmailPoller:
         # POD detection: subject or attachment filenames contain "POD" or
         # "Plan of the Day" (case-insensitive).  Catches both shorthand and
         # the long-form name that site teams sometimes use.
-        pod_patterns = (r'\bpod\b', r'plan\s+of\s+the\s+day')
+        pod_patterns = (r'\bpod\b', r'plan\s+of\s+the\s+day', r'plan\s+of\s+day',
+                        r'daily\s+pod', r'daily\s+plan')
         if any(re.search(p, subject) for p in pod_patterns):
             return "pod"
         # Also check attachment filenames — sometimes subject is generic

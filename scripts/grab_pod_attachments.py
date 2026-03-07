@@ -49,7 +49,8 @@ def classify_email(subject: str, sender: str, attachments: list | None = None) -
     """Classify an email as pod, constraints, or normal."""
     subj = subject.lower()
     sndr = sender.lower()
-    pod_patterns = (r'\bpod\b', r'plan\s+of\s+the\s+day')
+    pod_patterns = (r'\bpod\b', r'plan\s+of\s+the\s+day', r'plan\s+of\s+day',
+                    r'daily\s+pod', r'daily\s+plan')
     if any(re.search(p, subj) for p in pod_patterns):
         return "pod"
     # Check attachment filenames for POD indicators
