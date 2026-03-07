@@ -54,6 +54,11 @@
 [data-theme="dark-brutal"] {
   --radius: 0px;
 
+  /* Structural/feel variables — themes can override these */
+  --theme-border-style: solid;
+  --theme-text-glow: none;
+  --theme-card-shadow: none;
+
   /* Shadcn semantic tokens */
   --background: #08080c;
   --foreground: #e4e4e7;
@@ -594,6 +599,38 @@ body {
 }
 
 /* ===========================================================================
+   Theme-driven structural overrides
+   =========================================================================== */
+
+/* Apply theme border style to bordered elements */
+[data-theme] .border,
+[data-theme] [class*="border-"] {
+  border-style: var(--theme-border-style) !important;
+}
+
+/* Card shadow override */
+[data-theme] .card-shadow-override {
+  box-shadow: var(--theme-card-shadow) !important;
+}
+
+/* Background pattern — applied to html via CSS variable */
+html[data-theme] {
+  background-image: var(--theme-html-bg-image, none);
+  background-size: var(--theme-html-bg-size, auto);
+}
+
+/* CRT Scanlines — only active when theme sets this variable */
+html[data-theme]::after {
+  content: var(--theme-scanlines-content, '');
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 9999;
+  background-image: var(--theme-scanlines-bg, none);
+  opacity: var(--theme-scanlines-opacity, 0);
+}
+
+/* ===========================================================================
    Animations — MECHANICAL
    =========================================================================== */
 
@@ -723,6 +760,35 @@ body {
 @keyframes shimmer {
   0% { background-position: -200% 0; }
   100% { background-position: 200% 0; }
+}
+
+/* ===========================================================================
+   Swarm Indicator animations
+   =========================================================================== */
+@keyframes swarm-pulse {
+  0%, 100% { transform: scale(1); opacity: 0.4; }
+  50% { transform: scale(1.8); opacity: 0; }
+}
+.animate-swarm-pulse {
+  animation: swarm-pulse 1.5s ease-in-out infinite;
+}
+
+@keyframes swarm-active-enter {
+  0% { opacity: 0; transform: translateX(-8px); }
+  100% { opacity: 1; transform: translateX(0); }
+}
+.animate-swarm-active {
+  animation: swarm-active-enter 0.3s ease-out both;
+}
+
+@keyframes swarm-complete-flash {
+  0% { opacity: 1; }
+  30% { opacity: 0.6; }
+  60% { opacity: 1; }
+  100% { opacity: 0; }
+}
+.animate-swarm-complete {
+  animation: swarm-complete-flash 3s ease-out both;
 }
 
 /* ===========================================================================
@@ -892,3 +958,1552 @@ body {
   border: 2px solid var(--msg-img-border);
   margin: 12px 0;
 }
+
+/* ── File Preview Drawer animations ────────────────────────────────────── */
+
+@keyframes drawer-slide-in {
+  from {
+    transform: translateX(30px);
+    opacity: 0;
+  }
+  to {
+    transform: translateX(0);
+    opacity: 1;
+  }
+}
+
+@keyframes fade-in {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
+.animate-drawer-slide-in {
+  animation: drawer-slide-in 200ms ease-out both;
+}
+
+.animate-fade-in {
+  animation: fade-in 150ms ease-out both;
+}
+
+/* ===========================================================================
+   THEME: Blueprint Brutal
+   Engineering drawing — dashed borders, blueprint grid, navy blue
+   =========================================================================== */
+[data-theme="blueprint-brutal"] {
+  /* === STRUCTURAL OVERRIDES === */
+  --theme-border-style: dashed;
+  --theme-text-glow: none;
+  --theme-card-shadow: none;
+  --theme-html-bg-image:
+    linear-gradient(rgba(77, 184, 255, 0.07) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(77, 184, 255, 0.07) 1px, transparent 1px);
+  --theme-html-bg-size: 40px 40px;
+  --theme-scanlines-content: '';
+  --theme-scanlines-bg: none;
+  --theme-scanlines-opacity: 0;
+
+  /* === SHADCN TOKENS === */
+  --background: oklch(0.12 0.04 240);
+  --foreground: oklch(0.85 0.05 220);
+  --card: oklch(0.15 0.05 240);
+  --card-foreground: oklch(0.85 0.05 220);
+  --popover: oklch(0.14 0.04 240);
+  --popover-foreground: oklch(0.85 0.05 220);
+  --primary: oklch(0.65 0.18 210);
+  --primary-foreground: oklch(0.10 0.04 240);
+  --secondary: oklch(0.20 0.06 240);
+  --secondary-foreground: oklch(0.75 0.06 220);
+  --muted: oklch(0.18 0.04 240);
+  --muted-foreground: oklch(0.55 0.06 220);
+  --accent: oklch(0.65 0.18 210);
+  --accent-foreground: oklch(0.10 0.04 240);
+  --destructive: oklch(0.60 0.22 25);
+  --border: oklch(0.35 0.10 210);
+  --input: oklch(0.20 0.06 240);
+  --ring: oklch(0.65 0.18 210);
+  --radius: 0px;
+  --chart-1: oklch(0.65 0.18 210);
+  --chart-2: oklch(0.70 0.15 180);
+  --chart-3: oklch(0.70 0.15 150);
+  --chart-4: oklch(0.65 0.18 270);
+  --chart-5: oklch(0.65 0.18 30);
+
+  /* === CUSTOM THEME TOKENS === */
+  --theme-bg-primary: #0d1b2a;
+  --theme-bg-secondary: #111f30;
+  --theme-bg-tertiary: #162536;
+  --theme-text-primary: #c8dff5;
+  --theme-text-secondary: #8fbde0;
+  --theme-text-muted: #6090b8;
+  --theme-text-dim: #3d6080;
+  --theme-accent: #4db8ff;
+  --theme-accent-dim: #2a7aa8;
+  --theme-border: #2a5a80;
+  --theme-border-subtle: #1a3a55;
+  --theme-status-dot: #4db8ff;
+  --theme-logo-bg: #0d1b2a;
+
+  /* === SIDEBAR === */
+  --sidebar: oklch(0.14 0.05 240);
+  --sidebar-foreground: oklch(0.80 0.06 220);
+  --sidebar-primary: oklch(0.65 0.18 210);
+  --sidebar-primary-foreground: oklch(0.10 0.04 240);
+  --sidebar-accent: oklch(0.22 0.07 240);
+  --sidebar-accent-foreground: oklch(0.80 0.06 220);
+  --sidebar-border: oklch(0.30 0.08 210);
+  --sidebar-ring: oklch(0.65 0.18 210);
+
+  /* === MARKDOWN === */
+  --msg-h1-border: #2a5a80;
+  --msg-h2-border: #1a3a55;
+  --msg-h3-border: #0f2535;
+  --msg-header-text: #4db8ff;
+  --msg-em-color: #8fbde0;
+  --msg-link-color: #4db8ff;
+  --msg-link-bg: rgba(77, 184, 255, 0.1);
+  --msg-link-hover-text: #c8dff5;
+  --msg-code-bg: #111f30;
+  --msg-code-border: #2a5a80;
+  --msg-code-color: #4db8ff;
+  --msg-pre-bg: #0a1520;
+  --msg-pre-border: #2a5a80;
+  --msg-pre-text: #c8dff5;
+  --msg-marker-color: #4db8ff;
+  --msg-table-border: #2a5a80;
+  --msg-thead-bg: #162536;
+  --msg-thead-text: #4db8ff;
+  --msg-tbody-border: #1a3a55;
+  --msg-tbody-cell-border: #1a3a55;
+  --msg-tbody-text: #8fbde0;
+  --msg-tbody-hover: rgba(77, 184, 255, 0.05);
+  --msg-blockquote-border: #4db8ff;
+  --msg-blockquote-text: #8fbde0;
+  --msg-hr-color: #2a5a80;
+  --msg-img-border: #2a5a80;
+  --msg-shimmer-from: #0d1b2a;
+  --msg-shimmer-mid: #162536;
+
+  /* === SCROLLBARS === */
+  --scrollbar-track: #0d1b2a;
+  --scrollbar-thumb: #2a5a80;
+  --scrollbar-hover: #4db8ff;
+  --selection-bg: rgba(77, 184, 255, 0.25);
+  --selection-text: #c8dff5;
+  --font-sans: 'JetBrains Mono', monospace;
+}
+
+/* ===========================================================================
+   THEME: Amber CRT
+   Vintage phosphor amber monitor — scanlines, glow, monochrome amber
+   =========================================================================== */
+[data-theme="amber-crt"] {
+  /* === STRUCTURAL OVERRIDES === */
+  --theme-border-style: solid;
+  --theme-text-glow: 0 0 8px rgba(255, 160, 0, 0.5), 0 0 20px rgba(255, 160, 0, 0.2);
+  --theme-card-shadow: none;
+  --theme-html-bg-image: none;
+  --theme-html-bg-size: auto;
+  /* CRT scanlines on html::after */
+  --theme-scanlines-content: '';
+  --theme-scanlines-bg: repeating-linear-gradient(
+    0deg,
+    transparent,
+    transparent 2px,
+    rgba(0, 0, 0, 0.25) 2px,
+    rgba(0, 0, 0, 0.25) 4px
+  );
+  --theme-scanlines-opacity: 1;
+
+  /* === SHADCN TOKENS === */
+  --background: oklch(0.08 0.04 60);
+  --foreground: oklch(0.75 0.18 65);
+  --card: oklch(0.10 0.04 60);
+  --card-foreground: oklch(0.75 0.18 65);
+  --popover: oklch(0.09 0.04 60);
+  --popover-foreground: oklch(0.75 0.18 65);
+  --primary: oklch(0.72 0.20 65);
+  --primary-foreground: oklch(0.08 0.04 60);
+  --secondary: oklch(0.14 0.06 60);
+  --secondary-foreground: oklch(0.65 0.16 65);
+  --muted: oklch(0.12 0.04 60);
+  --muted-foreground: oklch(0.50 0.12 65);
+  --accent: oklch(0.72 0.20 65);
+  --accent-foreground: oklch(0.08 0.04 60);
+  --destructive: oklch(0.60 0.22 25);
+  --border: oklch(0.30 0.12 65);
+  --input: oklch(0.14 0.06 60);
+  --ring: oklch(0.72 0.20 65);
+  --radius: 0px;
+  --chart-1: oklch(0.72 0.20 65);
+  --chart-2: oklch(0.65 0.18 75);
+  --chart-3: oklch(0.60 0.16 55);
+  --chart-4: oklch(0.55 0.14 70);
+  --chart-5: oklch(0.50 0.12 60);
+
+  /* === CUSTOM THEME TOKENS === */
+  --theme-bg-primary: #0f0900;
+  --theme-bg-secondary: #150d00;
+  --theme-bg-tertiary: #1a1100;
+  --theme-text-primary: #ffaa00;
+  --theme-text-secondary: #cc8800;
+  --theme-text-muted: #996600;
+  --theme-text-dim: #664400;
+  --theme-accent: #ffaa00;
+  --theme-accent-dim: #cc8800;
+  --theme-border: #553300;
+  --theme-border-subtle: #331f00;
+  --theme-status-dot: #ffaa00;
+  --theme-logo-bg: #0f0900;
+
+  /* === SIDEBAR === */
+  --sidebar: oklch(0.09 0.04 60);
+  --sidebar-foreground: oklch(0.70 0.18 65);
+  --sidebar-primary: oklch(0.72 0.20 65);
+  --sidebar-primary-foreground: oklch(0.08 0.04 60);
+  --sidebar-accent: oklch(0.15 0.07 60);
+  --sidebar-accent-foreground: oklch(0.70 0.18 65);
+  --sidebar-border: oklch(0.28 0.12 65);
+  --sidebar-ring: oklch(0.72 0.20 65);
+
+  /* === MARKDOWN === */
+  --msg-h1-border: #553300;
+  --msg-h2-border: #441f00;
+  --msg-h3-border: #2a1500;
+  --msg-header-text: #ffaa00;
+  --msg-em-color: #dd8800;
+  --msg-link-color: #ffaa00;
+  --msg-link-bg: rgba(255, 160, 0, 0.1);
+  --msg-link-hover-text: #ffcc44;
+  --msg-code-bg: #150d00;
+  --msg-code-border: #553300;
+  --msg-code-color: #ffaa00;
+  --msg-pre-bg: #0a0600;
+  --msg-pre-border: #553300;
+  --msg-pre-text: #ffaa00;
+  --msg-marker-color: #ffaa00;
+  --msg-table-border: #553300;
+  --msg-thead-bg: #1a1100;
+  --msg-thead-text: #ffaa00;
+  --msg-tbody-border: #331f00;
+  --msg-tbody-cell-border: #331f00;
+  --msg-tbody-text: #cc8800;
+  --msg-tbody-hover: rgba(255, 160, 0, 0.05);
+  --msg-blockquote-border: #ffaa00;
+  --msg-blockquote-text: #cc8800;
+  --msg-hr-color: #553300;
+  --msg-img-border: #553300;
+  --msg-shimmer-from: #0f0900;
+  --msg-shimmer-mid: #1a1100;
+
+  /* === SCROLLBARS === */
+  --scrollbar-track: #0f0900;
+  --scrollbar-thumb: #553300;
+  --scrollbar-hover: #ffaa00;
+  --selection-bg: rgba(255, 160, 0, 0.25);
+  --selection-text: #ffcc44;
+  --font-sans: 'JetBrains Mono', monospace;
+}
+
+/* Amber CRT phosphor glow on text */
+[data-theme="amber-crt"] {
+  text-shadow: 0 0 6px rgba(255, 160, 0, 0.3);
+}
+[data-theme="amber-crt"] input,
+[data-theme="amber-crt"] textarea {
+  text-shadow: none;
+}
+
+/* ===========================================================================
+   THEME: Void Brutal
+   True black — ultraminimal, violet accent glows against absolute black
+   =========================================================================== */
+[data-theme="void-brutal"] {
+  /* === STRUCTURAL OVERRIDES === */
+  --theme-border-style: solid;
+  --theme-text-glow: none;
+  --theme-card-shadow: none;
+  --theme-html-bg-image: none;
+  --theme-html-bg-size: auto;
+  --theme-scanlines-content: '';
+  --theme-scanlines-bg: none;
+  --theme-scanlines-opacity: 0;
+
+  /* === SHADCN TOKENS === */
+  --background: oklch(0.00 0.00 0);
+  --foreground: oklch(0.88 0.02 270);
+  --card: oklch(0.05 0.01 270);
+  --card-foreground: oklch(0.88 0.02 270);
+  --popover: oklch(0.04 0.01 270);
+  --popover-foreground: oklch(0.88 0.02 270);
+  --primary: oklch(0.55 0.22 270);
+  --primary-foreground: oklch(0.98 0.00 0);
+  --secondary: oklch(0.08 0.02 270);
+  --secondary-foreground: oklch(0.70 0.05 270);
+  --muted: oklch(0.07 0.01 270);
+  --muted-foreground: oklch(0.45 0.04 270);
+  --accent: oklch(0.55 0.22 270);
+  --accent-foreground: oklch(0.98 0.00 0);
+  --destructive: oklch(0.55 0.22 25);
+  --border: oklch(0.15 0.04 270);
+  --input: oklch(0.08 0.02 270);
+  --ring: oklch(0.55 0.22 270);
+  --radius: 0px;
+  --chart-1: oklch(0.55 0.22 270);
+  --chart-2: oklch(0.60 0.20 300);
+  --chart-3: oklch(0.60 0.20 240);
+  --chart-4: oklch(0.55 0.18 320);
+  --chart-5: oklch(0.55 0.18 200);
+
+  /* === CUSTOM THEME TOKENS === */
+  --theme-bg-primary: #000000;
+  --theme-bg-secondary: #080808;
+  --theme-bg-tertiary: #0d0d0d;
+  --theme-text-primary: #e0d8f5;
+  --theme-text-secondary: #9585c8;
+  --theme-text-muted: #5d4d8a;
+  --theme-text-dim: #2a2040;
+  --theme-accent: #8b5cf6;
+  --theme-accent-dim: #5b3ab0;
+  --theme-border: #1e1530;
+  --theme-border-subtle: #100d1a;
+  --theme-status-dot: #8b5cf6;
+  --theme-logo-bg: #000000;
+
+  /* === SIDEBAR === */
+  --sidebar: oklch(0.03 0.01 270);
+  --sidebar-foreground: oklch(0.80 0.05 270);
+  --sidebar-primary: oklch(0.55 0.22 270);
+  --sidebar-primary-foreground: oklch(0.98 0.00 0);
+  --sidebar-accent: oklch(0.10 0.03 270);
+  --sidebar-accent-foreground: oklch(0.80 0.05 270);
+  --sidebar-border: oklch(0.12 0.03 270);
+  --sidebar-ring: oklch(0.55 0.22 270);
+
+  /* === MARKDOWN === */
+  --msg-h1-border: #2a2040;
+  --msg-h2-border: #1e1530;
+  --msg-h3-border: #100d1a;
+  --msg-header-text: #8b5cf6;
+  --msg-em-color: #9585c8;
+  --msg-link-color: #8b5cf6;
+  --msg-link-bg: rgba(139, 92, 246, 0.08);
+  --msg-link-hover-text: #e0d8f5;
+  --msg-code-bg: #080808;
+  --msg-code-border: #2a2040;
+  --msg-code-color: #8b5cf6;
+  --msg-pre-bg: #030303;
+  --msg-pre-border: #2a2040;
+  --msg-pre-text: #e0d8f5;
+  --msg-marker-color: #8b5cf6;
+  --msg-table-border: #2a2040;
+  --msg-thead-bg: #0d0d0d;
+  --msg-thead-text: #8b5cf6;
+  --msg-tbody-border: #1e1530;
+  --msg-tbody-cell-border: #1e1530;
+  --msg-tbody-text: #9585c8;
+  --msg-tbody-hover: rgba(139, 92, 246, 0.04);
+  --msg-blockquote-border: #8b5cf6;
+  --msg-blockquote-text: #9585c8;
+  --msg-hr-color: #1e1530;
+  --msg-img-border: #2a2040;
+  --msg-shimmer-from: #000000;
+  --msg-shimmer-mid: #0d0d0d;
+
+  /* === SCROLLBARS === */
+  --scrollbar-track: #000000;
+  --scrollbar-thumb: #2a2040;
+  --scrollbar-hover: #8b5cf6;
+  --selection-bg: rgba(139, 92, 246, 0.20);
+  --selection-text: #e0d8f5;
+  --font-sans: 'JetBrains Mono', monospace;
+}
+
+/* ===========================================================================
+   THEME: Paper Brutal
+   Graph paper / whiteboard — light theme, blue ink accent
+   =========================================================================== */
+[data-theme="paper-brutal"] {
+  /* === STRUCTURAL OVERRIDES === */
+  --theme-border-style: solid;
+  --theme-text-glow: none;
+  --theme-card-shadow: 2px 2px 0px rgba(0, 0, 0, 0.12);
+  --theme-html-bg-image:
+    linear-gradient(rgba(0, 80, 200, 0.05) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(0, 80, 200, 0.05) 1px, transparent 1px);
+  --theme-html-bg-size: 28px 28px;
+  --theme-scanlines-content: '';
+  --theme-scanlines-bg: none;
+  --theme-scanlines-opacity: 0;
+
+  /* === SHADCN TOKENS === */
+  --background: oklch(0.97 0.01 90);
+  --foreground: oklch(0.15 0.01 260);
+  --card: oklch(0.99 0.005 90);
+  --card-foreground: oklch(0.15 0.01 260);
+  --popover: oklch(0.98 0.008 90);
+  --popover-foreground: oklch(0.15 0.01 260);
+  --primary: oklch(0.35 0.18 255);
+  --primary-foreground: oklch(0.97 0.01 90);
+  --secondary: oklch(0.90 0.01 90);
+  --secondary-foreground: oklch(0.25 0.02 260);
+  --muted: oklch(0.92 0.01 90);
+  --muted-foreground: oklch(0.45 0.02 260);
+  --accent: oklch(0.35 0.18 255);
+  --accent-foreground: oklch(0.97 0.01 90);
+  --destructive: oklch(0.50 0.22 25);
+  --border: oklch(0.78 0.02 260);
+  --input: oklch(0.90 0.01 90);
+  --ring: oklch(0.35 0.18 255);
+  --radius: 0px;
+  --chart-1: oklch(0.35 0.18 255);
+  --chart-2: oklch(0.45 0.18 170);
+  --chart-3: oklch(0.50 0.18 30);
+  --chart-4: oklch(0.40 0.18 300);
+  --chart-5: oklch(0.45 0.18 120);
+
+  /* === CUSTOM THEME TOKENS === */
+  --theme-bg-primary: #f4f1e8;
+  --theme-bg-secondary: #faf8f2;
+  --theme-bg-tertiary: #ffffff;
+  --theme-text-primary: #1a1a2e;
+  --theme-text-secondary: #2d3561;
+  --theme-text-muted: #6b7280;
+  --theme-text-dim: #9ca3af;
+  --theme-accent: #1d4ed8;
+  --theme-accent-dim: #2563eb;
+  --theme-border: #c5c8d6;
+  --theme-border-subtle: #dde0ea;
+  --theme-status-dot: #1d4ed8;
+  --theme-logo-bg: #f4f1e8;
+
+  /* === SIDEBAR === */
+  --sidebar: oklch(0.93 0.01 90);
+  --sidebar-foreground: oklch(0.20 0.01 260);
+  --sidebar-primary: oklch(0.35 0.18 255);
+  --sidebar-primary-foreground: oklch(0.97 0.01 90);
+  --sidebar-accent: oklch(0.88 0.01 90);
+  --sidebar-accent-foreground: oklch(0.20 0.01 260);
+  --sidebar-border: oklch(0.80 0.02 260);
+  --sidebar-ring: oklch(0.35 0.18 255);
+
+  /* === MARKDOWN === */
+  --msg-h1-border: #c5c8d6;
+  --msg-h2-border: #dde0ea;
+  --msg-h3-border: #e8eaf0;
+  --msg-header-text: #1d4ed8;
+  --msg-em-color: #374151;
+  --msg-link-color: #1d4ed8;
+  --msg-link-bg: rgba(29, 78, 216, 0.08);
+  --msg-link-hover-text: #1a1a2e;
+  --msg-code-bg: #eeeae0;
+  --msg-code-border: #c5c8d6;
+  --msg-code-color: #1d4ed8;
+  --msg-pre-bg: #e8e4d8;
+  --msg-pre-border: #c5c8d6;
+  --msg-pre-text: #1a1a2e;
+  --msg-marker-color: #1d4ed8;
+  --msg-table-border: #c5c8d6;
+  --msg-thead-bg: #e8eaf0;
+  --msg-thead-text: #1d4ed8;
+  --msg-tbody-border: #dde0ea;
+  --msg-tbody-cell-border: #dde0ea;
+  --msg-tbody-text: #374151;
+  --msg-tbody-hover: rgba(29, 78, 216, 0.04);
+  --msg-blockquote-border: #1d4ed8;
+  --msg-blockquote-text: #4b5563;
+  --msg-hr-color: #c5c8d6;
+  --msg-img-border: #c5c8d6;
+  --msg-shimmer-from: #f4f1e8;
+  --msg-shimmer-mid: #faf8f2;
+
+  /* === SCROLLBARS === */
+  --scrollbar-track: #f4f1e8;
+  --scrollbar-thumb: #c5c8d6;
+  --scrollbar-hover: #1d4ed8;
+  --selection-bg: rgba(29, 78, 216, 0.15);
+  --selection-text: #1a1a2e;
+  --font-sans: 'JetBrains Mono', monospace;
+}
+
+/* ===========================================================================
+   THEME: Terminal
+   Retro green-on-black CRT — monospace everywhere, scanlines, sharp corners,
+   blinking cursor LED indicators, stepped animations
+   =========================================================================== */
+[data-theme="terminal"] {
+  /* === STRUCTURAL OVERRIDES === */
+  --theme-border-style: solid;
+  --theme-text-glow: 0 0 8px rgba(0, 255, 65, 0.6), 0 0 20px rgba(0, 255, 65, 0.25);
+  --theme-card-shadow: none;
+  --theme-html-bg-image: none;
+  --theme-html-bg-size: auto;
+  /* CRT scanlines */
+  --theme-scanlines-content: '';
+  --theme-scanlines-bg: repeating-linear-gradient(
+    0deg,
+    transparent,
+    transparent 2px,
+    rgba(0, 0, 0, 0.35) 2px,
+    rgba(0, 0, 0, 0.35) 4px
+  );
+  --theme-scanlines-opacity: 1;
+
+  /* Force all radius to zero — already global, but be explicit */
+  --radius: 0px;
+
+  /* === SHADCN TOKENS === */
+  --background: #000000;
+  --foreground: #00ff41;
+  --card: #020802;
+  --card-foreground: #00ff41;
+  --popover: #010601;
+  --popover-foreground: #00ff41;
+  --primary: #00ff41;
+  --primary-foreground: #000000;
+  --secondary: #041204;
+  --secondary-foreground: #00c832;
+  --muted: #031003;
+  --muted-foreground: #007a1f;
+  --accent: #00ff41;
+  --accent-foreground: #000000;
+  --destructive: #ff3300;
+  --border: #004d14;
+  --input: #041204;
+  --ring: #00ff41;
+  --chart-1: #00ff41;
+  --chart-2: #00c832;
+  --chart-3: #7fff00;
+  --chart-4: #00fa9a;
+  --chart-5: #adff2f;
+  --sidebar: #000000;
+  --sidebar-foreground: #00ff41;
+  --sidebar-primary: #00ff41;
+  --sidebar-primary-foreground: #000000;
+  --sidebar-accent: #041204;
+  --sidebar-accent-foreground: #00ff41;
+  --sidebar-border: #004d14;
+  --sidebar-ring: #00ff41;
+
+  /* === CUSTOM THEME TOKENS === */
+  --theme-bg-primary: #000000;
+  --theme-bg-secondary: #020802;
+  --theme-bg-tertiary: #041204;
+  --theme-text-primary: #00ff41;
+  --theme-text-secondary: #00c832;
+  --theme-text-muted: #007a1f;
+  --theme-text-dim: #003d0f;
+  --theme-accent: #00ff41;
+  --theme-accent-dim: rgba(0, 255, 65, 0.12);
+  --theme-border: #004d14;
+  --theme-border-subtle: #002a0a;
+  --theme-status-dot: #00ff41;
+  --theme-logo-bg: #000000;
+  --font-sans: 'Share Tech Mono', 'IBM Plex Mono', 'JetBrains Mono', monospace;
+
+  /* === MARKDOWN === */
+  --msg-h1-border: #00ff41;
+  --msg-h2-border: #00c832;
+  --msg-h3-border: #007a1f;
+  --msg-header-text: #00ff41;
+  --msg-em-color: #7fff00;
+  --msg-link-color: #00ff41;
+  --msg-link-bg: rgba(0, 255, 65, 0.15);
+  --msg-link-hover-text: #000000;
+  --msg-code-bg: #020802;
+  --msg-code-border: #004d14;
+  --msg-code-color: #00ff41;
+  --msg-pre-bg: #010601;
+  --msg-pre-border: #004d14;
+  --msg-pre-text: #00c832;
+  --msg-marker-color: #00ff41;
+  --msg-table-border: #004d14;
+  --msg-thead-bg: #031003;
+  --msg-thead-text: #00ff41;
+  --msg-tbody-border: #002a0a;
+  --msg-tbody-cell-border: #031003;
+  --msg-tbody-text: #00c832;
+  --msg-tbody-hover: rgba(0, 255, 65, 0.06);
+  --msg-blockquote-border: #00ff41;
+  --msg-blockquote-text: #007a1f;
+  --msg-hr-color: #004d14;
+  --msg-img-border: #004d14;
+  --msg-shimmer-from: #000000;
+  --msg-shimmer-mid: #031003;
+
+  /* === SCROLLBARS === */
+  --scrollbar-track: #000000;
+  --scrollbar-thumb: #004d14;
+  --scrollbar-hover: #00ff41;
+  --selection-bg: rgba(0, 255, 65, 0.30);
+  --selection-text: #000000;
+}
+
+/* Terminal: green phosphor text glow everywhere */
+[data-theme="terminal"] body,
+[data-theme="terminal"] span,
+[data-theme="terminal"] p,
+[data-theme="terminal"] div,
+[data-theme="terminal"] h1,
+[data-theme="terminal"] h2,
+[data-theme="terminal"] h3,
+[data-theme="terminal"] h4,
+[data-theme="terminal"] h5,
+[data-theme="terminal"] h6,
+[data-theme="terminal"] li,
+[data-theme="terminal"] td,
+[data-theme="terminal"] th,
+[data-theme="terminal"] label,
+[data-theme="terminal"] button {
+  text-shadow: 0 0 6px rgba(0, 255, 65, 0.45);
+}
+[data-theme="terminal"] input,
+[data-theme="terminal"] textarea {
+  text-shadow: none;
+}
+
+/* Terminal: LED-style status indicators */
+[data-theme="terminal"] .status-indicator-online {
+  box-shadow: 0 0 4px #00ff41, 0 0 12px #00ff41;
+}
+
+/* Terminal: all animations become stepped / digital */
+[data-theme="terminal"] * {
+  transition-timing-function: steps(4) !important;
+}
+[data-theme="terminal"] .animate-fade-in {
+  animation: terminal-appear 0.2s steps(4) both !important;
+}
+@keyframes terminal-appear {
+  0%   { opacity: 0; }
+  25%  { opacity: 0.25; }
+  50%  { opacity: 0.5; }
+  75%  { opacity: 0.75; }
+  100% { opacity: 1; }
+}
+
+/* Terminal: blinking cursor on active elements */
+@keyframes terminal-blink {
+  0%, 49% { opacity: 1; }
+  50%, 100% { opacity: 0; }
+}
+[data-theme="terminal"] .terminal-cursor::after {
+  content: '_';
+  display: inline-block;
+  animation: terminal-blink 0.8s steps(1) infinite;
+  color: #00ff41;
+}
+
+/* Terminal: card borders pulse glow */
+[data-theme="terminal"] [class*="border"],
+[data-theme="terminal"] .card {
+  box-shadow: 0 0 2px rgba(0, 255, 65, 0.2) inset;
+}
+
+/* ===========================================================================
+   THEME: Blueprint
+   Engineering/architectural drawing — white lines on deep navy, grid paper,
+   dashed borders, technical drawing aesthetic, clean sans-serif (Inter)
+   =========================================================================== */
+[data-theme="blueprint"] {
+  /* === STRUCTURAL OVERRIDES === */
+  --theme-border-style: dashed;
+  --theme-text-glow: none;
+  --theme-card-shadow: none;
+  /* Fine-line engineering grid */
+  --theme-html-bg-image:
+    linear-gradient(rgba(96, 165, 250, 0.10) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(96, 165, 250, 0.10) 1px, transparent 1px),
+    linear-gradient(rgba(96, 165, 250, 0.04) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(96, 165, 250, 0.04) 1px, transparent 1px);
+  --theme-html-bg-size: 80px 80px, 80px 80px, 20px 20px, 20px 20px;
+  --theme-scanlines-content: '';
+  --theme-scanlines-bg: none;
+  --theme-scanlines-opacity: 0;
+
+  --radius: 0px;
+
+  /* === SHADCN TOKENS === */
+  --background: #0a1628;
+  --foreground: #d4e8ff;
+  --card: #0d1e38;
+  --card-foreground: #d4e8ff;
+  --popover: #0c1c34;
+  --popover-foreground: #d4e8ff;
+  --primary: #60a5fa;
+  --primary-foreground: #0a1628;
+  --secondary: #112240;
+  --secondary-foreground: #93c5fd;
+  --muted: #0f1e38;
+  --muted-foreground: #4d7aa8;
+  --accent: #60a5fa;
+  --accent-foreground: #0a1628;
+  --destructive: #f87171;
+  --border: #1e4070;
+  --input: #112240;
+  --ring: #60a5fa;
+  --chart-1: #60a5fa;
+  --chart-2: #34d399;
+  --chart-3: #fbbf24;
+  --chart-4: #a78bfa;
+  --chart-5: #f472b6;
+  --sidebar: #08132a;
+  --sidebar-foreground: #c0d8f0;
+  --sidebar-primary: #60a5fa;
+  --sidebar-primary-foreground: #08132a;
+  --sidebar-accent: #0f1e38;
+  --sidebar-accent-foreground: #c0d8f0;
+  --sidebar-border: #1e4070;
+  --sidebar-ring: #60a5fa;
+
+  /* === CUSTOM THEME TOKENS === */
+  --theme-bg-primary: #0a1628;
+  --theme-bg-secondary: #0d1e38;
+  --theme-bg-tertiary: #112240;
+  --theme-text-primary: #e8f4ff;
+  --theme-text-secondary: #93c5fd;
+  --theme-text-muted: #4d7aa8;
+  --theme-text-dim: #2a4a6a;
+  --theme-accent: #60a5fa;
+  --theme-accent-dim: rgba(96, 165, 250, 0.12);
+  --theme-border: #1e4070;
+  --theme-border-subtle: #122848;
+  --theme-status-dot: #60a5fa;
+  --theme-logo-bg: #0a1628;
+  /* Clean, readable sans-serif — feels like CAD software */
+  --font-sans: 'Inter', 'IBM Plex Mono', system-ui, sans-serif;
+
+  /* === MARKDOWN === */
+  --msg-h1-border: #60a5fa;
+  --msg-h2-border: #3b82f6;
+  --msg-h3-border: #1e4070;
+  --msg-header-text: #93c5fd;
+  --msg-em-color: #7dd3fc;
+  --msg-link-color: #60a5fa;
+  --msg-link-bg: rgba(96, 165, 250, 0.12);
+  --msg-link-hover-text: #e8f4ff;
+  --msg-code-bg: #0d1e38;
+  --msg-code-border: #1e4070;
+  --msg-code-color: #60a5fa;
+  --msg-pre-bg: #080f1e;
+  --msg-pre-border: #1e4070;
+  --msg-pre-text: #c0d8f0;
+  --msg-marker-color: #60a5fa;
+  --msg-table-border: #1e4070;
+  --msg-thead-bg: #112240;
+  --msg-thead-text: #60a5fa;
+  --msg-tbody-border: #122848;
+  --msg-tbody-cell-border: #0f1e38;
+  --msg-tbody-text: #93c5fd;
+  --msg-tbody-hover: rgba(96, 165, 250, 0.06);
+  --msg-blockquote-border: #60a5fa;
+  --msg-blockquote-text: #4d7aa8;
+  --msg-hr-color: #1e4070;
+  --msg-img-border: #1e4070;
+  --msg-shimmer-from: #0a1628;
+  --msg-shimmer-mid: #112240;
+
+  /* === SCROLLBARS === */
+  --scrollbar-track: #0a1628;
+  --scrollbar-thumb: #1e4070;
+  --scrollbar-hover: #60a5fa;
+  --selection-bg: rgba(96, 165, 250, 0.25);
+  --selection-text: #e8f4ff;
+}
+
+/* Blueprint: crosshair corners on cards instead of solid borders */
+[data-theme="blueprint"] .card,
+[data-theme="blueprint"] [data-slot="card"] {
+  position: relative;
+  border: 1px dashed #1e4070 !important;
+  box-shadow:
+    inset 8px 8px 0 -7px #60a5fa,
+    inset -8px 8px 0 -7px #60a5fa,
+    inset 8px -8px 0 -7px #60a5fa,
+    inset -8px -8px 0 -7px #60a5fa;
+}
+
+/* Blueprint: smooth transitions — feels like a CAD tool redrawing */
+[data-theme="blueprint"] * {
+  transition-duration: 200ms !important;
+  transition-timing-function: linear !important;
+}
+
+/* Blueprint: dimension annotation style for nav labels */
+[data-theme="blueprint"] .text-\[12px\].font-bold.tracking-wider {
+  letter-spacing: 0.15em;
+  font-weight: 500;
+}
+
+/* ===========================================================================
+   THEME: Paper
+   Clean newspaper/document aesthetic — off-white background, black ink,
+   serif typography (Playfair Display + Source Serif), subtle paper shadows,
+   minimal color, editorial feel
+   =========================================================================== */
+[data-theme="paper"] {
+  /* === STRUCTURAL OVERRIDES === */
+  --theme-border-style: solid;
+  --theme-text-glow: none;
+  /* Paper-like drop shadow on cards */
+  --theme-card-shadow: 2px 3px 8px rgba(0, 0, 0, 0.12), 0 1px 2px rgba(0, 0, 0, 0.08);
+  --theme-html-bg-image: none;
+  --theme-html-bg-size: auto;
+  --theme-scanlines-content: '';
+  --theme-scanlines-bg: none;
+  --theme-scanlines-opacity: 0;
+
+  --radius: 0px;
+
+  /* === SHADCN TOKENS === */
+  --background: #f7f4ed;
+  --foreground: #1a1410;
+  --card: #faf9f5;
+  --card-foreground: #1a1410;
+  --popover: #faf9f5;
+  --popover-foreground: #1a1410;
+  --primary: #1a1410;
+  --primary-foreground: #f7f4ed;
+  --secondary: #edeae0;
+  --secondary-foreground: #3d3830;
+  --muted: #edeae0;
+  --muted-foreground: #7a7060;
+  --accent: #1a1410;
+  --accent-foreground: #f7f4ed;
+  --destructive: #8b1a1a;
+  --border: #c8c4b8;
+  --input: #edeae0;
+  --ring: #1a1410;
+  --chart-1: #1a1410;
+  --chart-2: #8b4513;
+  --chart-3: #2e5090;
+  --chart-4: #1a5c1a;
+  --chart-5: #7a1a1a;
+  --sidebar: #f0ece2;
+  --sidebar-foreground: #1a1410;
+  --sidebar-primary: #1a1410;
+  --sidebar-primary-foreground: #f7f4ed;
+  --sidebar-accent: #e8e4d8;
+  --sidebar-accent-foreground: #1a1410;
+  --sidebar-border: #c8c4b8;
+  --sidebar-ring: #1a1410;
+
+  /* === CUSTOM THEME TOKENS === */
+  --theme-bg-primary: #f7f4ed;
+  --theme-bg-secondary: #faf9f5;
+  --theme-bg-tertiary: #ffffff;
+  --theme-text-primary: #1a1410;
+  --theme-text-secondary: #3d3830;
+  --theme-text-muted: #7a7060;
+  --theme-text-dim: #aea898;
+  --theme-accent: #1a1410;
+  --theme-accent-dim: rgba(26, 20, 16, 0.08);
+  --theme-border: #c8c4b8;
+  --theme-border-subtle: #dddad0;
+  --theme-status-dot: #2e5090;
+  --theme-logo-bg: #f7f4ed;
+  /* Serif typography — editorial newspaper feel */
+  --font-sans: 'Playfair Display', 'Source Serif 4', Georgia, 'Times New Roman', serif;
+
+  /* === MARKDOWN === */
+  --msg-h1-border: #1a1410;
+  --msg-h2-border: #c8c4b8;
+  --msg-h3-border: #dddad0;
+  --msg-header-text: #1a1410;
+  --msg-em-color: #8b4513;
+  --msg-link-color: #2e5090;
+  --msg-link-bg: rgba(46, 80, 144, 0.08);
+  --msg-link-hover-text: #f7f4ed;
+  --msg-code-bg: #edeae0;
+  --msg-code-border: #c8c4b8;
+  --msg-code-color: #1a1410;
+  --msg-pre-bg: #e8e4d8;
+  --msg-pre-border: #c8c4b8;
+  --msg-pre-text: #1a1410;
+  --msg-marker-color: #1a1410;
+  --msg-table-border: #c8c4b8;
+  --msg-thead-bg: #1a1410;
+  --msg-thead-text: #f7f4ed;
+  --msg-tbody-border: #dddad0;
+  --msg-tbody-cell-border: #edeae0;
+  --msg-tbody-text: #3d3830;
+  --msg-tbody-hover: rgba(0, 0, 0, 0.03);
+  --msg-blockquote-border: #c8c4b8;
+  --msg-blockquote-text: #7a7060;
+  --msg-hr-color: #1a1410;
+  --msg-img-border: #c8c4b8;
+  --msg-shimmer-from: #f7f4ed;
+  --msg-shimmer-mid: #faf9f5;
+
+  /* === SCROLLBARS === */
+  --scrollbar-track: #f7f4ed;
+  --scrollbar-thumb: #c8c4b8;
+  --scrollbar-hover: #1a1410;
+  --selection-bg: rgba(26, 20, 16, 0.15);
+  --selection-text: #f7f4ed;
+}
+
+/* Paper: card elevation — looks like a physical document */
+[data-theme="paper"] .card,
+[data-theme="paper"] [data-slot="card"] {
+  box-shadow: 2px 3px 8px rgba(0, 0, 0, 0.10), 0 1px 2px rgba(0, 0, 0, 0.06) !important;
+  border: 1px solid #c8c4b8 !important;
+}
+
+/* Paper: smooth, natural transitions */
+[data-theme="paper"] * {
+  transition-timing-function: ease-in-out !important;
+  transition-duration: 180ms !important;
+}
+
+/* Paper: headers have a newspaper-weight serif feel */
+[data-theme="paper"] h1,
+[data-theme="paper"] h2,
+[data-theme="paper"] h3,
+[data-theme="paper"] .text-\[13px\].font-bold {
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
+
+/* Paper: body text wider line-height for readability */
+[data-theme="paper"] p,
+[data-theme="paper"] .message-content p {
+  line-height: 1.85;
+}
+
+/* Paper: nav labels — small caps style */
+[data-theme="paper"] .text-\[12px\].font-bold.tracking-wider {
+  font-family: 'Playfair Display', serif;
+  letter-spacing: 0.12em;
+  font-variant: small-caps;
+}
+
+/* ===========================================================================
+   THEME: Neon Grid
+   Cyberpunk / synthwave — dark background, bright neon pink/cyan/purple,
+   glowing text shadows on headers, visible grid in background, sharp edges,
+   neon borders, Orbitron display font
+   =========================================================================== */
+[data-theme="neon-grid"] {
+  /* === STRUCTURAL OVERRIDES === */
+  --theme-border-style: solid;
+  --theme-text-glow: 0 0 10px rgba(255, 0, 255, 0.8), 0 0 30px rgba(255, 0, 255, 0.4), 0 0 60px rgba(255, 0, 255, 0.15);
+  --theme-card-shadow:
+    0 0 0 1px #ff00ff,
+    0 0 12px rgba(255, 0, 255, 0.25),
+    inset 0 0 20px rgba(255, 0, 255, 0.04);
+  /* Neon grid lines — smaller with glowing effect */
+  --theme-html-bg-image:
+    linear-gradient(rgba(0, 255, 255, 0.06) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(0, 255, 255, 0.06) 1px, transparent 1px),
+    linear-gradient(rgba(255, 0, 255, 0.03) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255, 0, 255, 0.03) 1px, transparent 1px);
+  --theme-html-bg-size: 60px 60px, 60px 60px, 20px 20px, 20px 20px;
+  --theme-scanlines-content: '';
+  --theme-scanlines-bg: none;
+  --theme-scanlines-opacity: 0;
+
+  --radius: 0px;
+
+  /* === SHADCN TOKENS === */
+  --background: #08001a;
+  --foreground: #f0e8ff;
+  --card: #0d0425;
+  --card-foreground: #f0e8ff;
+  --popover: #0b0220;
+  --popover-foreground: #f0e8ff;
+  --primary: #ff00ff;
+  --primary-foreground: #08001a;
+  --secondary: #140830;
+  --secondary-foreground: #cc66ff;
+  --muted: #110630;
+  --muted-foreground: #6633aa;
+  --accent: #00ffff;
+  --accent-foreground: #08001a;
+  --destructive: #ff0044;
+  --border: #4400aa;
+  --input: #140830;
+  --ring: #ff00ff;
+  --chart-1: #ff00ff;
+  --chart-2: #00ffff;
+  --chart-3: #cc00ff;
+  --chart-4: #ff6600;
+  --chart-5: #00ff88;
+  --sidebar: #060014;
+  --sidebar-foreground: #e0d0ff;
+  --sidebar-primary: #ff00ff;
+  --sidebar-primary-foreground: #06001a;
+  --sidebar-accent: #130730;
+  --sidebar-accent-foreground: #e0d0ff;
+  --sidebar-border: #3a0088;
+  --sidebar-ring: #ff00ff;
+
+  /* === CUSTOM THEME TOKENS === */
+  --theme-bg-primary: #08001a;
+  --theme-bg-secondary: #0d0425;
+  --theme-bg-tertiary: #140830;
+  --theme-text-primary: #ffffff;
+  --theme-text-secondary: #cc66ff;
+  --theme-text-muted: #6633aa;
+  --theme-text-dim: #330066;
+  --theme-accent: #ff00ff;
+  --theme-accent-dim: rgba(255, 0, 255, 0.15);
+  --theme-border: #4400aa;
+  --theme-border-subtle: #220055;
+  --theme-status-dot: #00ffff;
+  --theme-logo-bg: #08001a;
+  /* Orbitron — the quintessential cyberpunk display font */
+  --font-sans: 'Orbitron', 'JetBrains Mono', monospace;
+
+  /* === MARKDOWN === */
+  --msg-h1-border: #ff00ff;
+  --msg-h2-border: #00ffff;
+  --msg-h3-border: #cc00ff;
+  --msg-header-text: #ff00ff;
+  --msg-em-color: #00ffff;
+  --msg-link-color: #00ffff;
+  --msg-link-bg: rgba(0, 255, 255, 0.12);
+  --msg-link-hover-text: #08001a;
+  --msg-code-bg: #0d0425;
+  --msg-code-border: #4400aa;
+  --msg-code-color: #00ffff;
+  --msg-pre-bg: #060012;
+  --msg-pre-border: #4400aa;
+  --msg-pre-text: #cc66ff;
+  --msg-marker-color: #ff00ff;
+  --msg-table-border: #4400aa;
+  --msg-thead-bg: #140830;
+  --msg-thead-text: #ff00ff;
+  --msg-tbody-border: #220055;
+  --msg-tbody-cell-border: #110630;
+  --msg-tbody-text: #cc66ff;
+  --msg-tbody-hover: rgba(255, 0, 255, 0.06);
+  --msg-blockquote-border: #ff00ff;
+  --msg-blockquote-text: #6633aa;
+  --msg-hr-color: #4400aa;
+  --msg-img-border: #4400aa;
+  --msg-shimmer-from: #08001a;
+  --msg-shimmer-mid: #140830;
+
+  /* === SCROLLBARS === */
+  --scrollbar-track: #08001a;
+  --scrollbar-thumb: #4400aa;
+  --scrollbar-hover: #ff00ff;
+  --selection-bg: rgba(255, 0, 255, 0.25);
+  --selection-text: #ffffff;
+}
+
+/* Neon Grid: glowing card borders */
+[data-theme="neon-grid"] .card,
+[data-theme="neon-grid"] [data-slot="card"] {
+  border: 1px solid #4400aa !important;
+  box-shadow:
+    0 0 0 1px rgba(255, 0, 255, 0.3),
+    0 0 15px rgba(255, 0, 255, 0.12),
+    inset 0 0 30px rgba(255, 0, 255, 0.03) !important;
+}
+
+/* Neon Grid: header glow — titles pop like neon signs */
+[data-theme="neon-grid"] h1,
+[data-theme="neon-grid"] h2,
+[data-theme="neon-grid"] h3,
+[data-theme="neon-grid"] .text-\[13px\].font-bold,
+[data-theme="neon-grid"] .text-\[12px\].font-bold {
+  text-shadow:
+    0 0 8px rgba(255, 0, 255, 0.9),
+    0 0 20px rgba(255, 0, 255, 0.5),
+    0 0 40px rgba(255, 0, 255, 0.25);
+}
+
+/* Neon Grid: accent color elements glow cyan */
+[data-theme="neon-grid"] [style*="color: var(--theme-accent)"],
+[data-theme="neon-grid"] [style*="color: var(--chart-1)"] {
+  text-shadow:
+    0 0 8px rgba(255, 0, 255, 0.8),
+    0 0 20px rgba(255, 0, 255, 0.4);
+}
+
+/* Neon Grid: smooth but fast glow transitions */
+[data-theme="neon-grid"] * {
+  transition-timing-function: ease-out !important;
+  transition-duration: 120ms !important;
+}
+
+/* Neon Grid: animated horizon scan line */
+@keyframes neon-scan {
+  0%   { transform: translateY(-100%); opacity: 0.06; }
+  100% { transform: translateY(100vh); opacity: 0.06; }
+}
+[data-theme="neon-grid"]::before {
+  content: '';
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 3px;
+  background: linear-gradient(90deg, transparent, #00ffff, #ff00ff, #00ffff, transparent);
+  animation: neon-scan 6s linear infinite;
+  pointer-events: none;
+  z-index: 9998;
+}
+
+/* Neon Grid: scrollbar glow */
+[data-theme="neon-grid"] ::-webkit-scrollbar-thumb {
+  box-shadow: 0 0 6px rgba(255, 0, 255, 0.5);
+}
+
+/* ===========================================================================
+   THEME: Soft UI (Neumorphic)
+   Medium gray background, elements appear pressed-in or popped-out via double
+   box shadows. Very rounded corners, tactile, no harsh borders, Inter font.
+   =========================================================================== */
+[data-theme="soft-ui"] {
+  /* === STRUCTURAL OVERRIDES === */
+  --theme-border-style: solid;
+  --theme-text-glow: none;
+  /* Double shadow neumorphic card */
+  --theme-card-shadow:
+    6px 6px 12px rgba(0, 0, 0, 0.25),
+    -6px -6px 12px rgba(255, 255, 255, 0.06);
+  --theme-html-bg-image: none;
+  --theme-html-bg-size: auto;
+  --theme-scanlines-content: '';
+  --theme-scanlines-bg: none;
+  --theme-scanlines-opacity: 0;
+
+  /* Neumorphic needs rounded corners — we override the global zero */
+  --radius: 16px;
+  --radius-sm: 8px;
+  --radius-md: 12px;
+  --radius-lg: 16px;
+  --radius-xl: 20px;
+  --radius-2xl: 24px;
+  --radius-3xl: 28px;
+  --radius-4xl: 32px;
+
+  /* === SHADCN TOKENS === */
+  --background: #2a2d35;
+  --foreground: #dce1ec;
+  --card: #2e3240;
+  --card-foreground: #dce1ec;
+  --popover: #2e3240;
+  --popover-foreground: #dce1ec;
+  --primary: #6b8ef5;
+  --primary-foreground: #1a1e28;
+  --secondary: #353848;
+  --secondary-foreground: #a8b4d0;
+  --muted: #313544;
+  --muted-foreground: #7a8aaa;
+  --accent: #6b8ef5;
+  --accent-foreground: #1a1e28;
+  --destructive: #e07070;
+  --border: #232630;
+  --input: #272a38;
+  --ring: #6b8ef5;
+  --chart-1: #6b8ef5;
+  --chart-2: #70c8b8;
+  --chart-3: #f5d06b;
+  --chart-4: #c87ef5;
+  --chart-5: #f57070;
+  --sidebar: #252830;
+  --sidebar-foreground: #ccd4e8;
+  --sidebar-primary: #6b8ef5;
+  --sidebar-primary-foreground: #1a1e28;
+  --sidebar-accent: #2e3240;
+  --sidebar-accent-foreground: #ccd4e8;
+  --sidebar-border: #1e2130;
+  --sidebar-ring: #6b8ef5;
+
+  /* === CUSTOM THEME TOKENS === */
+  --theme-bg-primary: #2a2d35;
+  --theme-bg-secondary: #2e3240;
+  --theme-bg-tertiary: #353848;
+  --theme-text-primary: #ffffff;
+  --theme-text-secondary: #dce1ec;
+  --theme-text-muted: #7a8aaa;
+  --theme-text-dim: #4a5268;
+  --theme-accent: #6b8ef5;
+  --theme-accent-dim: rgba(107, 142, 245, 0.15);
+  --theme-border: transparent;
+  --theme-border-subtle: rgba(255, 255, 255, 0.04);
+  --theme-status-dot: #6b8ef5;
+  --theme-logo-bg: #2a2d35;
+  /* Inter — clean, modern, tactile feel */
+  --font-sans: 'Inter', system-ui, -apple-system, sans-serif;
+
+  /* === MARKDOWN === */
+  --msg-h1-border: rgba(107, 142, 245, 0.4);
+  --msg-h2-border: rgba(107, 142, 245, 0.25);
+  --msg-h3-border: rgba(107, 142, 245, 0.15);
+  --msg-header-text: #ffffff;
+  --msg-em-color: #c87ef5;
+  --msg-link-color: #6b8ef5;
+  --msg-link-bg: rgba(107, 142, 245, 0.12);
+  --msg-link-hover-text: #ffffff;
+  --msg-code-bg: #232630;
+  --msg-code-border: rgba(107, 142, 245, 0.3);
+  --msg-code-color: #6b8ef5;
+  --msg-pre-bg: #1e2130;
+  --msg-pre-border: rgba(107, 142, 245, 0.3);
+  --msg-pre-text: #dce1ec;
+  --msg-marker-color: #6b8ef5;
+  --msg-table-border: rgba(255, 255, 255, 0.08);
+  --msg-thead-bg: #2e3240;
+  --msg-thead-text: #6b8ef5;
+  --msg-tbody-border: rgba(255, 255, 255, 0.06);
+  --msg-tbody-cell-border: rgba(255, 255, 255, 0.04);
+  --msg-tbody-text: #a8b4d0;
+  --msg-tbody-hover: rgba(107, 142, 245, 0.06);
+  --msg-blockquote-border: #6b8ef5;
+  --msg-blockquote-text: #7a8aaa;
+  --msg-hr-color: rgba(255, 255, 255, 0.08);
+  --msg-img-border: rgba(255, 255, 255, 0.12);
+  --msg-shimmer-from: #2a2d35;
+  --msg-shimmer-mid: #353848;
+
+  /* === SCROLLBARS === */
+  --scrollbar-track: #252830;
+  --scrollbar-thumb: #353848;
+  --scrollbar-hover: #6b8ef5;
+  --selection-bg: rgba(107, 142, 245, 0.25);
+  --selection-text: #ffffff;
+}
+
+/* Soft UI: override the global border-radius:0 !important for this theme only */
+[data-theme="soft-ui"] *,
+[data-theme="soft-ui"] *::before,
+[data-theme="soft-ui"] *::after {
+  border-radius: var(--radius-md) !important;
+}
+
+/* Soft UI: specific radius adjustments */
+[data-theme="soft-ui"] button {
+  border-radius: 50px !important;
+}
+[data-theme="soft-ui"] input,
+[data-theme="soft-ui"] textarea {
+  border-radius: var(--radius-sm) !important;
+}
+[data-theme="soft-ui"] ::-webkit-scrollbar-thumb {
+  border-radius: 6px !important;
+}
+
+/* Soft UI: card neumorphic shadow — raised appearance */
+[data-theme="soft-ui"] .card,
+[data-theme="soft-ui"] [data-slot="card"] {
+  border: none !important;
+  box-shadow:
+    8px 8px 16px rgba(0, 0, 0, 0.35),
+    -8px -8px 16px rgba(255, 255, 255, 0.05) !important;
+}
+
+/* Soft UI: buttons have pressed-in inset shadow when active */
+[data-theme="soft-ui"] button:active {
+  box-shadow:
+    inset 3px 3px 6px rgba(0, 0, 0, 0.4),
+    inset -3px -3px 6px rgba(255, 255, 255, 0.04) !important;
+  transform: scale(0.99);
+}
+
+/* Soft UI: sidebar elevated */
+[data-theme="soft-ui"] [data-slot="sidebar"] {
+  box-shadow:
+    8px 0 20px rgba(0, 0, 0, 0.3),
+    -4px 0 8px rgba(255, 255, 255, 0.03);
+  border-right: none !important;
+}
+
+/* Soft UI: smooth, springy transitions */
+[data-theme="soft-ui"] * {
+  transition-timing-function: cubic-bezier(0.34, 1.56, 0.64, 1) !important;
+  transition-duration: 200ms !important;
+}
+
+/* Soft UI: logo gets a pill shape */
+[data-theme="soft-ui"] [style*="theme-logo-bg"] {
+  border-radius: 50% !important;
+}
+
+/* ===========================================================================
+   THEME: Win 95
+   Classic 90s desktop — Windows 95/98 gray chrome, beveled 3D borders,
+   teal accent, system font, dithered tiled background, Netscape Navigator era
+   =========================================================================== */
+[data-theme="win95"] {
+  /* === STRUCTURAL OVERRIDES === */
+  --theme-border-style: solid;
+  --theme-text-glow: none;
+  --theme-card-shadow:
+    inset -1px -1px 0 #808080,
+    inset 1px 1px 0 #ffffff,
+    inset -2px -2px 0 #404040,
+    inset 2px 2px 0 #dfdfdf;
+  /* Tiled dithered desktop pattern — classic 90s checkerboard */
+  --theme-html-bg-image: repeating-conic-gradient(#b8b8b8 0% 25%, #c0c0c0 0% 50%);
+  --theme-html-bg-size: 4px 4px;
+  --theme-scanlines-content: '';
+  --theme-scanlines-bg: none;
+  --theme-scanlines-opacity: 0;
+
+  --radius: 0px;
+  --radius-sm: 0px;
+  --radius-md: 0px;
+  --radius-lg: 0px;
+  --radius-xl: 0px;
+  --radius-2xl: 0px;
+  --radius-3xl: 0px;
+  --radius-4xl: 0px;
+
+  /* === SHADCN TOKENS === */
+  --background: #c0c0c0;
+  --foreground: #000000;
+  --card: #c0c0c0;
+  --card-foreground: #000000;
+  --popover: #c0c0c0;
+  --popover-foreground: #000000;
+  --primary: #000080;
+  --primary-foreground: #ffffff;
+  --secondary: #d4d0c8;
+  --secondary-foreground: #000000;
+  --muted: #d4d0c8;
+  --muted-foreground: #808080;
+  --accent: #008080;
+  --accent-foreground: #ffffff;
+  --destructive: #c00000;
+  --border: #808080;
+  --input: #ffffff;
+  --ring: #000080;
+  --chart-1: #008080;
+  --chart-2: #000080;
+  --chart-3: #800000;
+  --chart-4: #808000;
+  --chart-5: #800080;
+  --sidebar: #c0c0c0;
+  --sidebar-foreground: #000000;
+  --sidebar-primary: #000080;
+  --sidebar-primary-foreground: #ffffff;
+  --sidebar-accent: #d4d0c8;
+  --sidebar-accent-foreground: #000000;
+  --sidebar-border: #808080;
+  --sidebar-ring: #000080;
+
+  /* === CUSTOM THEME TOKENS === */
+  --theme-bg-primary: #c0c0c0;
+  --theme-bg-secondary: #d4d0c8;
+  --theme-bg-tertiary: #bfbfbf;
+  --theme-text-primary: #000000;
+  --theme-text-secondary: #222222;
+  --theme-text-muted: #808080;
+  --theme-text-dim: #a0a0a0;
+  --theme-accent: #008080;
+  --theme-accent-dim: rgba(0, 128, 128, 0.18);
+  --theme-border: #808080;
+  --theme-border-subtle: #a0a0a0;
+  --theme-status-dot: #008080;
+  --theme-logo-bg: #c0c0c0;
+  /* Classic Windows system font stack */
+  --font-sans: 'Pixelated MS Sans Serif', 'MS Sans Serif', 'Tahoma', 'Arial', sans-serif;
+
+  /* === MARKDOWN === */
+  --msg-h1-border: #000080;
+  --msg-h2-border: #008080;
+  --msg-h3-border: #800000;
+  --msg-header-text: #000080;
+  --msg-em-color: #800080;
+  --msg-link-color: #0000ff;
+  --msg-link-bg: rgba(0, 0, 255, 0.08);
+  --msg-link-hover-text: #ff0000;
+  --msg-code-bg: #ffffff;
+  --msg-code-border: #808080;
+  --msg-code-color: #000080;
+  --msg-pre-bg: #ffffff;
+  --msg-pre-border: #808080;
+  --msg-pre-text: #000000;
+  --msg-marker-color: #008080;
+  --msg-table-border: #808080;
+  --msg-thead-bg: #000080;
+  --msg-thead-text: #ffffff;
+  --msg-tbody-border: #c0c0c0;
+  --msg-tbody-cell-border: #808080;
+  --msg-tbody-text: #000000;
+  --msg-tbody-hover: rgba(0, 128, 128, 0.10);
+  --msg-blockquote-border: #800000;
+  --msg-blockquote-text: #444444;
+  --msg-hr-color: #808080;
+  --msg-img-border: #808080;
+  --msg-shimmer-from: #c0c0c0;
+  --msg-shimmer-mid: #d4d0c8;
+
+  /* === SCROLLBARS === */
+  --scrollbar-track: #c0c0c0;
+  --scrollbar-thumb: #808080;
+  --scrollbar-hover: #000080;
+  --selection-bg: #000080;
+  --selection-text: #ffffff;
+}
+
+/* Win95: beveled outset borders on cards — classic raised panel look */
+[data-theme="win95"] .card,
+[data-theme="win95"] [data-slot="card"] {
+  border: none !important;
+  box-shadow:
+    inset -1px -1px 0 #404040,
+    inset 1px 1px 0 #ffffff,
+    inset -2px -2px 0 #808080,
+    inset 2px 2px 0 #dfdfdf !important;
+  background: #c0c0c0 !important;
+}
+
+/* Win95: buttons get that classic raised 3D look */
+[data-theme="win95"] button {
+  border: none !important;
+  box-shadow:
+    inset -1px -1px 0 #404040,
+    inset 1px 1px 0 #ffffff,
+    inset -2px -2px 0 #808080,
+    inset 2px 2px 0 #dfdfdf;
+  background: #c0c0c0;
+  font-family: 'MS Sans Serif', 'Tahoma', 'Arial', sans-serif;
+  text-transform: none;
+  letter-spacing: 0;
+}
+
+/* Win95: buttons pressed — inset sunken look */
+[data-theme="win95"] button:active {
+  box-shadow:
+    inset 1px 1px 0 #404040,
+    inset -1px -1px 0 #ffffff,
+    inset 2px 2px 0 #808080,
+    inset -2px -2px 0 #dfdfdf !important;
+  padding-left: 2px;
+  padding-top: 2px;
+}
+
+/* Win95: hover state — slight highlight */
+[data-theme="win95"] button:hover {
+  background: #d4d0c8;
+}
+
+/* Win95: inputs get classic sunken inset field */
+[data-theme="win95"] input,
+[data-theme="win95"] textarea {
+  background: #ffffff !important;
+  color: #000000 !important;
+  border: none !important;
+  box-shadow:
+    inset 1px 1px 0 #808080,
+    inset -1px -1px 0 #ffffff,
+    inset 2px 2px 0 #404040,
+    inset -2px -2px 0 #dfdfdf !important;
+}
+
+/* Win95: sidebar — raised panel with classic outset */
+[data-theme="win95"] [data-slot="sidebar"] {
+  border-right: none !important;
+  box-shadow:
+    inset -1px 0 0 #404040,
+    inset 0 -1px 0 #404040,
+    inset 1px 0 0 #ffffff,
+    inset 0 1px 0 #ffffff;
+}
+
+/* Win95: title bar effect on headers — navy blue bar with white text */
+[data-theme="win95"] [style*="theme-logo-bg"] {
+  background: linear-gradient(90deg, #000080, #1084d0) !important;
+  color: #ffffff !important;
+}
+[data-theme="win95"] [style*="theme-logo-bg"] * {
+  color: #ffffff !important;
+}
+
+/* Win95: links are the classic blue, underlined, red on hover */
+[data-theme="win95"] a {
+  color: #0000ff;
+  text-decoration: underline;
+}
+[data-theme="win95"] a:visited {
+  color: #800080;
+}
+[data-theme="win95"] a:hover {
+  color: #ff0000;
+}
+
+/* Win95: scrollbar classic chunky look */
+[data-theme="win95"] ::-webkit-scrollbar {
+  width: 16px;
+  height: 16px;
+}
+[data-theme="win95"] ::-webkit-scrollbar-track {
+  background: #c0c0c0;
+  border: 1px solid #808080;
+}
+[data-theme="win95"] ::-webkit-scrollbar-thumb {
+  background: #c0c0c0;
+  box-shadow:
+    inset -1px -1px 0 #404040,
+    inset 1px 1px 0 #ffffff,
+    inset -2px -2px 0 #808080,
+    inset 2px 2px 0 #dfdfdf;
+  border: none;
+}
+
+/* Win95: status dot becomes a small square LED */
+[data-theme="win95"] .h-2.w-2 {
+  border-radius: 0 !important;
+  box-shadow:
+    inset 1px 1px 0 #404040,
+    inset -1px -1px 0 #ffffff;
+}
+
+/* Win95: all transitions are instant — old computers didn't animate */
+[data-theme="win95"] * {
+  transition-duration: 0ms !important;
+  transition: none !important;
+}
+
+/* Win95: table headers — classic navy bar */
+[data-theme="win95"] thead th {
+  background: #000080 !important;
+  color: #ffffff !important;
+  font-weight: bold;
+}
+
+/* ===========================================================================
+   Theme structural utility classes (shared)
+   =========================================================================== */
+
+/* Glowing button for themes that support it */
+[data-theme="terminal"] button:hover,
+[data-theme="neon-grid"] button:hover {
+  filter: brightness(1.2);
+}
+
+[data-theme="neon-grid"] button {
+  text-shadow:
+    0 0 8px rgba(255, 0, 255, 0.6),
+    0 0 20px rgba(255, 0, 255, 0.3);
+}
+
+/* Terminal: all caps status text */
+[data-theme="terminal"] .text-\[10px\].font-bold,
+[data-theme="terminal"] .text-\[9px\],
+[data-theme="terminal"] .text-\[12px\].font-bold {
+  text-transform: uppercase;
+  letter-spacing: 0.2em;
+}
+
+/* Blueprint: nav labels use Inter weight */
+[data-theme="blueprint"] span,
+[data-theme="blueprint"] button {
+  letter-spacing: 0.04em;
+}
+
+/* Paper: status dot becomes a filled square for a print-like indicator */
+[data-theme="paper"] .h-2.w-2 {
+  border-radius: 0 !important;
+}
+
+/* Neon Grid: status dot glows */
+[data-theme="neon-grid"] .h-2.w-2 {
+  box-shadow: 0 0 6px currentColor, 0 0 12px currentColor;
+}
+

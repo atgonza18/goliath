@@ -8,7 +8,7 @@ import {
 
 // ─── Theme Definitions ────────────────────────────────────────────────────────
 
-export type ThemeName = 'dark-brutal' | 'sand-brutal' | 'ice-brutal' | 'toxic-brutal' | 'blood-brutal';
+export type ThemeName = 'dark-brutal' | 'sand-brutal' | 'ice-brutal' | 'toxic-brutal' | 'blood-brutal' | 'blueprint-brutal' | 'amber-crt' | 'void-brutal' | 'paper-brutal' | 'terminal' | 'blueprint' | 'paper' | 'neon-grid' | 'soft-ui' | 'win95';
 
 export interface ThemeDefinition {
   name: ThemeName;
@@ -63,6 +63,59 @@ export const THEMES: ThemeDefinition[] = [
     bg: '#0d0808',
     text: '#f5e8e8',
   },
+  { name: 'blueprint-brutal', label: 'BLUEPRINT', description: 'ENGINEERING DRAWING', accent: '#4db8ff', bg: '#0d1b2a', text: '#c8dff5' },
+  { name: 'amber-crt', label: 'AMBER CRT', description: 'PHOSPHOR TERMINAL', accent: '#ffaa00', bg: '#0f0900', text: '#ffaa00' },
+  { name: 'void-brutal', label: 'VOID', description: 'ULTRABLACK', accent: '#8b5cf6', bg: '#000000', text: '#e0d8f5' },
+  { name: 'paper-brutal', label: 'PAPER', description: 'GRAPH PAPER', accent: '#1d4ed8', bg: '#f4f1e8', text: '#1a1a2e' },
+  // ── New structurally distinct themes ──────────────────────────────────────
+  {
+    name: 'terminal',
+    label: 'TERMINAL',
+    description: 'RETRO CRT PHOSPHOR',
+    accent: '#00ff41',
+    bg: '#000000',
+    text: '#00ff41',
+  },
+  {
+    name: 'blueprint',
+    label: 'BLUEPRINT',
+    description: 'ENGINEERING DRAWING',
+    accent: '#60a5fa',
+    bg: '#0a1628',
+    text: '#d4e8ff',
+  },
+  {
+    name: 'paper',
+    label: 'PAPER',
+    description: 'EDITORIAL SERIF',
+    accent: '#1a1410',
+    bg: '#f7f4ed',
+    text: '#1a1410',
+  },
+  {
+    name: 'neon-grid',
+    label: 'NEON GRID',
+    description: 'CYBERPUNK SYNTHWAVE',
+    accent: '#ff00ff',
+    bg: '#08001a',
+    text: '#f0e8ff',
+  },
+  {
+    name: 'soft-ui',
+    label: 'SOFT UI',
+    description: 'NEUMORPHIC TACTILE',
+    accent: '#6b8ef5',
+    bg: '#2a2d35',
+    text: '#dce1ec',
+  },
+  {
+    name: 'win95',
+    label: 'WIN 95',
+    description: 'NETSCAPE ERA',
+    accent: '#008080',
+    bg: '#c0c0c0',
+    text: '#000000',
+  },
 ];
 
 const STORAGE_KEY = 'goliath-theme';
@@ -92,13 +145,16 @@ function getInitialTheme(): ThemeName {
   return DEFAULT_THEME;
 }
 
+/** Light themes — these get .dark removed so shadcn components render correctly */
+const LIGHT_THEMES: ThemeName[] = ['sand-brutal', 'paper-brutal', 'paper', 'win95'];
+
 function applyTheme(name: ThemeName) {
   // Set data-theme on <html>
   document.documentElement.setAttribute('data-theme', name);
 
-  // Mirror the legacy .dark class so shadcn components that read it still work
-  // (all dark themes should keep .dark; sand-brutal removes it)
-  if (name === 'sand-brutal') {
+  // Mirror the legacy .dark class so shadcn components that read it still work.
+  // Light themes remove .dark; all others keep it.
+  if (LIGHT_THEMES.includes(name)) {
     document.documentElement.classList.remove('dark');
   } else {
     document.documentElement.classList.add('dark');
