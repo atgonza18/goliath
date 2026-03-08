@@ -210,6 +210,10 @@ class EmailPoller:
             if not raw_emails:
                 return 0
 
+            # Initialize POD notification batch — accumulates files per project
+            # so we send ONE consolidated message instead of one per email.
+            self._pod_batch = {}
+
             count = 0
             for raw in raw_emails:
                 try:
@@ -238,29 +242,35 @@ class EmailPoller:
                         continue
                     # ── End safety filter ─────────────────────────────────
 
-                    # ── Self-forward detection: skip emails from user's own address ──
-                    sender_lower = parsed["sender"].lower().strip()
-                    relay_lower = (RELAY_TO_ADDRESS or "").lower().strip()
-                    gmail_lower = (self.address or "").lower().strip()
-                    if relay_lower and sender_lower == relay_lower:
-                        logger.info(
-                            f"Skipping self-forward — sender matches RELAY_TO_ADDRESS: "
-                            f"{parsed['subject']!r}"
-                        )
-                        _mark_processed(dedup)
-                        continue
-                    if gmail_lower and sender_lower == gmail_lower:
-                        logger.info(
-                            f"Skipping self-sent — sender matches GMAIL_ADDRESS: "
-                            f"{parsed['subject']!r}"
-                        )
-                        _mark_processed(dedup)
-                        continue
-                    # ── End self-forward detection ────────────────────────
-
                     # ── Classify and route ────────────────────────────────
+                    # Classification runs FIRST so POD/constraints/schedule
+                    # emails are never dropped by the self-forward filter.
                     classification = self._classify_email(parsed)
                     attachments = parsed.get("attachments", [])
+
+                    # ── Self-forward detection: skip emails from user's own address ──
+                    # Only applied to normal (draft-queue) emails.  POD, constraints,
+                    # hauger_update, and schedule emails bypass this filter entirely
+                    # so that forwarded project emails are always auto-filed.
+                    if classification not in ("pod", "constraints", "hauger_update", "schedule"):
+                        sender_lower = parsed["sender"].lower().strip()
+                        relay_lower = (RELAY_TO_ADDRESS or "").lower().strip()
+                        gmail_lower = (self.address or "").lower().strip()
+                        if relay_lower and sender_lower == relay_lower:
+                            logger.info(
+                                f"Skipping self-forward — sender matches RELAY_TO_ADDRESS: "
+                                f"{parsed['subject']!r}"
+                            )
+                            _mark_processed(dedup)
+                            continue
+                        if gmail_lower and sender_lower == gmail_lower:
+                            logger.info(
+                                f"Skipping self-sent — sender matches GMAIL_ADDRESS: "
+                                f"{parsed['subject']!r}"
+                            )
+                            _mark_processed(dedup)
+                            continue
+                    # ── End self-forward detection ────────────────────────
 
                     if classification in ("pod", "constraints", "hauger_update", "schedule"):
                         # POD/constraints/hauger emails NEVER fall through to draft queue
@@ -333,6 +343,13 @@ class EmailPoller:
 
                 except Exception:
                     logger.exception("Failed to process polled email")
+
+            # ── Flush batched POD notifications (one per project) ──────
+            try:
+                await self._flush_pod_notifications()
+            except Exception:
+                logger.exception("Failed to flush batched POD notifications")
+            # ── End POD notification flush ──────────────────────────────
 
             logger.info(f"Email poll cycle complete: {count} email(s) processed")
 
@@ -693,14 +710,29 @@ class EmailPoller:
         saved_files = self._save_attachments(attachments, target_dir, today)
 
         if saved_files:
-            await self._notify_attachment_filed(
-                project_name=project_name,
-                project_key=project_key,
-                classification="pod",
-                sender=sender,
-                subject=subject,
-                files=saved_files,
-            )
+            # Batch POD notifications: accumulate files per project so we send
+            # ONE consolidated Telegram message per project per poll cycle,
+            # instead of one notification per email (Power Automate sends one
+            # email per attachment, so a 12-attachment POD was 12 notifications).
+            if hasattr(self, "_pod_batch") and self._pod_batch is not None:
+                if project_key not in self._pod_batch:
+                    self._pod_batch[project_key] = {
+                        "project_name": project_name,
+                        "sender": sender,
+                        "files": list(saved_files),
+                    }
+                else:
+                    self._pod_batch[project_key]["files"].extend(saved_files)
+            else:
+                # Fallback: called outside poll cycle — notify immediately
+                await self._notify_attachment_filed(
+                    project_name=project_name,
+                    project_key=project_key,
+                    classification="pod",
+                    sender=sender,
+                    subject=subject,
+                    files=saved_files,
+                )
             # Trigger async POD data extraction for saved PDF files
             self._trigger_pod_extraction(saved_files, project_key)
         return bool(saved_files)
@@ -1027,6 +1059,47 @@ class EmailPoller:
             )
         except Exception:
             logger.exception("Failed to send POD notification to Telegram")
+
+    async def _flush_pod_notifications(self) -> None:
+        """Send ONE consolidated Telegram notification per project for all POD
+        files received during this poll cycle.
+
+        This eliminates notification spam caused by Power Automate sending one
+        email per attachment (e.g. a 12-attachment POD was producing 12
+        separate Telegram messages).
+        """
+        if not self._pod_batch:
+            return
+        if not self._bot or not self._chat_id:
+            logger.debug("No bot/chat_id — skipping batched POD notifications")
+            self._pod_batch = None
+            return
+
+        for project_key, info in self._pod_batch.items():
+            project_name = info["project_name"]
+            files = info["files"]
+            file_count = len(files)
+            file_list = "\n".join(f"  • <code>{f.name}</code>" for f in files)
+            msg = (
+                f"📊 <b>POD auto-filed — {project_name}</b>\n\n"
+                f"From: {info['sender']}\n"
+                f"<b>{file_count} file(s)</b> saved to "
+                f"<code>projects/{project_key}/pod/</code>:\n"
+                f"{file_list}"
+            )
+            try:
+                await self._bot.send_message(
+                    chat_id=self._chat_id,
+                    text=msg,
+                    parse_mode="HTML",
+                    disable_web_page_preview=True,
+                )
+            except Exception:
+                logger.exception(
+                    f"Failed to send batched POD notification for {project_key}"
+                )
+
+        self._pod_batch = None
 
     async def _notify_schedule_filed(
         self,
