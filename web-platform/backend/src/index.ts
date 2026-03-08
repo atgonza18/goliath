@@ -14,6 +14,9 @@ import { agentsRouter } from './routes/agents';
 import { memoriesRouter } from './routes/memories';
 import { filesRouter } from './routes/files';
 import { constraintsRouter } from './routes/constraints';
+import { productionRouter } from './routes/production';
+import { swarmRouter } from './routes/swarm';
+import { infraRouter } from './routes/infra';
 import { initDatabases } from './services/database';
 
 const PORT = Number(process.env.PORT) || 80;
@@ -48,6 +51,9 @@ app.use('/api', agentsRouter);
 app.use('/api', memoriesRouter);
 app.use('/api', filesRouter);
 app.use('/api', constraintsRouter);
+app.use('/api', productionRouter);
+app.use('/api', swarmRouter);
+app.use('/api', infraRouter);
 
 // --------------- Static frontend ---------------
 // Hashed assets get long-term immutable caching

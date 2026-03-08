@@ -634,6 +634,11 @@ html[data-theme]::after {
    Animations — MECHANICAL
    =========================================================================== */
 
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
 @keyframes fade-in {
   from { opacity: 0; transform: translateY(4px); }
   to { opacity: 1; transform: translateY(0); }
@@ -2468,6 +2473,159 @@ html[data-theme]::after {
 }
 
 /* ===========================================================================
+   THEME: Liquid Glass
+   Apple iOS 26 / macOS Tahoe style — frosted glass panes over indigo gradient
+   =========================================================================== */
+[data-theme="liquid-glass"] {
+  /* Structural */
+  --theme-border-style: solid;
+  --theme-text-glow: none;
+  --theme-card-shadow: 0 8px 32px rgba(15, 10, 46, 0.4), inset 0 1px 0 rgba(255,255,255,0.15);
+  --theme-html-bg-image: none;
+
+  /* Glass effect custom properties */
+  --glass-blur: blur(20px) saturate(180%) brightness(1.05);
+  --glass-bg: rgba(255, 255, 255, 0.07);
+  --glass-border: rgba(255, 255, 255, 0.15);
+  --glass-highlight: inset 0 1px 0 rgba(255, 255, 255, 0.3);
+
+  /* ShadCN tokens */
+  --background: 240 50% 8%;
+  --foreground: 226 60% 95%;
+  --card: 240 40% 12%;
+  --card-foreground: 226 60% 95%;
+  --popover: 240 40% 10%;
+  --popover-foreground: 226 60% 95%;
+  --primary: 262 80% 74%;
+  --primary-foreground: 240 50% 8%;
+  --secondary: 220 50% 18%;
+  --secondary-foreground: 226 60% 85%;
+  --muted: 230 40% 15%;
+  --muted-foreground: 226 30% 60%;
+  --accent: 262 80% 74%;
+  --accent-foreground: 240 50% 8%;
+  --destructive: 0 72% 60%;
+  --destructive-foreground: 226 60% 95%;
+  --border: 240 40% 25%;
+  --input: 240 40% 15%;
+  --ring: 262 80% 74%;
+
+  /* Sidebar */
+  --sidebar-background: 240 50% 6%;
+  --sidebar-foreground: 226 60% 90%;
+  --sidebar-primary: 262 80% 74%;
+  --sidebar-primary-foreground: 240 50% 8%;
+  --sidebar-accent: 240 40% 15%;
+  --sidebar-accent-foreground: 226 60% 90%;
+  --sidebar-border: 240 40% 20%;
+  --sidebar-ring: 262 80% 74%;
+
+  /* Charts */
+  --chart-1: 262 80% 74%;
+  --chart-2: 199 89% 75%;
+  --chart-3: 174 72% 56%;
+  --chart-4: 326 78% 70%;
+  --chart-5: 43 96% 56%;
+
+  /* Custom theme tokens */
+  --theme-bg-primary: #0f0a2e;
+  --theme-bg-secondary: #160d38;
+  --theme-bg-tertiary: #1e1448;
+  --theme-text-primary: #f0f4ff;
+  --theme-text-secondary: #c4cbf0;
+  --theme-text-muted: #8892be;
+  --theme-text-dim: #555f8a;
+  --theme-accent: #a78bfa;
+  --theme-accent-dim: #6d4fc4;
+  --theme-border: rgba(255, 255, 255, 0.15);
+  --theme-border-subtle: rgba(255, 255, 255, 0.08);
+  --theme-status-dot: #7dd3fc;
+  --theme-logo-bg: rgba(167, 139, 250, 0.15);
+  --font-sans: 'Inter', system-ui, -apple-system, sans-serif;
+
+  /* Markdown */
+  --msg-h1-border: rgba(167, 139, 250, 0.4);
+  --msg-h2-border: rgba(167, 139, 250, 0.25);
+  --msg-code-bg: rgba(167, 139, 250, 0.1);
+  --msg-code-border: rgba(167, 139, 250, 0.25);
+  --msg-blockquote-border: rgba(167, 139, 250, 0.5);
+  --msg-blockquote-bg: rgba(167, 139, 250, 0.05);
+  --msg-table-border: rgba(255, 255, 255, 0.1);
+  --msg-table-header-bg: rgba(167, 139, 250, 0.12);
+  --msg-img-border: rgba(255, 255, 255, 0.15);
+
+  /* Scrollbar */
+  --scrollbar-track: rgba(255, 255, 255, 0.03);
+  --scrollbar-thumb: rgba(167, 139, 250, 0.3);
+  --scrollbar-hover: rgba(167, 139, 250, 0.5);
+  --selection-bg: rgba(167, 139, 250, 0.3);
+  --selection-text: #f0f4ff;
+}
+
+/* === LIQUID GLASS EFFECTS === */
+[data-theme="liquid-glass"] body,
+[data-theme="liquid-glass"] #root {
+  background: linear-gradient(135deg, #0f0a2e 0%, #1a0d3d 40%, #0d1b3d 100%);
+  background-attachment: fixed;
+  min-height: 100vh;
+}
+
+/* Glass cards */
+[data-theme="liquid-glass"] .card,
+[data-theme="liquid-glass"] [class*="card"] {
+  background: rgba(255, 255, 255, 0.06) !important;
+  backdrop-filter: blur(20px) saturate(180%) brightness(1.05);
+  -webkit-backdrop-filter: blur(20px) saturate(180%) brightness(1.05);
+  border: 1px solid rgba(255, 255, 255, 0.12) !important;
+  box-shadow: 0 8px 32px rgba(15, 10, 46, 0.5), inset 0 1px 0 rgba(255, 255, 255, 0.2) !important;
+}
+
+/* Glass sidebar */
+[data-theme="liquid-glass"] aside,
+[data-theme="liquid-glass"] nav {
+  background: rgba(15, 10, 46, 0.6) !important;
+  backdrop-filter: blur(24px) saturate(200%);
+  -webkit-backdrop-filter: blur(24px) saturate(200%);
+  border-right: 1px solid rgba(255, 255, 255, 0.1) !important;
+}
+
+/* Glass panels / modals */
+[data-theme="liquid-glass"] [role="dialog"],
+[data-theme="liquid-glass"] .modal,
+[data-theme="liquid-glass"] [class*="popover"] {
+  background: rgba(22, 13, 56, 0.75) !important;
+  backdrop-filter: blur(30px) saturate(200%);
+  -webkit-backdrop-filter: blur(30px) saturate(200%);
+  border: 1px solid rgba(255, 255, 255, 0.18) !important;
+  box-shadow: 0 20px 60px rgba(15, 10, 46, 0.7), inset 0 1px 0 rgba(255, 255, 255, 0.25) !important;
+}
+
+/* Glass inputs */
+[data-theme="liquid-glass"] input,
+[data-theme="liquid-glass"] textarea,
+[data-theme="liquid-glass"] select {
+  background: rgba(255, 255, 255, 0.05) !important;
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  border: 1px solid rgba(255, 255, 255, 0.15) !important;
+}
+
+/* Accent button */
+[data-theme="liquid-glass"] button[class*="primary"],
+[data-theme="liquid-glass"] .btn-primary {
+  background: linear-gradient(135deg, rgba(167,139,250,0.35) 0%, rgba(99,102,241,0.35) 100%) !important;
+  backdrop-filter: blur(10px);
+  border: 1px solid rgba(167, 139, 250, 0.4) !important;
+  box-shadow: 0 4px 15px rgba(167, 139, 250, 0.25), inset 0 1px 0 rgba(255,255,255,0.25) !important;
+}
+
+/* Shimmer animation on glass elements */
+@keyframes glassShimmer {
+  0% { background-position: -200% center; }
+  100% { background-position: 200% center; }
+}
+
+/* ===========================================================================
    Theme structural utility classes (shared)
    =========================================================================== */
 
@@ -2505,5 +2663,296 @@ html[data-theme]::after {
 /* Neon Grid: status dot glows */
 [data-theme="neon-grid"] .h-2.w-2 {
   box-shadow: 0 0 6px currentColor, 0 0 12px currentColor;
+}
+
+/* ===========================================================================
+   THEME: Y2K
+   Year 2000 internet aesthetic — electric blues, lime greens, hot pinks,
+   chrome/silver accents, XP-era gradients, Geocities meets early Web 2.0
+   =========================================================================== */
+
+/* Y2K shimmer keyframe — subtle chrome highlight sweep */
+@keyframes y2kShimmer {
+  0%   { background-position: -300% center; }
+  100% { background-position: 300% center; }
+}
+
+/* Y2K blink — classic "under construction" era blink, tasteful 1.4s cycle */
+@keyframes y2kBlink {
+  0%, 49% { opacity: 1; }
+  50%, 100% { opacity: 0.4; }
+}
+
+/* Y2K pulse glow — accent elements softly pulse */
+@keyframes y2kPulse {
+  0%, 100% { box-shadow: 0 0 6px #00ccff, 0 0 12px rgba(0, 204, 255, 0.4); }
+  50%       { box-shadow: 0 0 14px #00ccff, 0 0 28px rgba(0, 204, 255, 0.6); }
+}
+
+[data-theme="y2k"] {
+  /* === STRUCTURAL OVERRIDES === */
+  --theme-border-style: solid;
+  --theme-text-glow: 0 0 8px rgba(0, 204, 255, 0.7);
+  --theme-card-shadow:
+    0 4px 0 #000000,
+    0 0 0 1px #0066cc,
+    inset 0 1px 0 rgba(255, 255, 255, 0.15);
+  --theme-html-bg-image: none;
+  --theme-scanlines-content: '';
+  --theme-scanlines-bg: none;
+  --theme-scanlines-opacity: 0;
+
+  /* Slightly rounded — early web 2.0 had 4-6px radius buttons */
+  --radius: 4px;
+  --radius-sm: 2px;
+  --radius-md: 4px;
+  --radius-lg: 6px;
+  --radius-xl: 8px;
+  --radius-2xl: 10px;
+  --radius-3xl: 12px;
+  --radius-4xl: 16px;
+
+  /* === SHADCN TOKENS === */
+  --background: #000033;
+  --foreground: #ffffff;
+  --card: #000055;
+  --card-foreground: #ffffff;
+  --popover: #000044;
+  --popover-foreground: #ffffff;
+  --primary: #00ccff;
+  --primary-foreground: #000033;
+  --secondary: #003366;
+  --secondary-foreground: #00ccff;
+  --muted: #001144;
+  --muted-foreground: #66aacc;
+  --accent: #ff00cc;
+  --accent-foreground: #ffffff;
+  --destructive: #ff3300;
+  --destructive-foreground: #ffffff;
+  --border: #0055aa;
+  --input: #000044;
+  --ring: #00ccff;
+  --chart-1: #00ccff;
+  --chart-2: #66ff00;
+  --chart-3: #ff00cc;
+  --chart-4: #ffcc00;
+  --chart-5: #ff6600;
+  --sidebar: #000044;
+  --sidebar-foreground: #ffffff;
+  --sidebar-primary: #00ccff;
+  --sidebar-primary-foreground: #000033;
+  --sidebar-accent: #003366;
+  --sidebar-accent-foreground: #00ccff;
+  --sidebar-border: #0055aa;
+  --sidebar-ring: #00ccff;
+
+  /* === CUSTOM THEME TOKENS === */
+  --theme-bg-primary: #000033;
+  --theme-bg-secondary: #000055;
+  --theme-bg-tertiary: #000077;
+  --theme-text-primary: #ffffff;
+  --theme-text-secondary: #cceeff;
+  --theme-text-muted: #6699bb;
+  --theme-text-dim: #446688;
+  --theme-accent: #00ccff;
+  --theme-accent-dim: rgba(0, 204, 255, 0.18);
+  --theme-border: #0055aa;
+  --theme-border-subtle: #003377;
+  --theme-status-dot: #66ff00;
+  --theme-logo-bg: #000055;
+  /* Impact / bold web-safe feel with monospace fallback for data */
+  --font-sans: 'Trebuchet MS', 'Arial', 'Helvetica', sans-serif;
+
+  /* === MARKDOWN === */
+  --msg-h1-border: #00ccff;
+  --msg-h2-border: #ff00cc;
+  --msg-h3-border: #66ff00;
+  --msg-header-text: #00ccff;
+  --msg-em-color: #ff00cc;
+  --msg-link-color: #00ccff;
+  --msg-link-bg: rgba(0, 204, 255, 0.1);
+  --msg-link-hover-text: #66ff00;
+  --msg-code-bg: #000044;
+  --msg-code-border: #0055aa;
+  --msg-code-color: #66ff00;
+  --msg-pre-bg: #000022;
+  --msg-pre-border: #0055aa;
+  --msg-pre-text: #00ccff;
+  --msg-marker-color: #ff00cc;
+  --msg-table-border: #0055aa;
+  --msg-thead-bg: linear-gradient(90deg, #003399, #0066cc);
+  --msg-thead-text: #ffffff;
+  --msg-tbody-border: #000055;
+  --msg-tbody-cell-border: #0044aa;
+  --msg-tbody-text: #cceeff;
+  --msg-tbody-hover: rgba(0, 204, 255, 0.08);
+  --msg-blockquote-border: #ff00cc;
+  --msg-blockquote-text: #99ccee;
+  --msg-hr-color: #0055aa;
+  --msg-img-border: #0055aa;
+  --msg-shimmer-from: #000055;
+  --msg-shimmer-mid: #003388;
+
+  /* === SCROLLBARS === */
+  --scrollbar-track: #000033;
+  --scrollbar-thumb: #0055aa;
+  --scrollbar-hover: #00ccff;
+  --selection-bg: #0055cc;
+  --selection-text: #ffffff;
+}
+
+/* Y2K: gradient background — classic XP-era deep navy to midnight blue */
+[data-theme="y2k"] body,
+[data-theme="y2k"] #root {
+  background: linear-gradient(180deg, #000022 0%, #000044 40%, #000033 100%);
+  background-attachment: fixed;
+  min-height: 100vh;
+}
+
+/* Y2K: cards get a chrome-gradient border and subtle inner glow */
+[data-theme="y2k"] .card,
+[data-theme="y2k"] [data-slot="card"] {
+  background: linear-gradient(145deg, #000066 0%, #000044 60%, #000055 100%) !important;
+  border: 1px solid #0055aa !important;
+  box-shadow:
+    0 0 0 1px rgba(0, 204, 255, 0.15),
+    0 4px 16px rgba(0, 0, 0, 0.6),
+    inset 0 1px 0 rgba(255, 255, 255, 0.08) !important;
+}
+
+/* Y2K: buttons — chrome gradient with electric blue glow */
+[data-theme="y2k"] button {
+  background: linear-gradient(180deg, #0077cc 0%, #003388 50%, #0055aa 100%) !important;
+  border: 1px solid #00aaff !important;
+  color: #ffffff !important;
+  font-family: 'Trebuchet MS', 'Arial', sans-serif !important;
+  font-weight: bold !important;
+  letter-spacing: 0.05em;
+  text-shadow: 0 0 6px rgba(0, 204, 255, 0.8);
+  box-shadow:
+    0 2px 0 #001133,
+    inset 0 1px 0 rgba(255, 255, 255, 0.25),
+    0 0 8px rgba(0, 100, 255, 0.3) !important;
+  transition: box-shadow 0.15s ease, filter 0.15s ease !important;
+}
+
+[data-theme="y2k"] button:hover {
+  filter: brightness(1.25) saturate(1.3);
+  box-shadow:
+    0 2px 0 #001133,
+    inset 0 1px 0 rgba(255, 255, 255, 0.3),
+    0 0 16px rgba(0, 204, 255, 0.5) !important;
+}
+
+[data-theme="y2k"] button:active {
+  filter: brightness(0.9);
+  box-shadow:
+    0 1px 0 #001133,
+    inset 0 2px 4px rgba(0, 0, 0, 0.4) !important;
+  transform: translateY(1px);
+}
+
+/* Y2K: inputs — dark navy inset with electric blue focus glow */
+[data-theme="y2k"] input,
+[data-theme="y2k"] textarea {
+  background: #000022 !important;
+  color: #00ccff !important;
+  border: 1px solid #0055aa !important;
+  box-shadow:
+    inset 0 2px 4px rgba(0, 0, 0, 0.5),
+    0 0 0 0px rgba(0, 204, 255, 0) !important;
+  transition: box-shadow 0.2s ease, border-color 0.2s ease !important;
+  caret-color: #00ccff;
+}
+
+[data-theme="y2k"] input:focus,
+[data-theme="y2k"] textarea:focus {
+  border-color: #00ccff !important;
+  box-shadow:
+    inset 0 2px 4px rgba(0, 0, 0, 0.5),
+    0 0 0 2px rgba(0, 204, 255, 0.3),
+    0 0 12px rgba(0, 204, 255, 0.2) !important;
+  outline: none !important;
+}
+
+/* Y2K: sidebar — slightly lighter navy with chrome left border */
+[data-theme="y2k"] [data-slot="sidebar"] {
+  background: linear-gradient(180deg, #000044 0%, #000033 100%) !important;
+  border-right: 2px solid #0055aa !important;
+  box-shadow: 2px 0 12px rgba(0, 0, 0, 0.5), inset -1px 0 0 rgba(0, 204, 255, 0.1);
+}
+
+/* Y2K: logo/header bar — metallic chrome gradient, classic top-bar feel */
+[data-theme="y2k"] [style*="theme-logo-bg"] {
+  background: linear-gradient(90deg, #003399 0%, #0066cc 40%, #0044aa 70%, #002288 100%) !important;
+  border-bottom: 2px solid #00aaff !important;
+  box-shadow: 0 2px 8px rgba(0, 100, 255, 0.4) !important;
+}
+[data-theme="y2k"] [style*="theme-logo-bg"] * {
+  color: #ffffff !important;
+  text-shadow: 0 0 8px rgba(0, 204, 255, 0.6);
+}
+
+/* Y2K: links — electric blue, green on hover (classic early web) */
+[data-theme="y2k"] a {
+  color: #00ccff;
+  text-decoration: underline;
+  text-shadow: 0 0 4px rgba(0, 204, 255, 0.4);
+}
+[data-theme="y2k"] a:visited {
+  color: #cc66ff;
+}
+[data-theme="y2k"] a:hover {
+  color: #66ff00;
+  text-shadow: 0 0 6px rgba(102, 255, 0, 0.5);
+}
+
+/* Y2K: scrollbars — chunky electric blue chrome look */
+[data-theme="y2k"] ::-webkit-scrollbar {
+  width: 12px;
+  height: 12px;
+}
+[data-theme="y2k"] ::-webkit-scrollbar-track {
+  background: #000022;
+  border: 1px solid #003366;
+}
+[data-theme="y2k"] ::-webkit-scrollbar-thumb {
+  background: linear-gradient(180deg, #0077cc, #003388);
+  border: 1px solid #00aaff;
+  border-radius: 2px;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.2);
+}
+[data-theme="y2k"] ::-webkit-scrollbar-thumb:hover {
+  background: linear-gradient(180deg, #00aaff, #0055aa);
+}
+
+/* Y2K: status dot glows electric blue */
+[data-theme="y2k"] .h-2.w-2 {
+  animation: y2kPulse 2s ease-in-out infinite;
+  border-radius: 50% !important;
+}
+
+/* Y2K: table headers — chrome gradient bar */
+[data-theme="y2k"] thead th {
+  background: linear-gradient(90deg, #003399, #0066cc) !important;
+  color: #ffffff !important;
+  font-weight: bold;
+  text-shadow: 0 0 4px rgba(0, 204, 255, 0.5);
+  border-bottom: 2px solid #00aaff !important;
+}
+
+/* Y2K: accent text shimmer — chrome highlight sweep on active items */
+[data-theme="y2k"] [style*="theme-accent"],
+[data-theme="y2k"] [class*="accent"] {
+  background-image: linear-gradient(
+    90deg,
+    #00ccff 0%,
+    #ffffff 45%,
+    #00ccff 55%,
+    #00aadd 100%
+  );
+  background-size: 300% auto;
+  -webkit-background-clip: text;
+  background-clip: text;
 }
 

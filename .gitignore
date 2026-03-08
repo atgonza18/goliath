@@ -62,3 +62,8 @@ telegram-bot/bot.log.*
 
 # Cloned repos (MCP servers, external tools)
 constraintspro/
+
+# App Builder infrastructure (runtime-generated)
+infrastructure/phase1-status.json
+infrastructure/acme.json
+apps/

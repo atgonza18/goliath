@@ -1,0 +1,50 @@
+# =============================================================================
+# Goliath App Builder — Hello World Test App
+# =============================================================================
+# This is a minimal test app to validate the entire pipeline end-to-end:
+#   1. Docker container starts
+#   2. Traefik auto-discovers it via labels
+#   3. SSL cert is provisioned via Let's Encrypt
+#   4. App is reachable at https://hello.${GOLIATH_DOMAIN}
+#
+# Usage:
+#   GOLIATH_DOMAIN=yourdomain.com \
+#     docker compose -f docker-compose.hello-world.yml up -d
+#
+# Verify:
+#   curl -I https://hello.yourdomain.com
+#   → HTTP/2 200 with valid SSL
+# =============================================================================
+
+networks:
+  goliath-apps:
+    external: true
+
+services:
+  hello-world:
+    image: nginx:alpine
+    container_name: goliath-hello-world
+    restart: unless-stopped
+
+    volumes:
+      - ./hello-world/index.html:/usr/share/nginx/html/index.html:ro
+
+    networks:
+      - goliath-apps
+
+    labels:
+      - "traefik.enable=true"
+
+      # HTTP router
+      - "traefik.http.routers.hello-world.rule=Host(`hello.${GOLIATH_DOMAIN:?Set GOLIATH_DOMAIN}`)"
+      - "traefik.http.routers.hello-world.entrypoints=websecure"
+      - "traefik.http.routers.hello-world.tls=true"
+      - "traefik.http.routers.hello-world.tls.certresolver=letsencrypt"
+
+      # Service port
+      - "traefik.http.services.hello-world.loadbalancer.server.port=80"
+
+      # Goliath metadata labels (used by app management)
+      - "goliath.app=true"
+      - "goliath.app.name=hello-world"
+      - "goliath.app.phase=test"
