@@ -1,12 +1,32 @@
-import { useState, useEffect } from 'react';
-import { ArrowLeft, Wrench, Rocket, ChevronRight, Server, CheckCircle, AlertCircle, ExternalLink, Loader } from 'lucide-react';
+import { useState, useEffect, useRef, useCallback } from 'react';
+import {
+  ArrowLeft,
+  ArrowUp,
+  Wrench,
+  Rocket,
+  ChevronRight,
+  CheckCircle,
+  AlertCircle,
+  ExternalLink,
+  Loader,
+  Square,
+  Terminal,
+} from 'lucide-react';
 import { PageHeader } from '@/components/common/PageHeader';
+import { renderMarkdown } from '@/utils/markdown';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 type Intent = 'goliath-feature' | 'new-app';
 type BackendChoice = 'postgres' | 'convex-cloud' | 'convex-self-hosted';
-type FeatureType = 'page' | 'component' | 'api' | 'agent' | 'data-pipeline' | 'other';
+
+interface ChatMessage {
+  id: string;
+  role: 'user' | 'assistant' | 'system';
+  content: string;
+  timestamp: string;
+  streaming?: boolean;
+}
 
 // ─── Phase 1 Infrastructure Status Banner ────────────────────────────────────
 
@@ -32,8 +52,6 @@ function useInfraStatus(): InfraCheckResult {
   });
 
   useEffect(() => {
-    // Try to read the phase1-status.json from the API
-    // For now, we check if the file exists via a lightweight fetch
     const checkStatus = async () => {
       try {
         const res = await fetch('/api/infra/phase1-status');
@@ -49,7 +67,6 @@ function useInfraStatus(): InfraCheckResult {
             lastChecked: data.setup_completed_at ?? null,
           });
         } else {
-          // API not available — infrastructure not set up
           setResult({
             status: 'not-configured',
             docker: false,
@@ -87,7 +104,7 @@ function InfraStatusBanner() {
       bgColor: 'var(--theme-bg-tertiary)',
       borderColor: 'var(--theme-border)',
       label: 'CHECKING INFRASTRUCTURE...',
-      icon: <Loader size={12} style={{ animation: 'spin 1s linear infinite' }} />,
+      icon: <Loader size={12} className="animate-spin" />,
     },
     'not-configured': {
       color: 'var(--chart-4)',
@@ -125,7 +142,6 @@ function InfraStatusBanner() {
         maxWidth: '640px',
       }}
     >
-      {/* Top row — always visible */}
       <button
         onClick={() => setExpanded(!expanded)}
         style={{
@@ -140,7 +156,7 @@ function InfraStatusBanner() {
         }}
       >
         <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-          <Server size={13} style={{ color: config.color, flexShrink: 0 }} />
+          <span style={{ color: config.color, flexShrink: 0, display: 'flex', alignItems: 'center' }}>{config.icon}</span>
           <span
             style={{
               fontSize: '9px',
@@ -164,25 +180,16 @@ function InfraStatusBanner() {
         />
       </button>
 
-      {/* Expanded detail */}
       {expanded && (
         <div style={{ marginTop: '12px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
-          {/* Checklist items */}
-          <InfraCheckItem
-            label="Docker Engine"
-            status={infra.docker}
-          />
-          <InfraCheckItem
-            label="Traefik Reverse Proxy"
-            status={infra.traefik}
-          />
+          <InfraCheckItem label="Docker Engine" status={infra.docker} />
+          <InfraCheckItem label="Traefik Reverse Proxy" status={infra.traefik} />
           <InfraCheckItem
             label="Wildcard DNS"
             status={infra.domain ? true : false}
             detail={infra.domain ? `*.${infra.domain}` : undefined}
           />
 
-          {/* Hello world link */}
           {infra.helloWorldUrl && infra.status === 'ready' && (
             <a
               href={infra.helloWorldUrl}
@@ -206,7 +213,6 @@ function InfraStatusBanner() {
             </a>
           )}
 
-          {/* Setup instructions for unconfigured state */}
           {infra.status === 'not-configured' && (
             <div
               style={{
@@ -246,22 +252,9 @@ cp .env.example .env
 nano .env           # Set GOLIATH_DOMAIN + ACME_EMAIL
 sudo bash setup-phase1.sh`}
               </pre>
-              <span
-                style={{
-                  display: 'block',
-                  fontSize: '8px',
-                  color: 'var(--theme-text-dim)',
-                  fontFamily: 'JetBrains Mono, monospace',
-                  letterSpacing: '0.08em',
-                  marginTop: '8px',
-                }}
-              >
-                See /opt/goliath/docs/app-builder-phase1-setup.md for full instructions
-              </span>
             </div>
           )}
 
-          {/* Last checked timestamp */}
           {infra.lastChecked && (
             <span
               style={{
@@ -285,7 +278,7 @@ function InfraCheckItem({ label, status, detail }: { label: string; status: bool
   return (
     <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
       {status === null ? (
-        <Loader size={10} style={{ color: 'var(--theme-text-dim)', animation: 'spin 1s linear infinite', flexShrink: 0 }} />
+        <Loader size={10} className="animate-spin" style={{ color: 'var(--theme-text-dim)', flexShrink: 0 }} />
       ) : status ? (
         <CheckCircle size={10} style={{ color: '#22c55e', flexShrink: 0 }} />
       ) : (
@@ -327,7 +320,6 @@ interface IntentSelectorProps {
 function IntentSelector({ onSelect }: IntentSelectorProps) {
   return (
     <div className="flex flex-col items-center justify-center flex-1 p-8 min-h-0">
-      {/* Header */}
       <div className="text-center mb-12 max-w-lg">
         <div
           style={{
@@ -347,7 +339,7 @@ function IntentSelector({ onSelect }: IntentSelectorProps) {
               fontFamily: 'JetBrains Mono, monospace',
             }}
           >
-            APP BUILDER — PHASE 1
+            APP BUILDER
           </span>
         </div>
         <h1
@@ -376,10 +368,8 @@ function IntentSelector({ onSelect }: IntentSelectorProps) {
         </p>
       </div>
 
-      {/* Phase 1 Infrastructure Status */}
       <InfraStatusBanner />
 
-      {/* Intent Cards */}
       <div
         style={{
           display: 'grid',
@@ -389,10 +379,9 @@ function IntentSelector({ onSelect }: IntentSelectorProps) {
           maxWidth: '640px',
         }}
       >
-        {/* Goliath Feature Card */}
         <IntentCard
           icon={<Wrench size={32} />}
-          emoji="🔧"
+          emoji=""
           label="Goliath Feature"
           sublabel="PATCH MODE"
           description="Add a page, component, API route, or agent to Goliath itself. DevOps edits the existing codebase and may trigger a restart."
@@ -400,11 +389,9 @@ function IntentSelector({ onSelect }: IntentSelectorProps) {
           accentColor="var(--chart-4)"
           onClick={() => onSelect('goliath-feature')}
         />
-
-        {/* New App Card */}
         <IntentCard
           icon={<Rocket size={32} />}
-          emoji="🚀"
+          emoji=""
           label="New App"
           sublabel="CONTAINER MODE"
           description="Spin up a standalone application in its own Docker container with its own database, URL, and isolated runtime."
@@ -413,20 +400,6 @@ function IntentSelector({ onSelect }: IntentSelectorProps) {
           onClick={() => onSelect('new-app')}
         />
       </div>
-
-      {/* Footer hint */}
-      <p
-        style={{
-          marginTop: '32px',
-          fontSize: '10px',
-          color: 'var(--theme-text-dim)',
-          letterSpacing: '0.08em',
-          fontFamily: 'JetBrains Mono, monospace',
-          textAlign: 'center',
-        }}
-      >
-        Phase 1 — UI shell · Build pipeline wired in Phase 2
-      </p>
     </div>
   );
 }
@@ -442,7 +415,7 @@ interface IntentCardProps {
   onClick: () => void;
 }
 
-function IntentCard({ emoji, label, sublabel, description, tags, accentColor, onClick }: IntentCardProps) {
+function IntentCard({ icon, label, sublabel, description, tags, accentColor, onClick }: IntentCardProps) {
   const [hovered, setHovered] = useState(false);
 
   return (
@@ -464,9 +437,8 @@ function IntentCard({ emoji, label, sublabel, description, tags, accentColor, on
         boxShadow: hovered ? `0 0 0 1px ${accentColor}22, 0 4px 20px ${accentColor}18` : 'none',
       }}
     >
-      {/* Emoji + sublabel row */}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-        <span style={{ fontSize: '36px', lineHeight: 1 }}>{emoji}</span>
+        <span style={{ color: accentColor, flexShrink: 0, display: 'flex', alignItems: 'center' }}>{icon}</span>
         <span
           style={{
             fontSize: '8px',
@@ -483,7 +455,6 @@ function IntentCard({ emoji, label, sublabel, description, tags, accentColor, on
         </span>
       </div>
 
-      {/* Label */}
       <div>
         <span
           style={{
@@ -513,7 +484,6 @@ function IntentCard({ emoji, label, sublabel, description, tags, accentColor, on
         </span>
       </div>
 
-      {/* Tags */}
       <div style={{ display: 'flex', flexWrap: 'wrap', gap: '5px' }}>
         {tags.map((tag) => (
           <span
@@ -534,7 +504,6 @@ function IntentCard({ emoji, label, sublabel, description, tags, accentColor, on
         ))}
       </div>
 
-      {/* CTA arrow */}
       <div style={{ display: 'flex', alignItems: 'center', gap: '4px', marginTop: '4px' }}>
         <span
           style={{
@@ -557,7 +526,7 @@ function IntentCard({ emoji, label, sublabel, description, tags, accentColor, on
   );
 }
 
-// ─── Backend Selector (New App flow — step 1) ─────────────────────────────────
+// ─── Backend Selector (New App flow) ─────────────────────────────────────────
 
 interface BackendSelectorProps {
   onSelect: (backend: BackendChoice) => void;
@@ -575,7 +544,7 @@ const BACKEND_OPTIONS: {
 }[] = [
   {
     id: 'postgres',
-    emoji: '🐘',
+    emoji: '',
     label: 'Postgres',
     sublabel: 'SIDECAR CONTAINER',
     description:
@@ -585,7 +554,7 @@ const BACKEND_OPTIONS: {
   },
   {
     id: 'convex-cloud',
-    emoji: '⚡',
+    emoji: '',
     label: 'Convex (Cloud)',
     sublabel: 'CONVEX.DEV',
     description:
@@ -595,7 +564,7 @@ const BACKEND_OPTIONS: {
   },
   {
     id: 'convex-self-hosted',
-    emoji: '🏠',
+    emoji: '',
     label: 'Convex (Self-Hosted)',
     sublabel: 'ON-SERVER',
     description:
@@ -610,7 +579,6 @@ function BackendSelector({ onSelect, onBack }: BackendSelectorProps) {
     <div className="flex flex-col flex-1 p-8 min-h-0 overflow-y-auto" data-scroll-container>
       <BackNavBar onBack={onBack} label="Back to intent selector" />
 
-      {/* Header */}
       <div className="mb-10 mt-2">
         <Breadcrumb items={['App Builder', 'New App', 'Backend']} />
         <h2
@@ -631,7 +599,6 @@ function BackendSelector({ onSelect, onBack }: BackendSelectorProps) {
         </p>
       </div>
 
-      {/* Backend cards */}
       <div
         style={{
           display: 'grid',
@@ -649,7 +616,6 @@ function BackendSelector({ onSelect, onBack }: BackendSelectorProps) {
         ))}
       </div>
 
-      {/* Note */}
       <p
         style={{
           marginTop: '28px',
@@ -662,7 +628,7 @@ function BackendSelector({ onSelect, onBack }: BackendSelectorProps) {
           maxWidth: '560px',
         }}
       >
-        The 🔧 Goliath Feature path skips this selector — it uses the existing Goliath DB and stack.
+        The Goliath Feature path skips this selector — it uses the existing Goliath DB and stack.
       </p>
     </div>
   );
@@ -678,7 +644,7 @@ interface BackendCardProps {
   onClick: () => void;
 }
 
-function BackendCard({ emoji, label, sublabel, description, pros, accentColor, onClick }: BackendCardProps) {
+function BackendCard({ label, sublabel, description, pros, accentColor, onClick }: BackendCardProps) {
   const [hovered, setHovered] = useState(false);
 
   return (
@@ -700,9 +666,19 @@ function BackendCard({ emoji, label, sublabel, description, pros, accentColor, o
         boxShadow: hovered ? `0 0 0 1px ${accentColor}22, 0 4px 16px ${accentColor}14` : 'none',
       }}
     >
-      {/* Emoji + sublabel */}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-        <span style={{ fontSize: '28px', lineHeight: 1 }}>{emoji}</span>
+        <span
+          style={{
+            fontSize: '13px',
+            fontWeight: 700,
+            color: hovered ? accentColor : 'var(--theme-text-primary)',
+            letterSpacing: '0.06em',
+            fontFamily: 'JetBrains Mono, monospace',
+            transition: 'color 0.15s',
+          }}
+        >
+          {label}
+        </span>
         <span
           style={{
             fontSize: '8px',
@@ -719,37 +695,19 @@ function BackendCard({ emoji, label, sublabel, description, pros, accentColor, o
         </span>
       </div>
 
-      {/* Label + desc */}
-      <div>
-        <span
-          style={{
-            display: 'block',
-            fontSize: '13px',
-            fontWeight: 700,
-            color: hovered ? accentColor : 'var(--theme-text-primary)',
-            letterSpacing: '0.06em',
-            fontFamily: 'JetBrains Mono, monospace',
-            marginBottom: '5px',
-            transition: 'color 0.15s',
-          }}
-        >
-          {label}
-        </span>
-        <span
-          style={{
-            display: 'block',
-            fontSize: '10px',
-            color: 'var(--theme-text-muted)',
-            fontFamily: 'JetBrains Mono, monospace',
-            lineHeight: 1.55,
-            letterSpacing: '0.03em',
-          }}
-        >
-          {description}
-        </span>
-      </div>
+      <span
+        style={{
+          display: 'block',
+          fontSize: '10px',
+          color: 'var(--theme-text-muted)',
+          fontFamily: 'JetBrains Mono, monospace',
+          lineHeight: 1.55,
+          letterSpacing: '0.03em',
+        }}
+      >
+        {description}
+      </span>
 
-      {/* Pros list */}
       <ul style={{ margin: 0, padding: 0, listStyle: 'none', display: 'flex', flexDirection: 'column', gap: '4px' }}>
         {pros.map((pro) => (
           <li
@@ -771,7 +729,6 @@ function BackendCard({ emoji, label, sublabel, description, pros, accentColor, o
         ))}
       </ul>
 
-      {/* CTA */}
       <div style={{ display: 'flex', alignItems: 'center', gap: '4px', marginTop: '2px' }}>
         <span
           style={{
@@ -791,12 +748,7 @@ function BackendCard({ emoji, label, sublabel, description, pros, accentColor, o
   );
 }
 
-// ─── New App — Describe step ──────────────────────────────────────────────────
-
-interface NewAppDescribeProps {
-  backend: BackendChoice;
-  onBack: () => void;
-}
+// ─── Builder Chat Interface ──────────────────────────────────────────────────
 
 const BACKEND_LABELS: Record<BackendChoice, string> = {
   postgres: 'Postgres',
@@ -804,556 +756,772 @@ const BACKEND_LABELS: Record<BackendChoice, string> = {
   'convex-self-hosted': 'Convex Self-Hosted',
 };
 
-const BACKEND_EMOJIS: Record<BackendChoice, string> = {
-  postgres: '🐘',
-  'convex-cloud': '⚡',
-  'convex-self-hosted': '🏠',
+const INTENT_LABELS: Record<Intent, string> = {
+  'goliath-feature': 'Goliath Feature',
+  'new-app': 'New App',
 };
 
-function NewAppDescribe({ backend, onBack }: NewAppDescribeProps) {
-  const [appName, setAppName] = useState('');
-  const [description, setDescription] = useState('');
-  const [submitted, setSubmitted] = useState(false);
+const INTENT_COLORS: Record<Intent, string> = {
+  'goliath-feature': 'var(--chart-4)',
+  'new-app': 'var(--chart-1)',
+};
 
-  const sanitizedName = appName.toLowerCase().replace(/[^a-z0-9-]/g, '-').replace(/--+/g, '-').replace(/^-|-$/g, '');
-  const previewUrl = sanitizedName ? `${sanitizedName}.yourdomain.com` : 'appname.yourdomain.com';
-
-  function handleSubmit(e: React.FormEvent) {
-    e.preventDefault();
-    if (!appName.trim() || !description.trim()) return;
-    setSubmitted(true);
-  }
-
-  if (submitted) {
-    return <StubPlaceholder intent="new-app" backend={backend} appName={appName} description={description} onReset={() => setSubmitted(false)} />;
-  }
-
-  return (
-    <div className="flex flex-col flex-1 p-8 min-h-0 overflow-y-auto" data-scroll-container>
-      <BackNavBar onBack={onBack} label="Back to backend selector" />
-
-      <div className="mb-8 mt-2">
-        <Breadcrumb items={['App Builder', 'New App', BACKEND_LABELS[backend], 'Describe']} />
-        <h2
-          style={{
-            fontSize: '18px',
-            fontWeight: 700,
-            color: 'var(--theme-text-primary)',
-            letterSpacing: '0.04em',
-            fontFamily: 'JetBrains Mono, monospace',
-            marginBottom: '6px',
-            marginTop: '14px',
-          }}
-        >
-          Describe your app
-        </h2>
-        <p style={{ fontSize: '11px', color: 'var(--theme-text-muted)', fontFamily: 'JetBrains Mono, monospace', letterSpacing: '0.04em', lineHeight: 1.6 }}>
-          Tell DevOps what you want to build. The more detail, the better the initial output.
-        </p>
-      </div>
-
-      {/* Selected backend badge */}
-      <div
-        style={{
-          display: 'inline-flex',
-          alignItems: 'center',
-          gap: '8px',
-          background: 'var(--theme-bg-tertiary)',
-          border: '1px solid var(--theme-border)',
-          padding: '6px 12px',
-          marginBottom: '24px',
-          alignSelf: 'flex-start',
-        }}
-      >
-        <span style={{ fontSize: '14px' }}>{BACKEND_EMOJIS[backend]}</span>
-        <span style={{ fontSize: '10px', fontWeight: 700, letterSpacing: '0.1em', color: 'var(--theme-text-secondary)', fontFamily: 'JetBrains Mono, monospace' }}>
-          BACKEND: {BACKEND_LABELS[backend].toUpperCase()}
-        </span>
-        <span
-          style={{ fontSize: '9px', color: 'var(--theme-accent)', cursor: 'pointer', letterSpacing: '0.08em', fontFamily: 'JetBrains Mono, monospace' }}
-          onClick={onBack}
-        >
-          CHANGE
-        </span>
-      </div>
-
-      <form onSubmit={handleSubmit} style={{ maxWidth: '600px', display: 'flex', flexDirection: 'column', gap: '20px' }}>
-        {/* App name */}
-        <FormField label="App name" hint={`Will be deployed at: ${previewUrl}`}>
-          <input
-            type="text"
-            value={appName}
-            onChange={(e) => setAppName(e.target.value)}
-            placeholder="my-solar-dashboard"
-            style={{
-              width: '100%',
-              background: 'var(--theme-bg-secondary)',
-              border: '2px solid var(--theme-border)',
-              color: 'var(--theme-text-primary)',
-              fontSize: '13px',
-              fontFamily: 'JetBrains Mono, monospace',
-              letterSpacing: '0.04em',
-              padding: '10px 12px',
-              outline: 'none',
-            }}
-            onFocus={(e) => (e.target.style.borderColor = 'var(--theme-accent)')}
-            onBlur={(e) => (e.target.style.borderColor = 'var(--theme-border)')}
-          />
-        </FormField>
-
-        {/* Description */}
-        <FormField label="Describe what you want to build" hint="Plain English. DevOps figures out the tech.">
-          <textarea
-            value={description}
-            onChange={(e) => setDescription(e.target.value)}
-            placeholder="Build me a landing page for my solar consulting business with a contact form and email integration."
-            rows={5}
-            style={{
-              width: '100%',
-              background: 'var(--theme-bg-secondary)',
-              border: '2px solid var(--theme-border)',
-              color: 'var(--theme-text-primary)',
-              fontSize: '12px',
-              fontFamily: 'JetBrains Mono, monospace',
-              letterSpacing: '0.04em',
-              padding: '10px 12px',
-              outline: 'none',
-              resize: 'vertical',
-              lineHeight: 1.6,
-            }}
-            onFocus={(e) => (e.target.style.borderColor = 'var(--theme-accent)')}
-            onBlur={(e) => (e.target.style.borderColor = 'var(--theme-border)')}
-          />
-        </FormField>
-
-        {/* Convex API key notice */}
-        {backend === 'convex-cloud' && (
-          <div
-            style={{
-              background: 'var(--theme-bg-tertiary)',
-              border: '1px solid var(--chart-3)',
-              borderLeft: '3px solid var(--chart-3)',
-              padding: '10px 14px',
-              fontSize: '10px',
-              color: 'var(--theme-text-muted)',
-              fontFamily: 'JetBrains Mono, monospace',
-              letterSpacing: '0.06em',
-              lineHeight: 1.6,
-            }}
-          >
-            <span style={{ color: 'var(--chart-3)', fontWeight: 700 }}>⚡ Convex Cloud requires an API key.</span>{' '}
-            DevOps will prompt for it before generating code. The key is stored in a per-app .env file and never committed to git.
-          </div>
-        )}
-
-        {/* Submit */}
-        <button
-          type="submit"
-          disabled={!appName.trim() || !description.trim()}
-          style={{
-            background: appName.trim() && description.trim() ? 'var(--theme-accent)' : 'var(--theme-bg-tertiary)',
-            color: appName.trim() && description.trim() ? 'var(--theme-bg-primary)' : 'var(--theme-text-dim)',
-            border: 'none',
-            padding: '12px 24px',
-            fontSize: '11px',
-            fontWeight: 700,
-            letterSpacing: '0.14em',
-            fontFamily: 'JetBrains Mono, monospace',
-            cursor: appName.trim() && description.trim() ? 'pointer' : 'not-allowed',
-            alignSelf: 'flex-start',
-            transition: 'background 0.15s, color 0.15s',
-            display: 'flex',
-            alignItems: 'center',
-            gap: '8px',
-          }}
-        >
-          <Rocket size={13} />
-          QUEUE BUILD
-        </button>
-      </form>
-    </div>
-  );
-}
-
-// ─── Goliath Feature — Describe step ─────────────────────────────────────────
-
-const FEATURE_TYPES: { id: FeatureType; label: string; description: string }[] = [
-  { id: 'page',          label: 'New Page',       description: 'A full page in the Goliath GUI with its own route' },
-  { id: 'component',    label: 'UI Component',   description: 'A reusable widget, card, or panel component' },
-  { id: 'api',          label: 'API Endpoint',   description: 'A new route in the backend API layer' },
-  { id: 'agent',        label: 'New Agent',      description: 'A specialized AI agent with a defined role' },
-  { id: 'data-pipeline', label: 'Data Pipeline', description: 'A cron job, poller, or automated data flow' },
-  { id: 'other',        label: 'Other / Mixed',  description: 'Multi-part change or something that doesn\'t fit the above' },
-];
-
-interface GoliathFeatureDescribeProps {
+interface BuilderChatProps {
+  intent: Intent;
+  backend: BackendChoice | null;
   onBack: () => void;
 }
 
-function GoliathFeatureDescribe({ onBack }: GoliathFeatureDescribeProps) {
-  const [featureType, setFeatureType] = useState<FeatureType | null>(null);
-  const [description, setDescription] = useState('');
-  const [submitted, setSubmitted] = useState(false);
+function BuilderChat({ intent, backend, onBack }: BuilderChatProps) {
+  const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const [input, setInput] = useState('');
+  const [sessionId, setSessionId] = useState<string | null>(null);
+  const [isStreaming, setIsStreaming] = useState(false);
+  const messagesEndRef = useRef<HTMLDivElement>(null);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const streamingTextRef = useRef('');
+  const streamingMsgIdRef = useRef<string | null>(null);
+  const streamingElRef = useRef<HTMLDivElement | null>(null);
+  const abortRef = useRef<(() => void) | null>(null);
+  const renderTimerRef = useRef<number | null>(null);
 
-  function handleSubmit(e: React.FormEvent) {
-    e.preventDefault();
-    if (!featureType || !description.trim()) return;
-    setSubmitted(true);
-  }
+  const accentColor = INTENT_COLORS[intent];
 
-  if (submitted && featureType) {
-    return <StubPlaceholder intent="goliath-feature" featureType={featureType} description={description} onReset={() => setSubmitted(false)} />;
-  }
+  // Scroll to bottom when messages change
+  useEffect(() => {
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, [messages]);
+
+  // Focus textarea on mount
+  useEffect(() => {
+    textareaRef.current?.focus();
+  }, []);
+
+  // Schedule a debounced markdown re-render for the streaming element
+  const scheduleRender = useCallback(() => {
+    if (renderTimerRef.current) return;
+    renderTimerRef.current = window.setTimeout(() => {
+      renderTimerRef.current = null;
+      const el = streamingElRef.current;
+      if (el && streamingTextRef.current) {
+        el.innerHTML = renderMarkdown(streamingTextRef.current);
+      }
+    }, 80);
+  }, []);
+
+  const handleStop = useCallback(() => {
+    if (abortRef.current) {
+      abortRef.current();
+      abortRef.current = null;
+    }
+    setIsStreaming(false);
+    // Finalize the streaming message
+    if (streamingMsgIdRef.current) {
+      const finalText = streamingTextRef.current;
+      const finalId = streamingMsgIdRef.current;
+      setMessages(prev =>
+        prev.map(m =>
+          m.id === finalId ? { ...m, content: finalText, streaming: false } : m
+        )
+      );
+      streamingMsgIdRef.current = null;
+      streamingTextRef.current = '';
+      streamingElRef.current = null;
+    }
+  }, []);
+
+  const handleSend = useCallback(async () => {
+    const trimmed = input.trim();
+    if (!trimmed || isStreaming) return;
+
+    setInput('');
+    if (textareaRef.current) {
+      textareaRef.current.style.height = 'auto';
+    }
+
+    // Add user message
+    const userMsgId = `user-${Date.now()}`;
+    const userMsg: ChatMessage = {
+      id: userMsgId,
+      role: 'user',
+      content: trimmed,
+      timestamp: new Date().toISOString(),
+    };
+
+    // Add assistant placeholder
+    const assistantMsgId = `assistant-${Date.now()}`;
+    const assistantMsg: ChatMessage = {
+      id: assistantMsgId,
+      role: 'assistant',
+      content: '',
+      timestamp: new Date().toISOString(),
+      streaming: true,
+    };
+
+    setMessages(prev => [...prev, userMsg, assistantMsg]);
+    setIsStreaming(true);
+    streamingTextRef.current = '';
+    streamingMsgIdRef.current = assistantMsgId;
+
+    const abortController = new AbortController();
+    abortRef.current = () => abortController.abort();
+
+    try {
+      // POST to app-builder chat
+      const postResponse = await fetch('/api/app-builder/chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          sessionId,
+          backend,
+          intent,
+          message: trimmed,
+        }),
+        signal: abortController.signal,
+      });
+
+      if (!postResponse.ok) {
+        const errText = await postResponse.text().catch(() => 'Unknown error');
+        throw new Error(`Failed to send message: ${errText}`);
+      }
+
+      const postData = await postResponse.json();
+      const newSessionId = postData.sessionId;
+      const streamUrl = postData.streamUrl;
+
+      if (!sessionId && newSessionId) {
+        setSessionId(newSessionId);
+      }
+
+      // Connect to SSE stream
+      const sseResponse = await fetch(streamUrl, {
+        signal: abortController.signal,
+        headers: {
+          'Accept': 'text/event-stream',
+          'Cache-Control': 'no-cache',
+        },
+      });
+
+      if (!sseResponse.ok || !sseResponse.body) {
+        throw new Error(`SSE connection failed: ${sseResponse.status}`);
+      }
+
+      const reader = sseResponse.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = '';
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        buffer += decoder.decode(value, { stream: true });
+        const parts = buffer.split('\n');
+        buffer = parts.pop() || '';
+
+        for (const line of parts) {
+          if (line.startsWith(':') || !line.trim()) continue;
+          if (!line.startsWith('data: ')) continue;
+          const data = line.slice(6).trim();
+
+          if (data === '[DONE]') {
+            // Stream complete
+            const finalText = streamingTextRef.current;
+            setMessages(prev =>
+              prev.map(m =>
+                m.id === assistantMsgId ? { ...m, content: finalText, streaming: false } : m
+              )
+            );
+            setIsStreaming(false);
+            streamingMsgIdRef.current = null;
+            streamingTextRef.current = '';
+            streamingElRef.current = null;
+            abortRef.current = null;
+            return;
+          }
+
+          try {
+            const event = JSON.parse(data);
+
+            if (event.type === 'delta') {
+              streamingTextRef.current += event.text;
+              // Direct DOM update for performance
+              scheduleRender();
+            } else if (event.type === 'snapshot') {
+              streamingTextRef.current = event.text;
+              scheduleRender();
+            } else if (event.type === 'error') {
+              throw new Error(event.text || 'Build agent error');
+            }
+          } catch (e) {
+            if ((e as Error).message?.includes('Build agent error') || (e as Error).message?.includes('Failed')) {
+              throw e;
+            }
+            // Skip non-JSON SSE data
+          }
+        }
+      }
+
+      // Stream ended without [DONE]
+      const finalText = streamingTextRef.current;
+      setMessages(prev =>
+        prev.map(m =>
+          m.id === assistantMsgId ? { ...m, content: finalText, streaming: false } : m
+        )
+      );
+      setIsStreaming(false);
+      streamingMsgIdRef.current = null;
+      streamingTextRef.current = '';
+      streamingElRef.current = null;
+      abortRef.current = null;
+    } catch (err) {
+      if ((err as Error).name === 'AbortError') {
+        // User cancelled
+        return;
+      }
+      const errorText = err instanceof Error ? err.message : String(err);
+      setMessages(prev =>
+        prev.map(m =>
+          m.id === assistantMsgId
+            ? { ...m, content: `**Error:** ${errorText}`, streaming: false }
+            : m
+        )
+      );
+      setIsStreaming(false);
+      streamingMsgIdRef.current = null;
+      streamingTextRef.current = '';
+      streamingElRef.current = null;
+      abortRef.current = null;
+    }
+  }, [input, isStreaming, sessionId, backend, intent, scheduleRender]);
+
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      handleSend();
+    }
+  };
+
+  const handleInputChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
+    setInput(e.target.value);
+    const target = e.target;
+    target.style.height = 'auto';
+    target.style.height = Math.min(Math.max(target.scrollHeight, 44), 160) + 'px';
+  };
+
+  const canSend = input.trim().length > 0 && !isStreaming;
 
   return (
-    <div className="flex flex-col flex-1 p-8 min-h-0 overflow-y-auto" data-scroll-container>
-      <BackNavBar onBack={onBack} label="Back to intent selector" />
-
-      <div className="mb-8 mt-2">
-        <Breadcrumb items={['App Builder', 'Goliath Feature', 'Describe']} />
-        <h2
-          style={{
-            fontSize: '18px',
-            fontWeight: 700,
-            color: 'var(--theme-text-primary)',
-            letterSpacing: '0.04em',
-            fontFamily: 'JetBrains Mono, monospace',
-            marginBottom: '6px',
-            marginTop: '14px',
-          }}
-        >
-          Add a Goliath feature
-        </h2>
-        <p style={{ fontSize: '11px', color: 'var(--theme-text-muted)', fontFamily: 'JetBrains Mono, monospace', letterSpacing: '0.04em', lineHeight: 1.6 }}>
-          DevOps will edit the Goliath source code directly. A restart may be required to apply changes.
-        </p>
-      </div>
-
-      <form onSubmit={handleSubmit} style={{ maxWidth: '620px', display: 'flex', flexDirection: 'column', gap: '24px' }}>
-        {/* Feature type selector */}
-        <div>
-          <label
-            style={{
-              display: 'block',
-              fontSize: '10px',
-              fontWeight: 700,
-              letterSpacing: '0.14em',
-              color: 'var(--theme-text-secondary)',
-              fontFamily: 'JetBrains Mono, monospace',
-              marginBottom: '10px',
-            }}
-          >
-            FEATURE TYPE
-          </label>
-          <div
-            style={{
-              display: 'grid',
-              gridTemplateColumns: 'repeat(auto-fill, minmax(170px, 1fr))',
-              gap: '8px',
-            }}
-          >
-            {FEATURE_TYPES.map((ft) => {
-              const isSelected = featureType === ft.id;
-              return (
-                <button
-                  key={ft.id}
-                  type="button"
-                  onClick={() => setFeatureType(ft.id)}
-                  style={{
-                    background: isSelected ? 'var(--theme-accent-dim)' : 'var(--theme-bg-secondary)',
-                    border: isSelected ? '2px solid var(--theme-accent)' : '2px solid var(--theme-border)',
-                    padding: '10px 12px',
-                    textAlign: 'left',
-                    cursor: 'pointer',
-                    transition: 'border-color 0.12s, background 0.12s',
-                  }}
-                >
-                  <span
-                    style={{
-                      display: 'block',
-                      fontSize: '11px',
-                      fontWeight: 700,
-                      color: isSelected ? 'var(--theme-accent)' : 'var(--theme-text-primary)',
-                      fontFamily: 'JetBrains Mono, monospace',
-                      letterSpacing: '0.06em',
-                      marginBottom: '3px',
-                    }}
-                  >
-                    {ft.label}
-                  </span>
-                  <span
-                    style={{
-                      display: 'block',
-                      fontSize: '9px',
-                      color: 'var(--theme-text-dim)',
-                      fontFamily: 'JetBrains Mono, monospace',
-                      letterSpacing: '0.04em',
-                      lineHeight: 1.45,
-                    }}
-                  >
-                    {ft.description}
-                  </span>
-                </button>
-              );
-            })}
-          </div>
-        </div>
-
-        {/* Description */}
-        <FormField label="Describe the feature" hint="Be specific. DevOps will locate the right files and implement the change.">
-          <textarea
-            value={description}
-            onChange={(e) => setDescription(e.target.value)}
-            placeholder="Add a Production Dashboard page that shows daily energy output per project over the past 30 days using the existing production data."
-            rows={5}
-            style={{
-              width: '100%',
-              background: 'var(--theme-bg-secondary)',
-              border: '2px solid var(--theme-border)',
-              color: 'var(--theme-text-primary)',
-              fontSize: '12px',
-              fontFamily: 'JetBrains Mono, monospace',
-              letterSpacing: '0.04em',
-              padding: '10px 12px',
-              outline: 'none',
-              resize: 'vertical',
-              lineHeight: 1.6,
-            }}
-            onFocus={(e) => (e.target.style.borderColor = 'var(--theme-accent)')}
-            onBlur={(e) => (e.target.style.borderColor = 'var(--theme-border)')}
-          />
-        </FormField>
-
-        {/* Restart warning */}
-        <div
-          style={{
-            background: 'var(--theme-bg-tertiary)',
-            border: '1px solid var(--chart-4)',
-            borderLeft: '3px solid var(--chart-4)',
-            padding: '10px 14px',
-            fontSize: '10px',
-            color: 'var(--theme-text-muted)',
-            fontFamily: 'JetBrains Mono, monospace',
-            letterSpacing: '0.06em',
-            lineHeight: 1.6,
-          }}
-        >
-          <span style={{ color: 'var(--chart-4)', fontWeight: 700 }}>🔧 Patch mode.</span>{' '}
-          DevOps will edit Goliath source files directly. Changes to the frontend require a Vite rebuild.
-          Changes to the backend may emit RESTART_REQUIRED.
-        </div>
-
-        {/* Submit */}
-        <button
-          type="submit"
-          disabled={!featureType || !description.trim()}
-          style={{
-            background: featureType && description.trim() ? 'var(--theme-accent)' : 'var(--theme-bg-tertiary)',
-            color: featureType && description.trim() ? 'var(--theme-bg-primary)' : 'var(--theme-text-dim)',
-            border: 'none',
-            padding: '12px 24px',
-            fontSize: '11px',
-            fontWeight: 700,
-            letterSpacing: '0.14em',
-            fontFamily: 'JetBrains Mono, monospace',
-            cursor: featureType && description.trim() ? 'pointer' : 'not-allowed',
-            alignSelf: 'flex-start',
-            transition: 'background 0.15s, color 0.15s',
-            display: 'flex',
-            alignItems: 'center',
-            gap: '8px',
-          }}
-        >
-          <Wrench size={13} />
-          QUEUE BUILD
-        </button>
-      </form>
-    </div>
-  );
-}
-
-// ─── Stub Placeholder (Phase 1 — pipeline not wired) ─────────────────────────
-
-interface StubPlaceholderProps {
-  intent: Intent;
-  backend?: BackendChoice;
-  appName?: string;
-  featureType?: FeatureType;
-  description: string;
-  onReset: () => void;
-}
-
-function StubPlaceholder({ intent, backend, appName, featureType, description, onReset }: StubPlaceholderProps) {
-  return (
-    <div className="flex flex-col flex-1 p-8 min-h-0 overflow-y-auto" data-scroll-container>
+    <div className="flex flex-col flex-1 min-h-0">
+      {/* Chat header bar */}
       <div
         style={{
-          maxWidth: '560px',
-          background: 'var(--theme-bg-secondary)',
-          border: '2px solid var(--theme-border)',
-          padding: '32px',
           display: 'flex',
-          flexDirection: 'column',
-          gap: '20px',
+          alignItems: 'center',
+          gap: '10px',
+          padding: '10px 20px',
+          borderBottom: '2px solid var(--theme-border)',
+          background: 'var(--theme-bg-secondary)',
+          flexShrink: 0,
         }}
       >
-        {/* Status badge */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-          <span
-            style={{
-              width: 8,
-              height: 8,
-              borderRadius: '50%',
-              background: 'var(--chart-3)',
-              display: 'inline-block',
-              animation: 'pulse 1.5s ease-in-out infinite',
-              flexShrink: 0,
-            }}
-          />
-          <span
-            style={{
-              fontSize: '9px',
-              fontWeight: 700,
-              letterSpacing: '0.16em',
-              color: 'var(--chart-3)',
-              fontFamily: 'JetBrains Mono, monospace',
-            }}
-          >
-            BUILD QUEUED — PHASE 1 STUB
-          </span>
-        </div>
-
-        {/* Summary */}
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-          <SummaryRow label="Intent" value={intent === 'new-app' ? '🚀 New App' : '🔧 Goliath Feature'} />
-          {intent === 'new-app' && backend && (
-            <SummaryRow label="Backend" value={`${BACKEND_EMOJIS[backend]} ${BACKEND_LABELS[backend]}`} />
-          )}
-          {intent === 'new-app' && appName && (
-            <SummaryRow label="App name" value={appName} />
-          )}
-          {intent === 'goliath-feature' && featureType && (
-            <SummaryRow label="Feature type" value={FEATURE_TYPES.find((f) => f.id === featureType)?.label ?? featureType} />
-          )}
-          <SummaryRow label="Description" value={description} multiline />
-        </div>
-
-        {/* Phase 1 note */}
-        <div
+        <button
+          onClick={onBack}
           style={{
-            background: 'var(--theme-bg-tertiary)',
-            border: '1px solid var(--theme-border)',
-            borderLeft: '3px solid var(--chart-2)',
-            padding: '12px 14px',
-            fontSize: '10px',
-            color: 'var(--theme-text-muted)',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '4px',
+            background: 'transparent',
+            border: 'none',
+            cursor: 'pointer',
+            padding: '4px',
+            color: 'var(--theme-text-dim)',
+          }}
+          title="Back to selection"
+        >
+          <ArrowLeft size={14} />
+        </button>
+
+        <Terminal size={14} style={{ color: accentColor, flexShrink: 0 }} />
+        <span
+          style={{
+            fontSize: '11px',
+            fontWeight: 700,
+            letterSpacing: '0.1em',
+            color: 'var(--theme-text-primary)',
             fontFamily: 'JetBrains Mono, monospace',
-            letterSpacing: '0.06em',
-            lineHeight: 1.7,
           }}
         >
-          <span style={{ color: 'var(--chart-2)', fontWeight: 700 }}>Phase 1 — UI shell only.</span>
-          <br />
-          The build pipeline is not wired yet. In Phase 2, submitting this form will dispatch DevOps,
-          open a live preview panel with an iframe, and stream container logs to the debug console below.
-          <br /><br />
-          For now, copy this configuration and paste it into the Chat tab to start a DevOps build session manually.
-        </div>
+          DEVOPS BUILD SESSION
+        </span>
 
-        {/* Copyable config block */}
-        <div>
+        {/* Intent chip */}
+        <span
+          style={{
+            fontSize: '8px',
+            fontWeight: 700,
+            letterSpacing: '0.12em',
+            color: accentColor,
+            fontFamily: 'JetBrains Mono, monospace',
+            background: `color-mix(in srgb, ${accentColor} 15%, transparent)`,
+            border: `1px solid color-mix(in srgb, ${accentColor} 40%, transparent)`,
+            padding: '2px 8px',
+          }}
+        >
+          {INTENT_LABELS[intent].toUpperCase()}
+        </span>
+
+        {/* Backend chip (only for new-app) */}
+        {backend && (
           <span
             style={{
-              display: 'block',
-              fontSize: '9px',
-              fontWeight: 700,
-              letterSpacing: '0.14em',
-              color: 'var(--theme-text-dim)',
-              fontFamily: 'JetBrains Mono, monospace',
-              marginBottom: '6px',
-            }}
-          >
-            COPY TO CHAT
-          </span>
-          <pre
-            style={{
-              background: 'var(--theme-bg-primary)',
-              border: '1px solid var(--theme-border)',
-              padding: '12px',
-              fontSize: '10px',
-              color: 'var(--theme-text-secondary)',
-              fontFamily: 'JetBrains Mono, monospace',
-              letterSpacing: '0.04em',
-              lineHeight: 1.7,
-              whiteSpace: 'pre-wrap',
-              wordBreak: 'break-word',
-              margin: 0,
-            }}
-          >
-            {intent === 'new-app'
-              ? `@DevOps Build a new app (container mode)\nBackend: ${backend ? BACKEND_LABELS[backend] : ''}\nApp name: ${appName || ''}\n\n${description}`
-              : `@DevOps Patch Goliath (feature mode)\nFeature type: ${featureType ? FEATURE_TYPES.find((f) => f.id === featureType)?.label : ''}\n\n${description}`}
-          </pre>
-        </div>
-
-        {/* Actions */}
-        <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
-          <button
-            onClick={onReset}
-            style={{
-              background: 'transparent',
-              border: '2px solid var(--theme-border)',
-              color: 'var(--theme-text-muted)',
-              padding: '8px 16px',
-              fontSize: '10px',
+              fontSize: '8px',
               fontWeight: 700,
               letterSpacing: '0.12em',
+              color: 'var(--chart-2)',
               fontFamily: 'JetBrains Mono, monospace',
-              cursor: 'pointer',
+              background: 'color-mix(in srgb, var(--chart-2) 15%, transparent)',
+              border: '1px solid color-mix(in srgb, var(--chart-2) 40%, transparent)',
+              padding: '2px 8px',
+            }}
+          >
+            {BACKEND_LABELS[backend].toUpperCase()}
+          </span>
+        )}
+
+        {/* Streaming indicator */}
+        {isStreaming && (
+          <span
+            style={{
+              marginLeft: 'auto',
               display: 'flex',
               alignItems: 'center',
               gap: '6px',
             }}
           >
-            <ArrowLeft size={11} />
-            EDIT
-          </button>
+            <span
+              style={{
+                width: 6,
+                height: 6,
+                borderRadius: '50%',
+                background: '#22c55e',
+                animation: 'pulse 1.5s ease-in-out infinite',
+              }}
+            />
+            <span
+              style={{
+                fontSize: '9px',
+                fontWeight: 700,
+                letterSpacing: '0.1em',
+                color: '#22c55e',
+                fontFamily: 'JetBrains Mono, monospace',
+              }}
+            >
+              BUILDING
+            </span>
+          </span>
+        )}
+      </div>
+
+      {/* Messages area */}
+      <div
+        className="flex-1 overflow-y-auto min-h-0"
+        style={{
+          padding: '20px',
+          display: 'flex',
+          flexDirection: 'column',
+          gap: '16px',
+        }}
+        data-scroll-container
+      >
+        {/* Empty state */}
+        {messages.length === 0 && (
+          <div
+            style={{
+              flex: 1,
+              display: 'flex',
+              flexDirection: 'column',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: '16px',
+              padding: '40px 20px',
+            }}
+          >
+            <Terminal size={40} style={{ color: 'var(--theme-border)' }} />
+            <div style={{ textAlign: 'center', maxWidth: '440px' }}>
+              <h3
+                style={{
+                  fontSize: '14px',
+                  fontWeight: 700,
+                  color: 'var(--theme-text-primary)',
+                  fontFamily: 'JetBrains Mono, monospace',
+                  letterSpacing: '0.06em',
+                  marginBottom: '8px',
+                }}
+              >
+                {intent === 'new-app' ? 'Describe your app' : 'Describe the feature'}
+              </h3>
+              <p
+                style={{
+                  fontSize: '11px',
+                  color: 'var(--theme-text-muted)',
+                  fontFamily: 'JetBrains Mono, monospace',
+                  letterSpacing: '0.04em',
+                  lineHeight: 1.6,
+                  marginBottom: '20px',
+                }}
+              >
+                {intent === 'new-app'
+                  ? 'Tell DevOps what you want to build. Be as detailed or as brief as you like — you can refine as you go.'
+                  : 'Tell DevOps what feature to add to Goliath. Describe the change and DevOps will implement it.'}
+              </p>
+              <div
+                style={{
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: '6px',
+                  textAlign: 'left',
+                }}
+              >
+                {(intent === 'new-app'
+                  ? [
+                      'Build me a note-taking app with markdown support and dark mode',
+                      'Create a dashboard for tracking solar panel installations',
+                      'Spin up a simple API with user auth and a React frontend',
+                    ]
+                  : [
+                      'Add a weather widget to the production dashboard',
+                      'Create a new API endpoint for schedule data',
+                      'Add a dark/light mode toggle to the sidebar',
+                    ]
+                ).map((hint, i) => (
+                  <button
+                    key={i}
+                    onClick={() => {
+                      setInput(hint);
+                      textareaRef.current?.focus();
+                    }}
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '8px',
+                      padding: '8px 12px',
+                      background: 'var(--theme-bg-secondary)',
+                      border: '1px solid var(--theme-border)',
+                      cursor: 'pointer',
+                      textAlign: 'left',
+                      transition: 'border-color 0.12s',
+                      fontFamily: 'JetBrains Mono, monospace',
+                    }}
+                    onMouseEnter={(e) => {
+                      (e.currentTarget.style.borderColor as string) = accentColor;
+                    }}
+                    onMouseLeave={(e) => {
+                      e.currentTarget.style.borderColor = 'var(--theme-border)';
+                    }}
+                  >
+                    <ChevronRight size={10} style={{ color: accentColor, flexShrink: 0 }} />
+                    <span
+                      style={{
+                        fontSize: '10px',
+                        color: 'var(--theme-text-muted)',
+                        letterSpacing: '0.03em',
+                      }}
+                    >
+                      {hint}
+                    </span>
+                  </button>
+                ))}
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Chat messages */}
+        {messages.map((msg) => (
+          <MessageBubble
+            key={msg.id}
+            message={msg}
+            accentColor={accentColor}
+            onStreamingRef={
+              msg.streaming
+                ? (el) => {
+                    streamingElRef.current = el;
+                    // Initial render if we already have text
+                    if (el && streamingTextRef.current) {
+                      el.innerHTML = renderMarkdown(streamingTextRef.current);
+                    }
+                  }
+                : undefined
+            }
+          />
+        ))}
+        <div ref={messagesEndRef} />
+      </div>
+
+      {/* Input area */}
+      <div
+        style={{
+          padding: '12px 20px 20px',
+          borderTop: '2px solid var(--theme-border)',
+          background: 'var(--theme-bg-primary)',
+          flexShrink: 0,
+        }}
+      >
+        <div style={{ maxWidth: '720px', margin: '0 auto' }}>
+          <div style={{ display: 'flex', alignItems: 'end', gap: '10px' }}>
+            <textarea
+              ref={textareaRef}
+              value={input}
+              onChange={handleInputChange}
+              onKeyDown={handleKeyDown}
+              placeholder={
+                intent === 'new-app'
+                  ? 'Describe what to build...'
+                  : 'Describe the Goliath feature...'
+              }
+              disabled={isStreaming}
+              rows={1}
+              style={{
+                flex: 1,
+                minHeight: '44px',
+                maxHeight: '160px',
+                resize: 'none',
+                background: 'var(--card)',
+                border: '2px solid var(--theme-border)',
+                borderRadius: '3px',
+                color: 'var(--foreground)',
+                fontSize: '13px',
+                fontFamily: 'JetBrains Mono, monospace',
+                letterSpacing: '0.03em',
+                padding: '10px 14px',
+                outline: 'none',
+                transition: 'border-color 0.12s',
+                opacity: isStreaming ? 0.5 : 1,
+              }}
+              onFocus={(e) => {
+                e.currentTarget.style.borderColor = accentColor;
+              }}
+              onBlur={(e) => {
+                e.currentTarget.style.borderColor = 'var(--theme-border)';
+              }}
+            />
+
+            {isStreaming ? (
+              <button
+                onClick={handleStop}
+                style={{
+                  width: '44px',
+                  height: '44px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  background: 'var(--destructive)',
+                  border: '2px solid var(--destructive)',
+                  borderRadius: '3px',
+                  color: 'white',
+                  cursor: 'pointer',
+                  flexShrink: 0,
+                }}
+                title="Stop generation"
+              >
+                <Square size={16} fill="white" />
+              </button>
+            ) : (
+              <button
+                onClick={handleSend}
+                disabled={!canSend}
+                style={{
+                  width: '44px',
+                  height: '44px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  background: canSend ? accentColor : 'var(--theme-bg-tertiary)',
+                  border: canSend ? `2px solid ${accentColor}` : '2px solid var(--theme-border)',
+                  borderRadius: '3px',
+                  color: canSend ? 'var(--primary-foreground)' : 'var(--theme-border)',
+                  cursor: canSend ? 'pointer' : 'not-allowed',
+                  flexShrink: 0,
+                  transition: 'background 0.12s, border-color 0.12s',
+                }}
+                title="Send message"
+              >
+                <ArrowUp size={18} strokeWidth={3} />
+              </button>
+            )}
+          </div>
+          <p
+            style={{
+              textAlign: 'center',
+              marginTop: '8px',
+              fontSize: '10px',
+              fontWeight: 700,
+              letterSpacing: '0.12em',
+              color: 'var(--theme-border)',
+              fontFamily: 'JetBrains Mono, monospace',
+            }}
+          >
+            ENTER TO SEND &middot; SHIFT+ENTER FOR NEW LINE
+          </p>
         </div>
       </div>
     </div>
   );
 }
 
-function SummaryRow({ label, value, multiline }: { label: string; value: string; multiline?: boolean }) {
+// ─── Message Bubble ──────────────────────────────────────────────────────────
+
+interface MessageBubbleProps {
+  message: ChatMessage;
+  accentColor: string;
+  onStreamingRef?: (el: HTMLDivElement | null) => void;
+}
+
+function MessageBubble({ message, accentColor, onStreamingRef }: MessageBubbleProps) {
+  const isUser = message.role === 'user';
+  const isSystem = message.role === 'system';
+
+  if (isSystem) {
+    return (
+      <div
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: '8px',
+          padding: '8px 14px',
+          background: 'var(--theme-bg-tertiary)',
+          borderLeft: `3px solid ${accentColor}`,
+        }}
+      >
+        <Loader size={10} className="animate-spin" style={{ color: accentColor, flexShrink: 0 }} />
+        <span
+          style={{
+            fontSize: '10px',
+            fontWeight: 700,
+            letterSpacing: '0.08em',
+            color: accentColor,
+            fontFamily: 'JetBrains Mono, monospace',
+          }}
+        >
+          {message.content}
+        </span>
+      </div>
+    );
+  }
+
+  if (isUser) {
+    return (
+      <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+        <div
+          style={{
+            maxWidth: '80%',
+            padding: '12px 16px',
+            background: 'var(--theme-bg-secondary)',
+            border: `2px solid color-mix(in srgb, ${accentColor} 40%, var(--theme-border))`,
+            borderRadius: '3px',
+          }}
+        >
+          <span
+            style={{
+              fontSize: '12px',
+              color: 'var(--theme-text-primary)',
+              fontFamily: 'JetBrains Mono, monospace',
+              letterSpacing: '0.03em',
+              lineHeight: 1.6,
+              whiteSpace: 'pre-wrap',
+              wordBreak: 'break-word',
+            }}
+          >
+            {message.content}
+          </span>
+        </div>
+      </div>
+    );
+  }
+
+  // Assistant message
   return (
-    <div style={{ display: 'flex', gap: '12px', alignItems: multiline ? 'flex-start' : 'center' }}>
-      <span
+    <div style={{ display: 'flex', gap: '10px', maxWidth: '100%' }}>
+      {/* Avatar */}
+      <div
         style={{
-          fontSize: '9px',
-          fontWeight: 700,
-          letterSpacing: '0.12em',
-          color: 'var(--theme-text-dim)',
-          fontFamily: 'JetBrains Mono, monospace',
-          minWidth: '90px',
+          width: '28px',
+          height: '28px',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          background: `color-mix(in srgb, ${accentColor} 15%, transparent)`,
+          border: `2px solid color-mix(in srgb, ${accentColor} 40%, transparent)`,
+          borderRadius: '3px',
           flexShrink: 0,
-          paddingTop: multiline ? '1px' : 0,
         }}
       >
-        {label.toUpperCase()}
-      </span>
-      <span
-        style={{
-          fontSize: '11px',
-          color: 'var(--theme-text-secondary)',
-          fontFamily: 'JetBrains Mono, monospace',
-          letterSpacing: '0.03em',
-          lineHeight: 1.5,
-        }}
-      >
-        {value}
-      </span>
+        <Terminal size={14} style={{ color: accentColor }} />
+      </div>
+
+      {/* Content */}
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <span
+          style={{
+            display: 'block',
+            fontSize: '9px',
+            fontWeight: 700,
+            letterSpacing: '0.12em',
+            color: accentColor,
+            fontFamily: 'JetBrains Mono, monospace',
+            marginBottom: '6px',
+          }}
+        >
+          DEVOPS
+        </span>
+        {message.streaming ? (
+          <div
+            ref={onStreamingRef}
+            className="msg-markdown"
+            style={{
+              fontSize: '12px',
+              color: 'var(--theme-text-primary)',
+              fontFamily: 'JetBrains Mono, monospace',
+              letterSpacing: '0.02em',
+              lineHeight: 1.65,
+              wordBreak: 'break-word',
+              minHeight: '20px',
+            }}
+          >
+            {/* Content rendered via direct DOM manipulation for performance */}
+            {!streamingHasContent(message) && (
+              <span
+                style={{
+                  display: 'inline-block',
+                  width: '8px',
+                  height: '16px',
+                  background: accentColor,
+                  animation: 'cursor-blink 1s step-end infinite',
+                }}
+              />
+            )}
+          </div>
+        ) : (
+          <div
+            className="msg-markdown"
+            style={{
+              fontSize: '12px',
+              color: 'var(--theme-text-primary)',
+              fontFamily: 'JetBrains Mono, monospace',
+              letterSpacing: '0.02em',
+              lineHeight: 1.65,
+              wordBreak: 'break-word',
+            }}
+            dangerouslySetInnerHTML={{ __html: renderMarkdown(message.content) }}
+          />
+        )}
+      </div>
     </div>
   );
+}
+
+function streamingHasContent(msg: ChatMessage): boolean {
+  return msg.content.length > 0;
 }
 
 // ─── Shared Utilities ─────────────────────────────────────────────────────────
@@ -1414,50 +1582,12 @@ function Breadcrumb({ items }: { items: string[] }) {
   );
 }
 
-interface FormFieldProps {
-  label: string;
-  hint?: string;
-  children: React.ReactNode;
-}
-
-function FormField({ label, hint, children }: FormFieldProps) {
-  return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-      <label
-        style={{
-          fontSize: '10px',
-          fontWeight: 700,
-          letterSpacing: '0.14em',
-          color: 'var(--theme-text-secondary)',
-          fontFamily: 'JetBrains Mono, monospace',
-        }}
-      >
-        {label.toUpperCase()}
-      </label>
-      {children}
-      {hint && (
-        <span
-          style={{
-            fontSize: '9px',
-            color: 'var(--theme-text-dim)',
-            fontFamily: 'JetBrains Mono, monospace',
-            letterSpacing: '0.06em',
-          }}
-        >
-          {hint}
-        </span>
-      )}
-    </div>
-  );
-}
-
 // ─── Root Page ────────────────────────────────────────────────────────────────
 
 type AppBuilderState =
   | { screen: 'intent' }
   | { screen: 'new-app-backend' }
-  | { screen: 'new-app-describe'; backend: BackendChoice }
-  | { screen: 'goliath-feature-describe' };
+  | { screen: 'chat'; intent: Intent; backend: BackendChoice | null };
 
 export function AppBuilderPage() {
   const [state, setState] = useState<AppBuilderState>({ screen: 'intent' });
@@ -1466,20 +1596,20 @@ export function AppBuilderPage() {
     if (intent === 'new-app') {
       setState({ screen: 'new-app-backend' });
     } else {
-      setState({ screen: 'goliath-feature-describe' });
+      // Goliath feature goes straight to chat
+      setState({ screen: 'chat', intent: 'goliath-feature', backend: null });
     }
   }
 
   function handleBackendSelect(backend: BackendChoice) {
-    setState({ screen: 'new-app-describe', backend });
+    setState({ screen: 'chat', intent: 'new-app', backend });
   }
 
   // Build subtitle based on current screen
-  const subtitleMap: Record<AppBuilderState['screen'], string> = {
+  const subtitleMap: Record<string, string> = {
     'intent': 'Select your build intent to begin',
     'new-app-backend': 'New App — choose a backend',
-    'new-app-describe': 'New App — describe your app',
-    'goliath-feature-describe': 'Goliath Feature — describe the change',
+    'chat': 'DevOps build session',
   };
 
   return (
@@ -1489,7 +1619,6 @@ export function AppBuilderPage() {
         subtitle={subtitleMap[state.screen]}
       />
 
-      {/* Render the correct screen */}
       {state.screen === 'intent' && (
         <IntentSelector onSelect={handleIntentSelect} />
       )}
@@ -1501,15 +1630,10 @@ export function AppBuilderPage() {
         />
       )}
 
-      {state.screen === 'new-app-describe' && (
-        <NewAppDescribe
+      {state.screen === 'chat' && (
+        <BuilderChat
+          intent={state.intent}
           backend={state.backend}
-          onBack={() => setState({ screen: 'new-app-backend' })}
-        />
-      )}
-
-      {state.screen === 'goliath-feature-describe' && (
-        <GoliathFeatureDescribe
           onBack={() => setState({ screen: 'intent' })}
         />
       )}

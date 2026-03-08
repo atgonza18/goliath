@@ -17,6 +17,7 @@ import { constraintsRouter } from './routes/constraints';
 import { productionRouter } from './routes/production';
 import { swarmRouter } from './routes/swarm';
 import { infraRouter } from './routes/infra';
+import { appBuilderRouter } from './routes/appBuilder';
 import { initDatabases } from './services/database';
 
 const PORT = Number(process.env.PORT) || 80;
@@ -54,6 +55,7 @@ app.use('/api', constraintsRouter);
 app.use('/api', productionRouter);
 app.use('/api', swarmRouter);
 app.use('/api', infraRouter);
+app.use('/api', appBuilderRouter);
 
 // --------------- Static frontend ---------------
 // Hashed assets get long-term immutable caching
