@@ -306,12 +306,20 @@ productionRouter.get('/production/dashboard', (req: Request, res: Response) => {
     const todayStr = localDateStr();
 
     // Get all production data in date range
+    // Map real column names to legacy aliases so downstream TS code stays unchanged
     const rows = db.prepare(`
-      SELECT project_key, report_date, activity, quantity_today, unit,
-             percent_complete, actual_rate, required_rate, blocks, notes
+      SELECT project_key, report_date,
+             activity_name        AS activity,
+             qty_completed_yesterday AS quantity_today,
+             unit,
+             pct_complete         AS percent_complete,
+             qty_to_date          AS actual_rate,
+             total_qty            AS required_rate,
+             today_location       AS blocks,
+             notes
       FROM pod_production
       WHERE report_date >= ?
-      ORDER BY report_date DESC, project_key, activity
+      ORDER BY report_date DESC, project_key, activity_name
     `).all(cutoffDate) as Array<{
       project_key: string; report_date: string; activity: string;
       quantity_today: number | null; unit: string | null;
@@ -495,6 +503,75 @@ productionRouter.get('/production/dashboard', (req: Request, res: Response) => {
   } catch (err) {
     console.error('[GET /api/production/dashboard]', err);
     res.status(500).json({ error: 'Failed to build production dashboard' });
+  }
+});
+
+/**
+ * GET /api/production/project/:projectKey/trend
+ * Returns cumulative actual vs. planned (baseline) production data for a single project.
+ * Queries pod_production grouped by report_date.
+ */
+productionRouter.get('/production/project/:projectKey/trend', (req: Request, res: Response) => {
+  try {
+    const projectKey = req.params.projectKey as string;
+
+    if (!PROJECTS[projectKey]) {
+      res.status(404).json({ error: `Unknown project key: ${projectKey}` });
+      return;
+    }
+
+    const db = getPodProductionDb();
+
+    // Query real column names: qty_completed_yesterday (daily) and qty_to_date (cumulative)
+    const rows = db.prepare(`
+      SELECT report_date,
+             SUM(qty_completed_yesterday) as daily_qty,
+             SUM(qty_to_date)             as cumulative_qty
+      FROM pod_production
+      WHERE project_key = ?
+      GROUP BY report_date
+      ORDER BY report_date ASC
+    `).all(projectKey) as Array<{ report_date: string; daily_qty: number | null; cumulative_qty: number | null }>;
+
+    const dates: string[] = [];
+    const actuals_daily: number[] = [];
+    const planned_daily: number[] = [];
+    const actuals_cumulative: number[] = [];
+    const planned_cumulative: number[] = [];
+
+    let prevCumulative = 0;
+
+    for (const row of rows) {
+      const cumulative = row.cumulative_qty ?? 0;
+      // Prefer explicit daily qty; fall back to cumulative delta when daily is zero
+      let daily = row.daily_qty ?? 0;
+      if (daily === 0 && cumulative > prevCumulative) {
+        daily = cumulative - prevCumulative;
+      }
+
+      dates.push(row.report_date);
+      actuals_daily.push(daily);
+      actuals_cumulative.push(cumulative);
+      planned_daily.push(0);       // no baseline schedule in schema
+      planned_cumulative.push(0);
+
+      prevCumulative = cumulative;
+    }
+
+    const hasBaseline = false; // real schema has no planned/required_rate column
+
+    res.json({
+      project_key: projectKey,
+      has_baseline: hasBaseline,
+      dates,
+      actuals_daily,
+      actuals_cumulative,
+      planned_daily,
+      planned_cumulative,
+    });
+  } catch (err) {
+    console.error('[GET /api/production/project/:projectKey/trend]', err);
+    res.status(500).json({ error: 'Failed to build project production trend' });
   }
 });
 
