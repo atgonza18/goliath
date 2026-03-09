@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useRef, useCallback, Component, type ReactNode, type ErrorInfo } from 'react';
 import {
   ArrowLeft,
   ArrowUp,
@@ -26,6 +26,119 @@ interface ChatMessage {
   content: string;
   timestamp: string;
   streaming?: boolean;
+}
+
+// ─── CSS Keyframes ───────────────────────────────────────────────────────────
+
+function AppBuilderStyles() {
+  return (
+    <style>{`
+      @keyframes cursor-blink {
+        0%, 100% { opacity: 1; }
+        50% { opacity: 0; }
+      }
+      @keyframes dot-pulse {
+        0%, 100% { opacity: 1; transform: scale(1); }
+        50% { opacity: 0.4; transform: scale(0.75); }
+      }
+      @keyframes terminal-scanline {
+        0% { opacity: 0; }
+        50% { opacity: 0.03; }
+        100% { opacity: 0; }
+      }
+      @keyframes glow-line {
+        0% { background-position: -200% 0; }
+        100% { background-position: 200% 0; }
+      }
+    `}</style>
+  );
+}
+
+// ─── Error Boundary (prevents streaming crashes from killing the entire app) ─
+
+interface StreamErrorBoundaryProps {
+  children: ReactNode;
+  fallbackMessage?: string;
+}
+
+interface StreamErrorBoundaryState {
+  hasError: boolean;
+  error: Error | null;
+}
+
+class StreamErrorBoundary extends Component<StreamErrorBoundaryProps, StreamErrorBoundaryState> {
+  constructor(props: StreamErrorBoundaryProps) {
+    super(props);
+    this.state = { hasError: false, error: null };
+  }
+
+  static getDerivedStateFromError(error: Error): StreamErrorBoundaryState {
+    return { hasError: true, error };
+  }
+
+  componentDidCatch(error: Error, errorInfo: ErrorInfo) {
+    console.error('[StreamErrorBoundary] Caught render error:', error.message, errorInfo.componentStack);
+  }
+
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div
+          style={{
+            padding: '16px 20px',
+            background: 'rgba(239, 68, 68, 0.06)',
+            border: '1px solid rgba(239, 68, 68, 0.3)',
+            borderLeft: '3px solid #ef4444',
+            margin: '8px 0',
+          }}
+        >
+          <span
+            style={{
+              display: 'block',
+              fontSize: '10px',
+              fontWeight: 700,
+              letterSpacing: '0.12em',
+              color: '#ef4444',
+              fontFamily: 'JetBrains Mono, monospace',
+              marginBottom: '4px',
+            }}
+          >
+            RENDER ERROR
+          </span>
+          <span
+            style={{
+              fontSize: '11px',
+              color: 'var(--theme-text-muted)',
+              fontFamily: 'JetBrains Mono, monospace',
+              letterSpacing: '0.03em',
+              lineHeight: 1.5,
+            }}
+          >
+            {this.props.fallbackMessage || 'Stream display crashed. Content was received — refresh to view.'}
+          </span>
+          <button
+            onClick={() => this.setState({ hasError: false, error: null })}
+            style={{
+              display: 'block',
+              marginTop: '8px',
+              fontSize: '9px',
+              fontWeight: 700,
+              letterSpacing: '0.1em',
+              color: '#ef4444',
+              background: 'transparent',
+              border: '1px solid rgba(239, 68, 68, 0.4)',
+              padding: '4px 10px',
+              cursor: 'pointer',
+              fontFamily: 'JetBrains Mono, monospace',
+            }}
+          >
+            RETRY RENDER
+          </button>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
 }
 
 // ─── Phase 1 Infrastructure Status Banner ────────────────────────────────────
@@ -784,6 +897,17 @@ function BuilderChat({ intent, backend, onBack }: BuilderChatProps) {
   const streamingElRef = useRef<HTMLDivElement | null>(null);
   const abortRef = useRef<(() => void) | null>(null);
   const renderTimerRef = useRef<number | null>(null);
+  const isMountedRef = useRef(true);
+
+  // ─── DevOps Activity Panel state ───
+  const terminalContentRef = useRef<HTMLPreElement | null>(null);
+  const terminalScrollRef = useRef<HTMLDivElement | null>(null);
+  const activityAutoScrollRef = useRef(true);
+  const buildStartTimeRef = useRef<number | null>(null);
+  const [isBuildComplete, setIsBuildComplete] = useState(false);
+  const [showTerminal, setShowTerminal] = useState(false);
+  const [terminalCollapsed, setTerminalCollapsed] = useState(false);
+  const [elapsedSeconds, setElapsedSeconds] = useState(0);
 
   const accentColor = INTENT_COLORS[intent];
 
@@ -795,6 +919,50 @@ function BuilderChat({ intent, backend, onBack }: BuilderChatProps) {
   // Focus textarea on mount
   useEffect(() => {
     textareaRef.current?.focus();
+  }, []);
+
+  // Cleanup on unmount — prevent state updates after unmount, cancel timers/streams
+  useEffect(() => {
+    isMountedRef.current = true;
+    return () => {
+      isMountedRef.current = false;
+      if (renderTimerRef.current) {
+        window.clearTimeout(renderTimerRef.current);
+        renderTimerRef.current = null;
+      }
+      if (abortRef.current) {
+        abortRef.current();
+        abortRef.current = null;
+      }
+    };
+  }, []);
+
+  // Elapsed time ticker for DevOps Activity panel
+  useEffect(() => {
+    if (!isStreaming) return;
+    buildStartTimeRef.current = Date.now();
+    setElapsedSeconds(0);
+    const interval = setInterval(() => {
+      if (buildStartTimeRef.current && isMountedRef.current) {
+        setElapsedSeconds(Math.floor((Date.now() - buildStartTimeRef.current) / 1000));
+      }
+    }, 1000);
+    return () => clearInterval(interval);
+  }, [isStreaming]);
+
+  // Append text to terminal panel (direct DOM manipulation, no React re-renders)
+  const appendToTerminal = useCallback((text: string) => {
+    const pre = terminalContentRef.current;
+    if (pre) {
+      pre.textContent = (pre.textContent || '') + text;
+    }
+    if (activityAutoScrollRef.current && terminalScrollRef.current) {
+      requestAnimationFrame(() => {
+        if (terminalScrollRef.current) {
+          terminalScrollRef.current.scrollTop = terminalScrollRef.current.scrollHeight;
+        }
+      });
+    }
   }, []);
 
   // Schedule a debounced markdown re-render for the streaming element
@@ -893,6 +1061,14 @@ function BuilderChat({ intent, backend, onBack }: BuilderChatProps) {
         setSessionId(newSessionId);
       }
 
+      // Initialize DevOps Activity Panel
+      setShowTerminal(true);
+      setIsBuildComplete(false);
+      setTerminalCollapsed(false);
+      if (terminalContentRef.current) {
+        terminalContentRef.current.textContent = '';
+      }
+
       // Connect to SSE stream
       const sseResponse = await fetch(streamUrl, {
         signal: abortController.signal,
@@ -925,6 +1101,7 @@ function BuilderChat({ intent, backend, onBack }: BuilderChatProps) {
 
           if (data === '[DONE]') {
             // Stream complete
+            if (!isMountedRef.current) return;
             const finalText = streamingTextRef.current;
             setMessages(prev =>
               prev.map(m =>
@@ -932,6 +1109,7 @@ function BuilderChat({ intent, backend, onBack }: BuilderChatProps) {
               )
             );
             setIsStreaming(false);
+            setIsBuildComplete(true);
             streamingMsgIdRef.current = null;
             streamingTextRef.current = '';
             streamingElRef.current = null;
@@ -946,9 +1124,15 @@ function BuilderChat({ intent, backend, onBack }: BuilderChatProps) {
               streamingTextRef.current += event.text;
               // Direct DOM update for performance
               scheduleRender();
+              // Feed to terminal panel
+              appendToTerminal(event.text);
             } else if (event.type === 'snapshot') {
               streamingTextRef.current = event.text;
               scheduleRender();
+              // Reset terminal to snapshot
+              if (terminalContentRef.current) {
+                terminalContentRef.current.textContent = event.text;
+              }
             } else if (event.type === 'error') {
               throw new Error(event.text || 'Build agent error');
             }
@@ -962,6 +1146,7 @@ function BuilderChat({ intent, backend, onBack }: BuilderChatProps) {
       }
 
       // Stream ended without [DONE]
+      if (!isMountedRef.current) return;
       const finalText = streamingTextRef.current;
       setMessages(prev =>
         prev.map(m =>
@@ -969,6 +1154,7 @@ function BuilderChat({ intent, backend, onBack }: BuilderChatProps) {
         )
       );
       setIsStreaming(false);
+      setIsBuildComplete(true);
       streamingMsgIdRef.current = null;
       streamingTextRef.current = '';
       streamingElRef.current = null;
@@ -976,8 +1162,10 @@ function BuilderChat({ intent, backend, onBack }: BuilderChatProps) {
     } catch (err) {
       if ((err as Error).name === 'AbortError') {
         // User cancelled
+        setIsBuildComplete(true);
         return;
       }
+      if (!isMountedRef.current) return;
       const errorText = err instanceof Error ? err.message : String(err);
       setMessages(prev =>
         prev.map(m =>
@@ -987,12 +1175,13 @@ function BuilderChat({ intent, backend, onBack }: BuilderChatProps) {
         )
       );
       setIsStreaming(false);
+      setIsBuildComplete(true);
       streamingMsgIdRef.current = null;
       streamingTextRef.current = '';
       streamingElRef.current = null;
       abortRef.current = null;
     }
-  }, [input, isStreaming, sessionId, backend, intent, scheduleRender]);
+  }, [input, isStreaming, sessionId, backend, intent, scheduleRender, appendToTerminal]);
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === 'Enter' && !e.shiftKey) {
@@ -1123,6 +1312,7 @@ function BuilderChat({ intent, backend, onBack }: BuilderChatProps) {
       </div>
 
       {/* Messages area */}
+      <StreamErrorBoundary fallbackMessage="The streaming display encountered an error. Your build content was received — refresh to view it.">
       <div
         className="flex-1 overflow-y-auto min-h-0"
         style={{
@@ -1257,6 +1447,21 @@ function BuilderChat({ intent, backend, onBack }: BuilderChatProps) {
         ))}
         <div ref={messagesEndRef} />
       </div>
+      </StreamErrorBoundary>
+
+      {/* DevOps Activity Panel — terminal-style live feed */}
+      {showTerminal && (
+        <DevOpsActivityPanel
+          isActive={isStreaming}
+          isComplete={isBuildComplete}
+          terminalRef={terminalContentRef}
+          scrollContainerRef={terminalScrollRef}
+          autoScrollRef={activityAutoScrollRef}
+          onToggleCollapse={() => setTerminalCollapsed(c => !c)}
+          isCollapsed={terminalCollapsed}
+          elapsedSeconds={elapsedSeconds}
+        />
+      )}
 
       {/* Input area */}
       <div
@@ -1475,20 +1680,26 @@ function MessageBubble({ message, accentColor, onStreamingRef }: MessageBubblePr
           DEVOPS
         </span>
         {message.streaming ? (
-          <div
-            ref={onStreamingRef}
-            className="msg-markdown"
-            style={{
-              fontSize: '12px',
-              color: 'var(--theme-text-primary)',
-              fontFamily: 'JetBrains Mono, monospace',
-              letterSpacing: '0.02em',
-              lineHeight: 1.65,
-              wordBreak: 'break-word',
-              minHeight: '20px',
-            }}
-          >
-            {/* Content rendered via direct DOM manipulation for performance */}
+          /* IMPORTANT: The streaming content div (ref={onStreamingRef}) must NEVER
+             have React-managed children, because scheduleRender() sets innerHTML
+             directly. If React children exist inside, React's vDOM will desync from
+             the real DOM, causing "removeChild" crashes during reconciliation.
+             The cursor is rendered as a SIBLING, not a child. */
+          <div style={{ position: 'relative' }}>
+            <div
+              ref={onStreamingRef}
+              className="msg-markdown"
+              style={{
+                fontSize: '12px',
+                color: 'var(--theme-text-primary)',
+                fontFamily: 'JetBrains Mono, monospace',
+                letterSpacing: '0.02em',
+                lineHeight: 1.65,
+                wordBreak: 'break-word',
+                minHeight: '20px',
+              }}
+            />
+            {/* Cursor rendered OUTSIDE the innerHTML container to avoid DOM desync */}
             {!streamingHasContent(message) && (
               <span
                 style={{
@@ -1522,6 +1733,301 @@ function MessageBubble({ message, accentColor, onStreamingRef }: MessageBubblePr
 
 function streamingHasContent(msg: ChatMessage): boolean {
   return msg.content.length > 0;
+}
+
+// ─── DevOps Activity Panel (terminal-style live feed) ─────────────────────────
+
+interface DevOpsActivityPanelProps {
+  isActive: boolean;
+  isComplete: boolean;
+  terminalRef: React.RefObject<HTMLPreElement | null>;
+  scrollContainerRef: React.RefObject<HTMLDivElement | null>;
+  autoScrollRef: React.MutableRefObject<boolean>;
+  onToggleCollapse: () => void;
+  isCollapsed: boolean;
+  elapsedSeconds: number;
+}
+
+function DevOpsActivityPanel({
+  isActive,
+  isComplete,
+  terminalRef,
+  scrollContainerRef,
+  autoScrollRef,
+  onToggleCollapse,
+  isCollapsed,
+  elapsedSeconds,
+}: DevOpsActivityPanelProps) {
+  // Detect manual scroll-up to pause auto-scroll
+  const handleScroll = useCallback(() => {
+    const el = scrollContainerRef.current;
+    if (!el) return;
+    const isAtBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 50;
+    autoScrollRef.current = isAtBottom;
+  }, [scrollContainerRef, autoScrollRef]);
+
+  const statusColor = isComplete ? '#39d353' : isActive ? '#39d353' : '#484f58';
+  const statusLabel = isComplete ? 'COMPLETE' : isActive ? 'ACTIVE' : 'IDLE';
+
+  const formatTime = (s: number) => {
+    const m = Math.floor(s / 60);
+    const sec = s % 60;
+    return `${m}:${sec.toString().padStart(2, '0')}`;
+  };
+
+  return (
+    <div
+      style={{
+        flexShrink: 0,
+        borderTop: '2px solid #1b2332',
+        background: '#0d1117',
+        display: 'flex',
+        flexDirection: 'column',
+        maxHeight: isCollapsed ? '38px' : '280px',
+        minHeight: '38px',
+        transition: 'max-height 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
+        overflow: 'hidden',
+        position: 'relative',
+      }}
+    >
+      {/* Subtle scanline overlay for CRT effect */}
+      {isActive && (
+        <div
+          style={{
+            position: 'absolute',
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            pointerEvents: 'none',
+            zIndex: 1,
+            background: 'repeating-linear-gradient(0deg, transparent, transparent 2px, rgba(255,255,255,0.008) 2px, rgba(255,255,255,0.008) 4px)',
+          }}
+        />
+      )}
+
+      {/* Header */}
+      <button
+        onClick={onToggleCollapse}
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: '10px',
+          padding: '9px 16px',
+          background: '#161b22',
+          border: 'none',
+          borderBottom: isCollapsed ? 'none' : '1px solid #21262d',
+          cursor: 'pointer',
+          flexShrink: 0,
+          width: '100%',
+          textAlign: 'left',
+          zIndex: 2,
+          position: 'relative',
+        }}
+      >
+        {/* Status dot with glow */}
+        <span
+          style={{
+            width: 7,
+            height: 7,
+            borderRadius: '50%',
+            background: statusColor,
+            flexShrink: 0,
+            animation: isActive ? 'dot-pulse 1.5s ease-in-out infinite' : 'none',
+            boxShadow: isActive
+              ? `0 0 6px ${statusColor}, 0 0 12px ${statusColor}66`
+              : isComplete
+              ? `0 0 4px ${statusColor}88`
+              : 'none',
+          }}
+        />
+
+        {/* Title */}
+        <span
+          style={{
+            fontSize: '10px',
+            fontWeight: 700,
+            letterSpacing: '0.14em',
+            color: '#58a6ff',
+            fontFamily: 'JetBrains Mono, monospace',
+          }}
+        >
+          ⚡ DEVOPS ENGINE
+        </span>
+
+        {/* Status label */}
+        <span
+          style={{
+            fontSize: '8px',
+            fontWeight: 700,
+            letterSpacing: '0.12em',
+            color: statusColor,
+            fontFamily: 'JetBrains Mono, monospace',
+            background: isActive ? 'rgba(57, 211, 83, 0.08)' : 'transparent',
+            border: isActive ? '1px solid rgba(57, 211, 83, 0.25)' : '1px solid transparent',
+            padding: '1px 6px',
+            transition: 'all 0.2s',
+          }}
+        >
+          {statusLabel}
+        </span>
+
+        {/* Elapsed time */}
+        {(isActive || isComplete) && (
+          <span
+            style={{
+              fontSize: '9px',
+              fontWeight: 600,
+              color: '#484f58',
+              fontFamily: 'JetBrains Mono, monospace',
+              letterSpacing: '0.06em',
+              marginLeft: 'auto',
+            }}
+          >
+            {formatTime(elapsedSeconds)}
+          </span>
+        )}
+
+        {/* Collapse chevron */}
+        <ChevronRight
+          size={11}
+          style={{
+            color: '#484f58',
+            transform: isCollapsed ? 'rotate(0deg)' : 'rotate(90deg)',
+            transition: 'transform 0.2s',
+            marginLeft: isActive || isComplete ? '4px' : 'auto',
+            flexShrink: 0,
+          }}
+        />
+      </button>
+
+      {/* Terminal body */}
+      <div
+        ref={scrollContainerRef}
+        onScroll={handleScroll}
+        style={{
+          flex: 1,
+          overflowY: 'auto',
+          overflowX: 'hidden',
+          padding: '12px 16px',
+          minHeight: 0,
+          position: 'relative',
+          zIndex: 2,
+          /* Custom scrollbar for the terminal */
+          scrollbarWidth: 'thin',
+          scrollbarColor: '#21262d #0d1117',
+        }}
+      >
+        {/* System start message */}
+        <div
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: '6px',
+            marginBottom: '8px',
+            paddingBottom: '8px',
+            borderBottom: '1px solid #21262d',
+          }}
+        >
+          <Terminal size={10} style={{ color: '#484f58', flexShrink: 0 }} />
+          <span
+            style={{
+              fontSize: '9px',
+              fontWeight: 700,
+              letterSpacing: '0.1em',
+              color: '#484f58',
+              fontFamily: 'JetBrains Mono, monospace',
+            }}
+          >
+            {isActive ? 'STREAMING OUTPUT' : isComplete ? 'BUILD OUTPUT' : 'WAITING'}
+          </span>
+        </div>
+
+        {/* Raw streaming text — updated via direct DOM manipulation */}
+        <pre
+          ref={terminalRef}
+          style={{
+            margin: 0,
+            padding: 0,
+            fontSize: '11px',
+            lineHeight: 1.7,
+            color: '#c9d1d9',
+            fontFamily: 'JetBrains Mono, monospace',
+            whiteSpace: 'pre-wrap',
+            wordBreak: 'break-word',
+            letterSpacing: '0.02em',
+          }}
+        />
+
+        {/* Blinking block cursor while streaming */}
+        {isActive && (
+          <span
+            style={{
+              display: 'inline-block',
+              width: '7px',
+              height: '14px',
+              background: '#39d353',
+              animation: 'cursor-blink 1s step-end infinite',
+              verticalAlign: 'text-bottom',
+              marginLeft: '2px',
+              boxShadow: '0 0 4px rgba(57, 211, 83, 0.4)',
+            }}
+          />
+        )}
+
+        {/* Completion banner */}
+        {isComplete && (
+          <div
+            style={{
+              marginTop: '12px',
+              paddingTop: '10px',
+              borderTop: '1px solid #21262d',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '8px',
+            }}
+          >
+            <CheckCircle size={13} style={{ color: '#39d353', flexShrink: 0 }} />
+            <span
+              style={{
+                fontSize: '10px',
+                fontWeight: 700,
+                letterSpacing: '0.12em',
+                color: '#39d353',
+                fontFamily: 'JetBrains Mono, monospace',
+              }}
+            >
+              ✓ BUILD COMPLETE
+            </span>
+            <span
+              style={{
+                fontSize: '9px',
+                color: '#484f58',
+                fontFamily: 'JetBrains Mono, monospace',
+                marginLeft: 'auto',
+              }}
+            >
+              {formatTime(elapsedSeconds)}
+            </span>
+          </div>
+        )}
+      </div>
+
+      {/* Bottom glow line when active */}
+      {isActive && (
+        <div
+          style={{
+            height: '2px',
+            flexShrink: 0,
+            background: 'linear-gradient(90deg, transparent, #39d353, #58a6ff, #39d353, transparent)',
+            backgroundSize: '200% 100%',
+            animation: 'glow-line 2s linear infinite',
+            opacity: 0.7,
+          }}
+        />
+      )}
+    </div>
+  );
 }
 
 // ─── Shared Utilities ─────────────────────────────────────────────────────────
@@ -1614,6 +2120,7 @@ export function AppBuilderPage() {
 
   return (
     <div className="flex flex-col h-full min-h-0">
+      <AppBuilderStyles />
       <PageHeader
         title="App Builder"
         subtitle={subtitleMap[state.screen]}
