@@ -14,7 +14,9 @@ When the env var is absent or set to ``cli``, the legacy SubagentRunner is used.
 import asyncio
 import logging
 import os
+import signal
 import time
+from collections import deque
 
 from claude_agent_sdk import (
     query,
@@ -53,6 +55,88 @@ _tool_event_logger = logging.getLogger("goliath.tool_events")
 # Module-level token tracker instance, set by main.py at startup.
 # When None, token logging is silently skipped (never blocks agent work).
 _token_tracker = None
+
+
+class _StderrCollector:
+    """Thread-safe collector for subprocess stderr lines.
+
+    The Claude Agent SDK invokes the stderr callback synchronously from its
+    internal reader task.  We buffer the last N lines (default 100) so that
+    on error we can include the real crash output without unbounded memory.
+    """
+
+    __slots__ = ("_lines", "_max_lines")
+
+    def __init__(self, max_lines: int = 100):
+        self._lines: deque[str] = deque(maxlen=max_lines)
+        self._max_lines = max_lines
+
+    def __call__(self, line: str) -> None:
+        """Callback signature expected by ClaudeAgentOptions.stderr."""
+        self._lines.append(line)
+
+    def get_output(self, tail: int = 30) -> str:
+        """Return the last *tail* stderr lines joined as a single string."""
+        lines = list(self._lines)[-tail:]
+        return "\n".join(lines).strip()
+
+    def __bool__(self) -> bool:
+        return len(self._lines) > 0
+
+
+def _diagnose_exit_code(exit_code: int | None, stderr_text: str = "") -> str:
+    """Return a human-readable diagnosis for common fatal exit codes.
+
+    Particularly useful for OOM kills (SIGKILL / exit -9) and SIGTERM (-15)
+    which produce no useful output from the process itself.
+    """
+    if exit_code is None:
+        return ""
+
+    diagnoses = []
+
+    # SIGKILL (-9) — almost always OOM killer on Linux
+    if exit_code == -signal.SIGKILL or exit_code == 137:  # 128+9
+        diagnoses.append(
+            "Process was SIGKILL'd (exit -9/137). This usually means the "
+            "Linux OOM killer terminated it due to memory exhaustion. "
+            "Consider: reducing task complexity, using a lighter model, "
+            "or increasing server RAM."
+        )
+    # SIGTERM (-15) — graceful termination, often from Hetzner NAT timeout
+    elif exit_code == -signal.SIGTERM or exit_code == 143:  # 128+15
+        diagnoses.append(
+            "Process was SIGTERM'd (exit -15/143). Likely a Hetzner NAT "
+            "timeout dropping the TCP connection during extended thinking."
+        )
+    # SIGSEGV (-11) — segfault
+    elif exit_code == -signal.SIGSEGV or exit_code == 139:  # 128+11
+        diagnoses.append(
+            "Process crashed with SIGSEGV (segmentation fault, exit -11/139)."
+        )
+    # SIGABRT (-6)
+    elif exit_code == -signal.SIGABRT or exit_code == 134:  # 128+6
+        diagnoses.append(
+            "Process aborted with SIGABRT (exit -6/134). Possible assertion "
+            "failure or abort() call in the Node.js CLI."
+        )
+
+    # Check stderr for OOM-related patterns regardless of exit code
+    if stderr_text:
+        stderr_lower = stderr_text.lower()
+        oom_patterns = [
+            "out of memory", "oom", "cannot allocate", "allocation failed",
+            "heap out of memory", "javascript heap", "fatal error",
+            "killed", "enomem",
+        ]
+        for pattern in oom_patterns:
+            if pattern in stderr_lower:
+                diagnoses.append(
+                    f"Stderr contains OOM indicator: '{pattern}'"
+                )
+                break
+
+    return " | ".join(diagnoses)
 
 
 def _build_tool_hooks(agent_name: str, on_tool_event=None) -> dict:
@@ -274,11 +358,16 @@ class SubagentRunnerSDK:
         if context:
             full_prompt = f"{context}\n\n---\n\nTASK:\n{task_prompt}"
 
+        # Stderr collector — captures CLI stderr so we can surface real
+        # error messages when the subprocess crashes (OOM, SIGKILL, etc.)
+        stderr_collector = _StderrCollector(max_lines=100)
+
         # Build SDK options ------------------------------------------------
         options = ClaudeAgentOptions(
             system_prompt=agent.system_prompt,
             cwd=str(REPO_ROOT),
             env=self._env,
+            stderr=stderr_collector,  # Capture subprocess stderr
         )
 
         # Model selection: per-agent override > global default
@@ -421,20 +510,30 @@ class SubagentRunnerSDK:
         except asyncio.TimeoutError:
             elapsed = time.monotonic() - start
             timeout_minutes = int(timeout // 60)
+            captured_stderr = stderr_collector.get_output() if stderr_collector else ""
             logger.error(
                 f"Subagent '{agent.name}' SDK timed out after {elapsed:.1f}s "
                 f"(limit={timeout}s / {timeout_minutes}min) — cancelling."
             )
+            if captured_stderr:
+                logger.error(
+                    f"Subagent '{agent.name}' stderr at timeout:\n{captured_stderr[:1000]}"
+                )
+
+            error_msg = (
+                f"Agent '{agent.name}' timed out after {timeout_minutes} minutes. "
+                f"The SDK query was cancelled. This usually means the task was too "
+                f"large or the agent got stuck. Try breaking the request into smaller pieces."
+            )
+            if captured_stderr:
+                error_msg += f" | Stderr: {captured_stderr[:300]}"
+
             return AgentResult(
                 agent_name=agent.name,
                 success=False,
                 output="",
                 duration_seconds=elapsed,
-                error=(
-                    f"Agent '{agent.name}' timed out after {timeout_minutes} minutes. "
-                    f"The SDK query was cancelled. This usually means the task was too "
-                    f"large or the agent got stuck. Try breaking the request into smaller pieces."
-                ),
+                error=error_msg[:1000],
             )
 
         except CLINotFoundError:
@@ -446,31 +545,107 @@ class SubagentRunnerSDK:
                 error="Claude CLI not found in PATH",
             )
 
-        except (CLIConnectionError, CLIJSONDecodeError, ProcessError) as e:
+        except ProcessError as e:
             elapsed = time.monotonic() - start
-            logger.exception(f"Subagent '{agent.name}' SDK transport error")
+            exit_code = getattr(e, "exit_code", None)
+            captured_stderr = stderr_collector.get_output() if stderr_collector else ""
+            diagnosis = _diagnose_exit_code(exit_code, captured_stderr)
+
+            # Build a detailed error message with all available context
+            error_parts = [f"CLI process failed (exit_code={exit_code})"]
+            if diagnosis:
+                error_parts.append(f"Diagnosis: {diagnosis}")
+            if captured_stderr:
+                error_parts.append(f"Stderr: {captured_stderr[:500]}")
+            else:
+                error_parts.append(f"SDK error: {str(e)[:300]}")
+
+            error_msg = " | ".join(error_parts)
+
+            logger.error(
+                f"Subagent '{agent.name}' process error "
+                f"(exit_code={exit_code}, elapsed={elapsed:.1f}s): "
+                f"{error_msg[:500]}"
+            )
+            if captured_stderr:
+                logger.error(
+                    f"Subagent '{agent.name}' stderr output:\n{captured_stderr[:1000]}"
+                )
+
             return AgentResult(
                 agent_name=agent.name,
                 success=False,
                 output="",
                 duration_seconds=elapsed,
-                error=str(e)[:500],
+                error=error_msg[:1000],
+            )
+
+        except (CLIConnectionError, CLIJSONDecodeError) as e:
+            elapsed = time.monotonic() - start
+            captured_stderr = stderr_collector.get_output() if stderr_collector else ""
+            error_msg = str(e)[:500]
+            if captured_stderr:
+                error_msg = f"{error_msg} | Stderr: {captured_stderr[:300]}"
+            logger.error(
+                f"Subagent '{agent.name}' SDK transport error: {error_msg[:500]}"
+            )
+            if captured_stderr:
+                logger.error(
+                    f"Subagent '{agent.name}' stderr output:\n{captured_stderr[:1000]}"
+                )
+            return AgentResult(
+                agent_name=agent.name,
+                success=False,
+                output="",
+                duration_seconds=elapsed,
+                error=error_msg[:1000],
             )
 
         except ClaudeSDKError as e:
             elapsed = time.monotonic() - start
-            logger.exception(f"Subagent '{agent.name}' SDK error")
+            captured_stderr = stderr_collector.get_output() if stderr_collector else ""
+            error_msg = str(e)[:500]
+            if captured_stderr:
+                error_msg = f"{error_msg} | Stderr: {captured_stderr[:300]}"
+            logger.error(
+                f"Subagent '{agent.name}' SDK error: {error_msg[:500]}"
+            )
+            if captured_stderr:
+                logger.error(
+                    f"Subagent '{agent.name}' stderr output:\n{captured_stderr[:1000]}"
+                )
             return AgentResult(
                 agent_name=agent.name,
                 success=False,
                 output="",
                 duration_seconds=elapsed,
-                error=str(e)[:500],
+                error=error_msg[:1000],
             )
 
         except Exception as e:
             elapsed = time.monotonic() - start
             error_str = str(e)[:500]
+            captured_stderr = stderr_collector.get_output() if stderr_collector else ""
+
+            # Try to extract exit code from the generic exception message
+            # (SDK sometimes raises plain Exception with "exit code N")
+            _exit_code = None
+            if "exit code" in error_str:
+                import re
+                _match = re.search(r"exit code[:\s]+(-?\d+)", error_str)
+                if _match:
+                    _exit_code = int(_match.group(1))
+
+            diagnosis = _diagnose_exit_code(_exit_code, captured_stderr)
+
+            # Build enriched error message
+            error_parts = [error_str]
+            if diagnosis:
+                error_parts.append(f"Diagnosis: {diagnosis}")
+            if captured_stderr:
+                error_parts.append(f"Stderr: {captured_stderr[:300]}")
+            enriched_error = " | ".join(error_parts)
+
             # The SDK's query.py raises generic Exception for CLI process
             # failures (e.g. "Command failed with exit code 1").  Log at
             # WARNING instead of EXCEPTION to avoid scary tracebacks for
@@ -478,16 +653,21 @@ class SubagentRunnerSDK:
             if "exit code" in error_str or "Command failed" in error_str:
                 logger.warning(
                     f"Subagent '{agent.name}' CLI process failure "
-                    f"(transient, will retry): {error_str[:200]}"
+                    f"(exit_code={_exit_code}, transient, will retry): "
+                    f"{enriched_error[:300]}"
                 )
             else:
                 logger.exception(f"Subagent '{agent.name}' unexpected error")
+            if captured_stderr:
+                logger.error(
+                    f"Subagent '{agent.name}' stderr output:\n{captured_stderr[:1000]}"
+                )
             return AgentResult(
                 agent_name=agent.name,
                 success=False,
                 output="",
                 duration_seconds=elapsed,
-                error=error_str,
+                error=enriched_error[:1000],
             )
 
     @staticmethod
