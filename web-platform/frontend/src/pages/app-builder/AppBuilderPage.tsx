@@ -1,7 +1,14 @@
-import { useState, useEffect, useRef, useCallback, Component, type ReactNode, type ErrorInfo } from 'react';
+import {
+  useState,
+  useEffect,
+  useRef,
+  useCallback,
+  Component,
+  type ReactNode,
+  type ErrorInfo,
+} from 'react';
 import {
   ArrowLeft,
-  ArrowUp,
   Wrench,
   Rocket,
   ChevronRight,
@@ -9,23 +16,49 @@ import {
   AlertCircle,
   ExternalLink,
   Loader,
-  Square,
   Terminal,
+  Square,
+  Send,
 } from 'lucide-react';
 import { PageHeader } from '@/components/common/PageHeader';
+import { SidebarTrigger } from '@/components/ui/sidebar';
+import { Separator } from '@/components/ui/separator';
 import { renderMarkdown } from '@/utils/markdown';
+import { cn } from '@/lib/utils';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 type Intent = 'goliath-feature' | 'new-app';
 type BackendChoice = 'postgres' | 'convex-cloud' | 'convex-self-hosted';
 
+interface ToolChip {
+  id: string;
+  name: string;
+  inputRaw: string;
+  inputSummary: string;
+  status: 'running' | 'done';
+}
+
+interface MCQOption {
+  label: string;
+  description: string;
+}
+
 interface ChatMessage {
   id: string;
-  role: 'user' | 'assistant' | 'system';
+  role: 'user' | 'assistant';
   content: string;
-  timestamp: string;
-  streaming?: boolean;
+  isStreaming: boolean;
+  toolChips: ToolChip[];
+  thinking: string;
+  thinkingDone: boolean;
+  question?: {
+    question: string;
+    header: string;
+    options: MCQOption[];
+    multiSelect: boolean;
+    answered?: string;
+  };
 }
 
 // ─── CSS Keyframes ───────────────────────────────────────────────────────────
@@ -37,24 +70,90 @@ function AppBuilderStyles() {
         0%, 100% { opacity: 1; }
         50% { opacity: 0; }
       }
-      @keyframes dot-pulse {
-        0%, 100% { opacity: 1; transform: scale(1); }
-        50% { opacity: 0.4; transform: scale(0.75); }
+      @keyframes ab-pulse {
+        0%, 100% { opacity: 1; }
+        50% { opacity: 0.4; }
       }
-      @keyframes terminal-scanline {
-        0% { opacity: 0; }
-        50% { opacity: 0.03; }
-        100% { opacity: 0; }
+      @keyframes ab-dot-bounce {
+        0%, 80%, 100% { opacity: 0.2; }
+        40% { opacity: 1; }
       }
-      @keyframes glow-line {
-        0% { background-position: -200% 0; }
-        100% { background-position: 200% 0; }
+      .ab-scroll::-webkit-scrollbar {
+        width: 6px;
+      }
+      .ab-scroll::-webkit-scrollbar-track {
+        background: transparent;
+      }
+      .ab-scroll::-webkit-scrollbar-thumb {
+        background: #21262d;
+        border-radius: 3px;
+      }
+      .ab-scroll::-webkit-scrollbar-thumb:hover {
+        background: #30363d;
+      }
+      .ab-thinking-dots .ab-dot {
+        animation: ab-dot-bounce 1.4s ease-in-out infinite;
+      }
+      .ab-thinking-dots .ab-dot:nth-child(2) {
+        animation-delay: 0.2s;
+      }
+      .ab-thinking-dots .ab-dot:nth-child(3) {
+        animation-delay: 0.4s;
+      }
+      /* Override msg-markdown colors for dark CLI background */
+      .ab-cli-chat .msg-markdown {
+        color: #c9d1d9;
+      }
+      .ab-cli-chat .msg-markdown code {
+        background: #161b22;
+        border: 1px solid #21262d;
+        color: #e6edf3;
+      }
+      .ab-cli-chat .msg-markdown pre {
+        background: #161b22;
+        border: 1px solid #21262d;
+      }
+      .ab-cli-chat .msg-markdown pre code {
+        border: none;
+        background: transparent;
+      }
+      .ab-cli-chat .msg-markdown a {
+        color: #58a6ff;
+      }
+      .ab-cli-chat .msg-markdown blockquote {
+        border-left-color: #30363d;
+        color: #8b949e;
+      }
+      .ab-cli-chat .msg-markdown h1,
+      .ab-cli-chat .msg-markdown h2,
+      .ab-cli-chat .msg-markdown h3,
+      .ab-cli-chat .msg-markdown h4 {
+        color: #e6edf3;
+        border-bottom-color: #21262d;
+      }
+      .ab-cli-chat .msg-markdown table th {
+        background: #161b22;
+        border-color: #21262d;
+        color: #e6edf3;
+      }
+      .ab-cli-chat .msg-markdown table td {
+        border-color: #21262d;
+        color: #c9d1d9;
+      }
+      .ab-cli-chat .msg-markdown hr {
+        border-color: #21262d;
+      }
+      .ab-cli-chat .msg-markdown strong {
+        color: #e6edf3;
+      }
+      .ab-cli-chat .msg-markdown li::marker {
+        color: #484f58;
       }
     `}</style>
   );
 }
 
-// ─── Error Boundary (prevents streaming crashes from killing the entire app) ─
+// ─── Error Boundary ───────────────────────────────────────────────────────────
 
 interface StreamErrorBoundaryProps {
   children: ReactNode;
@@ -83,54 +182,16 @@ class StreamErrorBoundary extends Component<StreamErrorBoundaryProps, StreamErro
   render() {
     if (this.state.hasError) {
       return (
-        <div
-          style={{
-            padding: '16px 20px',
-            background: 'rgba(239, 68, 68, 0.06)',
-            border: '1px solid rgba(239, 68, 68, 0.3)',
-            borderLeft: '3px solid #ef4444',
-            margin: '8px 0',
-          }}
-        >
-          <span
-            style={{
-              display: 'block',
-              fontSize: '10px',
-              fontWeight: 700,
-              letterSpacing: '0.12em',
-              color: '#ef4444',
-              fontFamily: 'JetBrains Mono, monospace',
-              marginBottom: '4px',
-            }}
-          >
+        <div className="p-4 bg-destructive/10 border border-destructive/30 rounded m-2">
+          <span className="block text-xs font-mono font-bold text-destructive mb-1 tracking-wide">
             RENDER ERROR
           </span>
-          <span
-            style={{
-              fontSize: '11px',
-              color: 'var(--theme-text-muted)',
-              fontFamily: 'JetBrains Mono, monospace',
-              letterSpacing: '0.03em',
-              lineHeight: 1.5,
-            }}
-          >
+          <span className="text-xs font-mono text-muted-foreground">
             {this.props.fallbackMessage || 'Stream display crashed. Content was received — refresh to view.'}
           </span>
           <button
             onClick={() => this.setState({ hasError: false, error: null })}
-            style={{
-              display: 'block',
-              marginTop: '8px',
-              fontSize: '9px',
-              fontWeight: 700,
-              letterSpacing: '0.1em',
-              color: '#ef4444',
-              background: 'transparent',
-              border: '1px solid rgba(239, 68, 68, 0.4)',
-              padding: '4px 10px',
-              cursor: 'pointer',
-              fontFamily: 'JetBrains Mono, monospace',
-            }}
+            className="block mt-2 text-xs font-mono text-destructive border border-destructive/40 px-3 py-1 hover:bg-destructive/10 transition-colors"
           >
             RETRY RENDER
           </button>
@@ -494,7 +555,6 @@ function IntentSelector({ onSelect }: IntentSelectorProps) {
       >
         <IntentCard
           icon={<Wrench size={32} />}
-          emoji=""
           label="Goliath Feature"
           sublabel="PATCH MODE"
           description="Add a page, component, API route, or agent to Goliath itself. DevOps edits the existing codebase and may trigger a restart."
@@ -504,7 +564,6 @@ function IntentSelector({ onSelect }: IntentSelectorProps) {
         />
         <IntentCard
           icon={<Rocket size={32} />}
-          emoji=""
           label="New App"
           sublabel="CONTAINER MODE"
           description="Spin up a standalone application in its own Docker container with its own database, URL, and isolated runtime."
@@ -519,7 +578,6 @@ function IntentSelector({ onSelect }: IntentSelectorProps) {
 
 interface IntentCardProps {
   icon: React.ReactNode;
-  emoji: string;
   label: string;
   sublabel: string;
   description: string;
@@ -648,7 +706,6 @@ interface BackendSelectorProps {
 
 const BACKEND_OPTIONS: {
   id: BackendChoice;
-  emoji: string;
   label: string;
   sublabel: string;
   description: string;
@@ -657,7 +714,6 @@ const BACKEND_OPTIONS: {
 }[] = [
   {
     id: 'postgres',
-    emoji: '',
     label: 'Postgres',
     sublabel: 'SIDECAR CONTAINER',
     description:
@@ -667,7 +723,6 @@ const BACKEND_OPTIONS: {
   },
   {
     id: 'convex-cloud',
-    emoji: '',
     label: 'Convex (Cloud)',
     sublabel: 'CONVEX.DEV',
     description:
@@ -677,7 +732,6 @@ const BACKEND_OPTIONS: {
   },
   {
     id: 'convex-self-hosted',
-    emoji: '',
     label: 'Convex (Self-Hosted)',
     sublabel: 'ON-SERVER',
     description:
@@ -748,7 +802,6 @@ function BackendSelector({ onSelect, onBack }: BackendSelectorProps) {
 }
 
 interface BackendCardProps {
-  emoji: string;
   label: string;
   sublabel: string;
   description: string;
@@ -861,7 +914,41 @@ function BackendCard({ label, sublabel, description, pros, accentColor, onClick 
   );
 }
 
-// ─── Builder Chat Interface ──────────────────────────────────────────────────
+// ─── Tool summarizer ─────────────────────────────────────────────────────────
+
+function summarizeTool(name: string, inputRaw: string): string {
+  try {
+    const input = JSON.parse(inputRaw);
+    if (input.file_path) return input.file_path.split('/').slice(-2).join('/');
+    if (input.command) return String(input.command).slice(0, 50);
+    if (input.pattern) return String(input.pattern).slice(0, 40);
+    if (input.path) return String(input.path).split('/').slice(-2).join('/');
+    if (input.prompt) return String(input.prompt).slice(0, 40) + '...';
+    return name;
+  } catch {
+    return name;
+  }
+}
+
+// ─── MCQ detector ────────────────────────────────────────────────────────────
+
+function detectMultipleChoice(text: string): { question: string; options: string[] } | null {
+  const match = text.match(/([^\n]*(?:\?|:)[^\n]*)\n((?:[ \t]*\d+[.)]\s+[^\n]+\n?){2,})/s);
+  if (!match) return null;
+  const question = match[1].trim();
+  const raw = match[2].match(/\d+[.)]\s+([^\n]+)/g) || [];
+  if (raw.length < 2) return null;
+  return { question, options: raw.map(l => l.replace(/^\d+[.)]\s+/, '').trim()) };
+}
+
+// ─── Message ID generator ────────────────────────────────────────────────────
+
+let _msgCounter = 0;
+function generateMsgId(): string {
+  return `msg-${Date.now()}-${++_msgCounter}`;
+}
+
+// ─── Builder Chat Interface ───────────────────────────────────────────────────
 
 const BACKEND_LABELS: Record<BackendChoice, string> = {
   postgres: 'Postgres',
@@ -890,153 +977,130 @@ function BuilderChat({ intent, backend, onBack }: BuilderChatProps) {
   const [input, setInput] = useState('');
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [isStreaming, setIsStreaming] = useState(false);
-  const messagesEndRef = useRef<HTMLDivElement>(null);
-  const textareaRef = useRef<HTMLTextAreaElement>(null);
-  const streamingTextRef = useRef('');
-  const streamingMsgIdRef = useRef<string | null>(null);
-  const streamingElRef = useRef<HTMLDivElement | null>(null);
-  const abortRef = useRef<(() => void) | null>(null);
-  const renderTimerRef = useRef<number | null>(null);
+  const inputRef = useRef<HTMLTextAreaElement>(null);
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const bottomRef = useRef<HTMLDivElement>(null);
+  const abortRef = useRef<AbortController | null>(null);
   const isMountedRef = useRef(true);
 
-  // ─── DevOps Activity Panel state ───
-  const terminalContentRef = useRef<HTMLPreElement | null>(null);
-  const terminalScrollRef = useRef<HTMLDivElement | null>(null);
-  const activityAutoScrollRef = useRef(true);
-  const buildStartTimeRef = useRef<number | null>(null);
-  const [isBuildComplete, setIsBuildComplete] = useState(false);
-  const [showTerminal, setShowTerminal] = useState(false);
-  const [terminalCollapsed, setTerminalCollapsed] = useState(false);
-  const [elapsedSeconds, setElapsedSeconds] = useState(0);
+  // Track the ID of the current streaming assistant message
+  const streamingMsgIdRef = useRef<string | null>(null);
+
+  // Direct DOM refs for streaming: msgId → contentDiv
+  const streamingDomRefs = useRef<Map<string, HTMLDivElement>>(new Map());
+  // Accumulate text for each streaming message (for final commit to state)
+  const streamingTextBuffers = useRef<Map<string, string>>(new Map());
+
+  // Render timer per message
+  const renderTimers = useRef<Map<string, number>>(new Map());
 
   const accentColor = INTENT_COLORS[intent];
 
-  // Scroll to bottom when messages change
-  useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages]);
-
-  // Focus textarea on mount
-  useEffect(() => {
-    textareaRef.current?.focus();
-  }, []);
-
-  // Cleanup on unmount — prevent state updates after unmount, cancel timers/streams
   useEffect(() => {
     isMountedRef.current = true;
     return () => {
       isMountedRef.current = false;
-      if (renderTimerRef.current) {
-        window.clearTimeout(renderTimerRef.current);
-        renderTimerRef.current = null;
-      }
+      // Cancel any pending render timers
+      renderTimers.current.forEach(t => window.clearTimeout(t));
+      renderTimers.current.clear();
       if (abortRef.current) {
-        abortRef.current();
-        abortRef.current = null;
+        abortRef.current.abort();
       }
     };
   }, []);
 
-  // Elapsed time ticker for DevOps Activity panel
   useEffect(() => {
-    if (!isStreaming) return;
-    buildStartTimeRef.current = Date.now();
-    setElapsedSeconds(0);
-    const interval = setInterval(() => {
-      if (buildStartTimeRef.current && isMountedRef.current) {
-        setElapsedSeconds(Math.floor((Date.now() - buildStartTimeRef.current) / 1000));
-      }
-    }, 1000);
-    return () => clearInterval(interval);
-  }, [isStreaming]);
-
-  // Append text to terminal panel (direct DOM manipulation, no React re-renders)
-  const appendToTerminal = useCallback((text: string) => {
-    const pre = terminalContentRef.current;
-    if (pre) {
-      pre.textContent = (pre.textContent || '') + text;
-    }
-    if (activityAutoScrollRef.current && terminalScrollRef.current) {
-      requestAnimationFrame(() => {
-        if (terminalScrollRef.current) {
-          terminalScrollRef.current.scrollTop = terminalScrollRef.current.scrollHeight;
-        }
-      });
-    }
+    inputRef.current?.focus();
   }, []);
 
-  // Schedule a debounced markdown re-render for the streaming element
-  const scheduleRender = useCallback(() => {
-    if (renderTimerRef.current) return;
-    renderTimerRef.current = window.setTimeout(() => {
-      renderTimerRef.current = null;
-      const el = streamingElRef.current;
-      if (el && streamingTextRef.current) {
-        el.innerHTML = renderMarkdown(streamingTextRef.current);
+  // Auto-scroll to bottom on new messages
+  useEffect(() => {
+    bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, [messages.length]);
+
+  // Debounced DOM update for streaming text
+  const scheduleRender = useCallback((msgId: string) => {
+    if (renderTimers.current.has(msgId)) return;
+    const t = window.setTimeout(() => {
+      renderTimers.current.delete(msgId);
+      const el = streamingDomRefs.current.get(msgId);
+      const text = streamingTextBuffers.current.get(msgId) || '';
+      if (el) {
+        el.innerHTML = renderMarkdown(text);
       }
     }, 80);
+    renderTimers.current.set(msgId, t);
+  }, []);
+
+  // Update a streaming message's state fields (non-content fields)
+  const updateMessage = useCallback((msgId: string, updater: (m: ChatMessage) => ChatMessage) => {
+    if (!isMountedRef.current) return;
+    setMessages(prev => prev.map(m => m.id === msgId ? updater(m) : m));
   }, []);
 
   const handleStop = useCallback(() => {
     if (abortRef.current) {
-      abortRef.current();
+      abortRef.current.abort();
       abortRef.current = null;
     }
-    setIsStreaming(false);
-    // Finalize the streaming message
-    if (streamingMsgIdRef.current) {
-      const finalText = streamingTextRef.current;
-      const finalId = streamingMsgIdRef.current;
+    const msgId = streamingMsgIdRef.current;
+    if (msgId) {
+      const finalText = streamingTextBuffers.current.get(msgId) || '';
       setMessages(prev =>
         prev.map(m =>
-          m.id === finalId ? { ...m, content: finalText, streaming: false } : m
+          m.id === msgId ? { ...m, content: finalText, isStreaming: false, thinkingDone: true } : m
         )
       );
       streamingMsgIdRef.current = null;
-      streamingTextRef.current = '';
-      streamingElRef.current = null;
     }
+    setIsStreaming(false);
   }, []);
 
-  const handleSend = useCallback(async () => {
-    const trimmed = input.trim();
+  const handleSend = useCallback(async (overrideText?: string) => {
+    const trimmed = (overrideText ?? input).trim();
     if (!trimmed || isStreaming) return;
 
-    setInput('');
-    if (textareaRef.current) {
-      textareaRef.current.style.height = 'auto';
+    if (!overrideText) {
+      setInput('');
+      if (inputRef.current) {
+        inputRef.current.style.height = 'auto';
+      }
     }
 
     // Add user message
-    const userMsgId = `user-${Date.now()}`;
     const userMsg: ChatMessage = {
-      id: userMsgId,
+      id: generateMsgId(),
       role: 'user',
       content: trimmed,
-      timestamp: new Date().toISOString(),
+      isStreaming: false,
+      toolChips: [],
+      thinking: '',
+      thinkingDone: true,
     };
 
     // Add assistant placeholder
-    const assistantMsgId = `assistant-${Date.now()}`;
+    const assistantMsgId = generateMsgId();
     const assistantMsg: ChatMessage = {
       id: assistantMsgId,
       role: 'assistant',
       content: '',
-      timestamp: new Date().toISOString(),
-      streaming: true,
+      isStreaming: true,
+      toolChips: [],
+      thinking: '',
+      thinkingDone: false,
     };
 
     setMessages(prev => [...prev, userMsg, assistantMsg]);
     setIsStreaming(true);
-    streamingTextRef.current = '';
     streamingMsgIdRef.current = assistantMsgId;
+    streamingTextBuffers.current.set(assistantMsgId, '');
 
-    const abortController = new AbortController();
-    abortRef.current = () => abortController.abort();
+    const controller = new AbortController();
+    abortRef.current = controller;
 
     try {
-      // POST to app-builder chat
-      const postResponse = await fetch('/api/app-builder/chat', {
+      // POST to create the stream
+      const postRes = await fetch('/api/app-builder/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -1045,986 +1109,812 @@ function BuilderChat({ intent, backend, onBack }: BuilderChatProps) {
           intent,
           message: trimmed,
         }),
-        signal: abortController.signal,
+        signal: controller.signal,
       });
 
-      if (!postResponse.ok) {
-        const errText = await postResponse.text().catch(() => 'Unknown error');
-        throw new Error(`Failed to send message: ${errText}`);
+      if (!postRes.ok) {
+        throw new Error(`Failed to send message: ${postRes.status}`);
       }
 
-      const postData = await postResponse.json();
-      const newSessionId = postData.sessionId;
-      const streamUrl = postData.streamUrl;
-
-      if (!sessionId && newSessionId) {
-        setSessionId(newSessionId);
+      const postData = await postRes.json();
+      if (!sessionId && postData.sessionId) {
+        setSessionId(postData.sessionId);
       }
 
-      // Initialize DevOps Activity Panel
-      setShowTerminal(true);
-      setIsBuildComplete(false);
-      setTerminalCollapsed(false);
-      if (terminalContentRef.current) {
-        terminalContentRef.current.textContent = '';
-      }
+      const streamUrl: string = postData.streamUrl;
 
       // Connect to SSE stream
-      const sseResponse = await fetch(streamUrl, {
-        signal: abortController.signal,
+      const sseRes = await fetch(streamUrl, {
+        signal: controller.signal,
         headers: {
           'Accept': 'text/event-stream',
           'Cache-Control': 'no-cache',
         },
       });
 
-      if (!sseResponse.ok || !sseResponse.body) {
-        throw new Error(`SSE connection failed: ${sseResponse.status}`);
+      if (!sseRes.ok || !sseRes.body) {
+        throw new Error(`SSE connection failed: ${sseRes.status}`);
       }
 
-      const reader = sseResponse.body.getReader();
+      const reader = sseRes.body.getReader();
       const decoder = new TextDecoder();
-      let buffer = '';
+      let sseBuffer = '';
 
+      // SSE line parser state
+      let currentEventName = 'message';
+      let currentData = '';
+
+      const dispatchSseEvent = (eventName: string, dataStr: string) => {
+        if (!isMountedRef.current) return;
+
+        let data: any = {};
+        try { data = JSON.parse(dataStr); } catch {}
+
+        const msgId = streamingMsgIdRef.current;
+        if (!msgId) return;
+
+        switch (eventName) {
+          case 'text_start':
+            // new text block started — nothing to do
+            break;
+
+          case 'delta': {
+            const text: string = data.text || '';
+            const prev = streamingTextBuffers.current.get(msgId) || '';
+            streamingTextBuffers.current.set(msgId, prev + text);
+            scheduleRender(msgId);
+            // Auto-scroll
+            requestAnimationFrame(() => {
+              bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
+            });
+            break;
+          }
+
+          case 'text_stop':
+            updateMessage(msgId, m => ({ ...m, thinkingDone: true }));
+            break;
+
+          case 'tool_use': {
+            const chip: ToolChip = {
+              id: data.id || '',
+              name: data.name || '',
+              inputRaw: '',
+              inputSummary: '',
+              status: 'running',
+            };
+            updateMessage(msgId, m => ({ ...m, toolChips: [...m.toolChips, chip] }));
+            break;
+          }
+
+          case 'tool_delta': {
+            const chipId: string = data.id || '';
+            const partial: string = data.partial_json || '';
+            updateMessage(msgId, m => ({
+              ...m,
+              toolChips: m.toolChips.map(c =>
+                c.id === chipId ? { ...c, inputRaw: c.inputRaw + partial } : c
+              ),
+            }));
+            break;
+          }
+
+          case 'tool_done': {
+            const chipId: string = data.id || '';
+            updateMessage(msgId, m => ({
+              ...m,
+              toolChips: m.toolChips.map(c => {
+                if (c.id !== chipId) return c;
+                return {
+                  ...c,
+                  status: 'done' as const,
+                  inputSummary: summarizeTool(c.name, c.inputRaw),
+                };
+              }),
+            }));
+            break;
+          }
+
+          case 'thinking_start':
+            // nothing
+            break;
+
+          case 'thinking': {
+            const text: string = data.text || '';
+            updateMessage(msgId, m => ({ ...m, thinking: m.thinking + text }));
+            break;
+          }
+
+          case 'thinking_stop':
+            updateMessage(msgId, m => ({ ...m, thinkingDone: true }));
+            break;
+
+          case 'question': {
+            // Finalize content
+            const finalText = streamingTextBuffers.current.get(msgId) || '';
+            setMessages(prev =>
+              prev.map(m =>
+                m.id === msgId
+                  ? {
+                      ...m,
+                      content: finalText,
+                      isStreaming: false,
+                      thinkingDone: true,
+                      question: {
+                        question: data.question || '',
+                        header: data.header || '',
+                        options: data.options || [],
+                        multiSelect: data.multiSelect || false,
+                        answered: undefined,
+                      },
+                    }
+                  : m
+              )
+            );
+            setIsStreaming(false);
+            streamingMsgIdRef.current = null;
+            break;
+          }
+
+          case 'done': {
+            // Finalize content
+            const finalText = streamingTextBuffers.current.get(msgId) || '';
+            // Flush any pending render
+            const t = renderTimers.current.get(msgId);
+            if (t) {
+              window.clearTimeout(t);
+              renderTimers.current.delete(msgId);
+            }
+            setMessages(prev =>
+              prev.map(m =>
+                m.id === msgId
+                  ? { ...m, content: finalText, isStreaming: false, thinkingDone: true }
+                  : m
+              )
+            );
+            setIsStreaming(false);
+            streamingMsgIdRef.current = null;
+            abortRef.current = null;
+            break;
+          }
+
+          case 'error': {
+            const errMsg = data.message || 'Unknown error';
+            setMessages(prev =>
+              prev.map(m =>
+                m.id === msgId
+                  ? { ...m, content: `**Error:** ${errMsg}`, isStreaming: false, thinkingDone: true }
+                  : m
+              )
+            );
+            setIsStreaming(false);
+            streamingMsgIdRef.current = null;
+            break;
+          }
+
+          default:
+            break;
+        }
+      };
+
+      // SSE read loop
       while (true) {
         const { done, value } = await reader.read();
         if (done) break;
 
-        buffer += decoder.decode(value, { stream: true });
-        const parts = buffer.split('\n');
-        buffer = parts.pop() || '';
+        sseBuffer += decoder.decode(value, { stream: true });
+        const lines = sseBuffer.split('\n');
+        sseBuffer = lines.pop() || '';
 
-        for (const line of parts) {
-          if (line.startsWith(':') || !line.trim()) continue;
-          if (!line.startsWith('data: ')) continue;
-          const data = line.slice(6).trim();
+        for (const line of lines) {
+          if (line.startsWith(':')) continue; // comment/heartbeat
 
-          if (data === '[DONE]') {
-            // Stream complete
-            if (!isMountedRef.current) return;
-            const finalText = streamingTextRef.current;
-            setMessages(prev =>
-              prev.map(m =>
-                m.id === assistantMsgId ? { ...m, content: finalText, streaming: false } : m
-              )
-            );
-            setIsStreaming(false);
-            setIsBuildComplete(true);
-            streamingMsgIdRef.current = null;
-            streamingTextRef.current = '';
-            streamingElRef.current = null;
-            abortRef.current = null;
-            return;
+          if (line === '') {
+            // Dispatch accumulated event
+            if (currentData) {
+              dispatchSseEvent(currentEventName, currentData.trim());
+            }
+            currentEventName = 'message';
+            currentData = '';
+            continue;
           }
 
-          try {
-            const event = JSON.parse(data);
-
-            if (event.type === 'delta') {
-              streamingTextRef.current += event.text;
-              // Direct DOM update for performance
-              scheduleRender();
-              // Feed to terminal panel
-              appendToTerminal(event.text);
-            } else if (event.type === 'snapshot') {
-              streamingTextRef.current = event.text;
-              scheduleRender();
-              // Reset terminal to snapshot
-              if (terminalContentRef.current) {
-                terminalContentRef.current.textContent = event.text;
-              }
-            } else if (event.type === 'error') {
-              throw new Error(event.text || 'Build agent error');
-            }
-          } catch (e) {
-            if ((e as Error).message?.includes('Build agent error') || (e as Error).message?.includes('Failed')) {
-              throw e;
-            }
-            // Skip non-JSON SSE data
+          if (line.startsWith('event:')) {
+            currentEventName = line.slice(6).trim();
+          } else if (line.startsWith('data:')) {
+            currentData += line.slice(5).trim();
           }
         }
       }
 
-      // Stream ended without [DONE]
-      if (!isMountedRef.current) return;
-      const finalText = streamingTextRef.current;
-      setMessages(prev =>
-        prev.map(m =>
-          m.id === assistantMsgId ? { ...m, content: finalText, streaming: false } : m
-        )
-      );
-      setIsStreaming(false);
-      setIsBuildComplete(true);
-      streamingMsgIdRef.current = null;
-      streamingTextRef.current = '';
-      streamingElRef.current = null;
-      abortRef.current = null;
-    } catch (err) {
-      if ((err as Error).name === 'AbortError') {
-        // User cancelled
-        setIsBuildComplete(true);
-        return;
+      // EOF — finalize if still streaming
+      if (isMountedRef.current) {
+        const msgId = streamingMsgIdRef.current;
+        if (msgId) {
+          const finalText = streamingTextBuffers.current.get(msgId) || '';
+          setMessages(prev =>
+            prev.map(m =>
+              m.id === msgId
+                ? { ...m, content: finalText, isStreaming: false, thinkingDone: true }
+                : m
+            )
+          );
+          streamingMsgIdRef.current = null;
+        }
+        setIsStreaming(false);
+        abortRef.current = null;
       }
+    } catch (err) {
+      if ((err as Error).name === 'AbortError') return;
       if (!isMountedRef.current) return;
+
+      const msgId = streamingMsgIdRef.current;
       const errorText = err instanceof Error ? err.message : String(err);
-      setMessages(prev =>
-        prev.map(m =>
-          m.id === assistantMsgId
-            ? { ...m, content: `**Error:** ${errorText}`, streaming: false }
-            : m
-        )
-      );
+      if (msgId) {
+        setMessages(prev =>
+          prev.map(m =>
+            m.id === msgId
+              ? { ...m, content: `**Error:** ${errorText}`, isStreaming: false, thinkingDone: true }
+              : m
+          )
+        );
+        streamingMsgIdRef.current = null;
+      }
       setIsStreaming(false);
-      setIsBuildComplete(true);
-      streamingMsgIdRef.current = null;
-      streamingTextRef.current = '';
-      streamingElRef.current = null;
       abortRef.current = null;
     }
-  }, [input, isStreaming, sessionId, backend, intent, scheduleRender, appendToTerminal]);
+  }, [input, isStreaming, sessionId, backend, intent, scheduleRender, updateMessage]);
 
-  const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
-    if (e.key === 'Enter' && !e.shiftKey) {
-      e.preventDefault();
-      handleSend();
+  // When a MessageBlock mounts with isStreaming=true, register its DOM ref
+  const registerStreamingRef = useCallback((msgId: string, el: HTMLDivElement | null) => {
+    if (el) {
+      streamingDomRefs.current.set(msgId, el);
+      // Render any already-accumulated text
+      const text = streamingTextBuffers.current.get(msgId) || '';
+      if (text) el.innerHTML = renderMarkdown(text);
+    } else {
+      streamingDomRefs.current.delete(msgId);
     }
-  };
+  }, []);
 
-  const handleInputChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
-    setInput(e.target.value);
-    const target = e.target;
-    target.style.height = 'auto';
-    target.style.height = Math.min(Math.max(target.scrollHeight, 44), 160) + 'px';
-  };
+  const handleOptionClick = useCallback(async (msgId: string, index: number, opt: string) => {
+    setMessages(prev =>
+      prev.map(m =>
+        m.id === msgId && m.question
+          ? { ...m, question: { ...m.question, answered: opt } }
+          : m
+      )
+    );
+    const answerText = `${index + 1}. ${opt}`;
+    await handleSend(answerText);
+  }, [handleSend]);
+
+  const handleEndSession = useCallback(async () => {
+    if (sessionId) {
+      try {
+        await fetch(`/api/app-builder/sessions/${sessionId}`, { method: 'DELETE' });
+      } catch {}
+    }
+    onBack();
+  }, [sessionId, onBack]);
 
   const canSend = input.trim().length > 0 && !isStreaming;
 
   return (
-    <div className="flex flex-col flex-1 min-h-0">
-      {/* Chat header bar */}
+    <div className="flex flex-col h-full min-h-0" style={{ background: '#0d1117' }}>
+      {/* Minimal CLI header */}
       <div
-        style={{
-          display: 'flex',
-          alignItems: 'center',
-          gap: '10px',
-          padding: '10px 20px',
-          borderBottom: '2px solid var(--theme-border)',
-          background: 'var(--theme-bg-secondary)',
-          flexShrink: 0,
-        }}
+        className="shrink-0 flex items-center gap-2 px-4 py-2"
+        style={{ background: '#161b22', borderBottom: '1px solid #21262d' }}
       >
+        <SidebarTrigger className="-ml-1" style={{ color: '#8b949e' }} />
+        <Separator orientation="vertical" className="h-3.5" style={{ background: '#21262d' }} />
+
         <button
           onClick={onBack}
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: '4px',
-            background: 'transparent',
-            border: 'none',
-            cursor: 'pointer',
-            padding: '4px',
-            color: 'var(--theme-text-dim)',
-          }}
-          title="Back to selection"
+          className="p-1 rounded transition-colors"
+          title="Back"
+          style={{ color: '#8b949e' }}
+          onMouseEnter={e => { e.currentTarget.style.background = '#21262d'; }}
+          onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; }}
         >
-          <ArrowLeft size={14} />
+          <ArrowLeft size={13} />
         </button>
 
-        <Terminal size={14} style={{ color: accentColor, flexShrink: 0 }} />
+        <Terminal size={13} style={{ color: accentColor, flexShrink: 0 }} />
+
         <span
-          style={{
-            fontSize: '11px',
-            fontWeight: 700,
-            letterSpacing: '0.1em',
-            color: 'var(--theme-text-primary)',
-            fontFamily: 'JetBrains Mono, monospace',
-          }}
+          className="font-mono font-bold"
+          style={{ fontSize: '10px', letterSpacing: '0.15em', color: '#8b949e' }}
         >
-          DEVOPS BUILD SESSION
+          CLAUDE CODE
         </span>
 
         {/* Intent chip */}
         <span
+          className="font-mono font-bold"
           style={{
-            fontSize: '8px',
-            fontWeight: 700,
+            fontSize: '9px',
             letterSpacing: '0.12em',
-            color: accentColor,
-            fontFamily: 'JetBrains Mono, monospace',
-            background: `color-mix(in srgb, ${accentColor} 15%, transparent)`,
-            border: `1px solid color-mix(in srgb, ${accentColor} 40%, transparent)`,
             padding: '2px 8px',
+            color: accentColor,
+            background: `color-mix(in srgb, ${accentColor} 12%, transparent)`,
+            border: `1px solid color-mix(in srgb, ${accentColor} 30%, transparent)`,
           }}
         >
           {INTENT_LABELS[intent].toUpperCase()}
         </span>
 
-        {/* Backend chip (only for new-app) */}
         {backend && (
           <span
+            className="font-mono font-bold"
             style={{
-              fontSize: '8px',
-              fontWeight: 700,
+              fontSize: '9px',
               letterSpacing: '0.12em',
-              color: 'var(--chart-2)',
-              fontFamily: 'JetBrains Mono, monospace',
-              background: 'color-mix(in srgb, var(--chart-2) 15%, transparent)',
-              border: '1px solid color-mix(in srgb, var(--chart-2) 40%, transparent)',
               padding: '2px 8px',
+              color: 'var(--chart-2)',
+              background: 'rgba(34,211,238,0.08)',
+              border: '1px solid rgba(34,211,238,0.25)',
             }}
           >
             {BACKEND_LABELS[backend].toUpperCase()}
           </span>
         )}
 
-        {/* Streaming indicator */}
-        {isStreaming && (
-          <span
-            style={{
-              marginLeft: 'auto',
-              display: 'flex',
-              alignItems: 'center',
-              gap: '6px',
-            }}
-          >
-            <span
-              style={{
-                width: 6,
-                height: 6,
-                borderRadius: '50%',
-                background: '#22c55e',
-                animation: 'pulse 1.5s ease-in-out infinite',
-              }}
-            />
-            <span
-              style={{
-                fontSize: '9px',
-                fontWeight: 700,
-                letterSpacing: '0.1em',
-                color: '#22c55e',
-                fontFamily: 'JetBrains Mono, monospace',
-              }}
-            >
-              BUILDING
-            </span>
-          </span>
-        )}
-      </div>
-
-      {/* Messages area */}
-      <StreamErrorBoundary fallbackMessage="The streaming display encountered an error. Your build content was received — refresh to view it.">
-      <div
-        className="flex-1 overflow-y-auto min-h-0"
-        style={{
-          padding: '20px',
-          display: 'flex',
-          flexDirection: 'column',
-          gap: '16px',
-        }}
-        data-scroll-container
-      >
-        {/* Empty state */}
-        {messages.length === 0 && (
-          <div
-            style={{
-              flex: 1,
-              display: 'flex',
-              flexDirection: 'column',
-              alignItems: 'center',
-              justifyContent: 'center',
-              gap: '16px',
-              padding: '40px 20px',
-            }}
-          >
-            <Terminal size={40} style={{ color: 'var(--theme-border)' }} />
-            <div style={{ textAlign: 'center', maxWidth: '440px' }}>
-              <h3
-                style={{
-                  fontSize: '14px',
-                  fontWeight: 700,
-                  color: 'var(--theme-text-primary)',
-                  fontFamily: 'JetBrains Mono, monospace',
-                  letterSpacing: '0.06em',
-                  marginBottom: '8px',
-                }}
-              >
-                {intent === 'new-app' ? 'Describe your app' : 'Describe the feature'}
-              </h3>
-              <p
-                style={{
-                  fontSize: '11px',
-                  color: 'var(--theme-text-muted)',
-                  fontFamily: 'JetBrains Mono, monospace',
-                  letterSpacing: '0.04em',
-                  lineHeight: 1.6,
-                  marginBottom: '20px',
-                }}
-              >
-                {intent === 'new-app'
-                  ? 'Tell DevOps what you want to build. Be as detailed or as brief as you like — you can refine as you go.'
-                  : 'Tell DevOps what feature to add to Goliath. Describe the change and DevOps will implement it.'}
-              </p>
+        <div className="flex items-center gap-2 ml-auto">
+          {isStreaming && (
+            <>
               <div
-                style={{
-                  display: 'flex',
-                  flexDirection: 'column',
-                  gap: '6px',
-                  textAlign: 'left',
-                }}
+                className="w-1.5 h-1.5 rounded-full"
+                style={{ background: '#3fb950', animation: 'ab-pulse 1.5s ease-in-out infinite' }}
+              />
+              <span
+                className="font-mono font-bold"
+                style={{ fontSize: '10px', letterSpacing: '0.1em', color: '#3fb950' }}
               >
-                {(intent === 'new-app'
-                  ? [
-                      'Build me a note-taking app with markdown support and dark mode',
-                      'Create a dashboard for tracking solar panel installations',
-                      'Spin up a simple API with user auth and a React frontend',
-                    ]
-                  : [
-                      'Add a weather widget to the production dashboard',
-                      'Create a new API endpoint for schedule data',
-                      'Add a dark/light mode toggle to the sidebar',
-                    ]
-                ).map((hint, i) => (
-                  <button
-                    key={i}
-                    onClick={() => {
-                      setInput(hint);
-                      textareaRef.current?.focus();
-                    }}
-                    style={{
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: '8px',
-                      padding: '8px 12px',
-                      background: 'var(--theme-bg-secondary)',
-                      border: '1px solid var(--theme-border)',
-                      cursor: 'pointer',
-                      textAlign: 'left',
-                      transition: 'border-color 0.12s',
-                      fontFamily: 'JetBrains Mono, monospace',
-                    }}
-                    onMouseEnter={(e) => {
-                      (e.currentTarget.style.borderColor as string) = accentColor;
-                    }}
-                    onMouseLeave={(e) => {
-                      e.currentTarget.style.borderColor = 'var(--theme-border)';
-                    }}
-                  >
-                    <ChevronRight size={10} style={{ color: accentColor, flexShrink: 0 }} />
-                    <span
-                      style={{
-                        fontSize: '10px',
-                        color: 'var(--theme-text-muted)',
-                        letterSpacing: '0.03em',
-                      }}
-                    >
-                      {hint}
-                    </span>
-                  </button>
-                ))}
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* Chat messages */}
-        {messages.map((msg) => (
-          <MessageBubble
-            key={msg.id}
-            message={msg}
-            accentColor={accentColor}
-            onStreamingRef={
-              msg.streaming
-                ? (el) => {
-                    streamingElRef.current = el;
-                    // Initial render if we already have text
-                    if (el && streamingTextRef.current) {
-                      el.innerHTML = renderMarkdown(streamingTextRef.current);
-                    }
-                  }
-                : undefined
-            }
-          />
-        ))}
-        <div ref={messagesEndRef} />
+                STREAMING
+              </span>
+            </>
+          )}
+          <button
+            onClick={handleEndSession}
+            className="font-mono font-bold transition-colors"
+            style={{
+              fontSize: '10px',
+              letterSpacing: '0.08em',
+              padding: '4px 10px',
+              color: '#8b949e',
+              border: '1px solid #21262d',
+              background: 'transparent',
+            }}
+            onMouseEnter={e => { e.currentTarget.style.background = '#21262d'; e.currentTarget.style.color = '#c9d1d9'; }}
+            onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = '#8b949e'; }}
+          >
+            END SESSION
+          </button>
+        </div>
       </div>
+
+      {/* Messages — full-height dark CLI pane */}
+      <StreamErrorBoundary fallbackMessage="Stream display crashed. Content was received — refresh to view.">
+        <div
+          ref={scrollRef}
+          className="flex-1 overflow-y-auto min-h-0 ab-scroll ab-cli-chat"
+          style={{ background: '#0d1117' }}
+        >
+          <div className="max-w-3xl mx-auto px-6 py-8">
+            {/* Empty state */}
+            {messages.length === 0 && (
+              <div className="flex flex-col items-center justify-center gap-6 py-20">
+                <div
+                  className="flex items-center justify-center w-16 h-16"
+                  style={{ border: '2px solid #21262d' }}
+                >
+                  <Terminal size={28} style={{ color: '#30363d' }} />
+                </div>
+                <div className="text-center max-w-md">
+                  <h3
+                    className="font-mono font-bold text-sm mb-2"
+                    style={{ color: '#c9d1d9', letterSpacing: '0.06em' }}
+                  >
+                    {intent === 'new-app' ? 'Describe your app' : 'Describe the feature'}
+                  </h3>
+                  <p
+                    className="font-mono text-xs leading-relaxed mb-8"
+                    style={{ color: '#484f58', letterSpacing: '0.04em' }}
+                  >
+                    {intent === 'new-app'
+                      ? 'Tell Claude Code what to build. Be as detailed or brief as you like.'
+                      : 'Tell Claude Code what feature to add. Describe the change and it will implement it.'}
+                  </p>
+                  <div className="flex flex-col gap-2 text-left">
+                    {(intent === 'new-app'
+                      ? [
+                          'Build me a note-taking app with markdown support and dark mode',
+                          'Create a dashboard for tracking solar panel installations',
+                          'Spin up a simple API with user auth and a React frontend',
+                        ]
+                      : [
+                          'Add a weather widget to the production dashboard',
+                          'Create a new API endpoint for schedule data',
+                          'Add a dark/light mode toggle to the sidebar',
+                        ]
+                    ).map((hint, i) => (
+                      <button
+                        key={i}
+                        onClick={() => {
+                          setInput(hint);
+                          inputRef.current?.focus();
+                        }}
+                        className="flex items-center gap-3 px-4 py-2.5 font-mono text-xs transition-all text-left"
+                        style={{ color: '#8b949e', border: '1px solid #21262d', background: 'transparent' }}
+                        onMouseEnter={e => {
+                          e.currentTarget.style.borderColor = `color-mix(in srgb, ${accentColor} 40%, transparent)`;
+                          e.currentTarget.style.background = 'rgba(255,255,255,0.02)';
+                        }}
+                        onMouseLeave={e => {
+                          e.currentTarget.style.borderColor = '#21262d';
+                          e.currentTarget.style.background = 'transparent';
+                        }}
+                      >
+                        <span style={{ color: accentColor, flexShrink: 0, opacity: 0.6 }}>❯</span>
+                        {hint}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Chat messages */}
+            <div className="space-y-0">
+              {messages.map(msg => (
+                <StreamingMessageBlock
+                  key={msg.id}
+                  msg={msg}
+                  accentColor={accentColor}
+                  onOptionClick={handleOptionClick}
+                  onRegisterRef={registerStreamingRef}
+                />
+              ))}
+            </div>
+            <div ref={bottomRef} />
+          </div>
+        </div>
       </StreamErrorBoundary>
 
-      {/* DevOps Activity Panel — terminal-style live feed */}
-      {showTerminal && (
-        <DevOpsActivityPanel
-          isActive={isStreaming}
-          isComplete={isBuildComplete}
-          terminalRef={terminalContentRef}
-          scrollContainerRef={terminalScrollRef}
-          autoScrollRef={activityAutoScrollRef}
-          onToggleCollapse={() => setTerminalCollapsed(c => !c)}
-          isCollapsed={terminalCollapsed}
-          elapsedSeconds={elapsedSeconds}
-        />
-      )}
-
-      {/* Input area */}
+      {/* Input bar — dark, CLI-style */}
       <div
-        style={{
-          padding: '12px 20px 20px',
-          borderTop: '2px solid var(--theme-border)',
-          background: 'var(--theme-bg-primary)',
-          flexShrink: 0,
-        }}
+        className="shrink-0 px-4 py-3"
+        style={{ background: '#161b22', borderTop: '1px solid #21262d' }}
       >
-        <div style={{ maxWidth: '720px', margin: '0 auto' }}>
-          <div style={{ display: 'flex', alignItems: 'end', gap: '10px' }}>
-            <textarea
-              ref={textareaRef}
-              value={input}
-              onChange={handleInputChange}
-              onKeyDown={handleKeyDown}
-              placeholder={
-                intent === 'new-app'
-                  ? 'Describe what to build...'
-                  : 'Describe the Goliath feature...'
+        <div className="flex items-end gap-3 max-w-3xl mx-auto">
+          <span
+            className="font-mono text-sm font-bold pb-1.5 select-none"
+            style={{ color: accentColor, opacity: 0.7 }}
+          >
+            ❯
+          </span>
+          <textarea
+            ref={inputRef}
+            value={input}
+            onChange={e => {
+              setInput(e.target.value);
+              e.target.style.height = 'auto';
+              e.target.style.height = Math.min(e.target.scrollHeight, 128) + 'px';
+            }}
+            onKeyDown={e => {
+              if (e.key === 'Enter' && !e.shiftKey && !isStreaming) {
+                e.preventDefault();
+                handleSend();
               }
-              disabled={isStreaming}
-              rows={1}
-              style={{
-                flex: 1,
-                minHeight: '44px',
-                maxHeight: '160px',
-                resize: 'none',
-                background: 'var(--card)',
-                border: '2px solid var(--theme-border)',
-                borderRadius: '3px',
-                color: 'var(--foreground)',
-                fontSize: '13px',
-                fontFamily: 'JetBrains Mono, monospace',
-                letterSpacing: '0.03em',
-                padding: '10px 14px',
-                outline: 'none',
-                transition: 'border-color 0.12s',
-                opacity: isStreaming ? 0.5 : 1,
-              }}
-              onFocus={(e) => {
-                e.currentTarget.style.borderColor = accentColor;
-              }}
-              onBlur={(e) => {
-                e.currentTarget.style.borderColor = 'var(--theme-border)';
-              }}
-            />
-
+            }}
+            disabled={isStreaming}
+            placeholder={isStreaming ? 'Claude is working...' : 'Ask Claude Code anything...'}
+            rows={1}
+            className="flex-1 bg-transparent resize-none outline-none text-sm font-mono overflow-hidden"
+            style={{
+              color: '#c9d1d9',
+              maxHeight: '128px',
+              caretColor: accentColor,
+            }}
+          />
+          <div className="flex gap-2 pb-0.5">
             {isStreaming ? (
               <button
                 onClick={handleStop}
+                className="flex items-center gap-1.5 font-mono font-bold transition-colors"
                 style={{
-                  width: '44px',
-                  height: '44px',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  background: 'var(--destructive)',
-                  border: '2px solid var(--destructive)',
-                  borderRadius: '3px',
-                  color: 'white',
-                  cursor: 'pointer',
-                  flexShrink: 0,
+                  fontSize: '10px',
+                  letterSpacing: '0.08em',
+                  padding: '5px 12px',
+                  color: '#f85149',
+                  border: '1px solid rgba(248,81,73,0.3)',
+                  background: 'rgba(248,81,73,0.08)',
                 }}
-                title="Stop generation"
               >
-                <Square size={16} fill="white" />
+                <Square size={9} fill="currentColor" />
+                STOP
               </button>
             ) : (
               <button
-                onClick={handleSend}
+                onClick={() => handleSend()}
                 disabled={!canSend}
+                className="flex items-center gap-1.5 font-mono font-bold transition-colors"
                 style={{
-                  width: '44px',
-                  height: '44px',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  background: canSend ? accentColor : 'var(--theme-bg-tertiary)',
-                  border: canSend ? `2px solid ${accentColor}` : '2px solid var(--theme-border)',
-                  borderRadius: '3px',
-                  color: canSend ? 'var(--primary-foreground)' : 'var(--theme-border)',
-                  cursor: canSend ? 'pointer' : 'not-allowed',
-                  flexShrink: 0,
-                  transition: 'background 0.12s, border-color 0.12s',
+                  fontSize: '10px',
+                  letterSpacing: '0.08em',
+                  padding: '5px 12px',
+                  color: canSend ? '#0d1117' : '#484f58',
+                  background: canSend ? accentColor : 'transparent',
+                  border: canSend ? 'none' : '1px solid #21262d',
+                  opacity: canSend ? 1 : 0.4,
                 }}
-                title="Send message"
               >
-                <ArrowUp size={18} strokeWidth={3} />
+                <Send size={10} />
+                SEND
               </button>
             )}
           </div>
-          <p
-            style={{
-              textAlign: 'center',
-              marginTop: '8px',
-              fontSize: '10px',
-              fontWeight: 700,
-              letterSpacing: '0.12em',
-              color: 'var(--theme-border)',
-              fontFamily: 'JetBrains Mono, monospace',
-            }}
-          >
-            ENTER TO SEND &middot; SHIFT+ENTER FOR NEW LINE
-          </p>
         </div>
+        <p
+          className="text-center mt-2 font-mono"
+          style={{ fontSize: '8px', letterSpacing: '0.12em', color: '#30363d' }}
+        >
+          ENTER TO SEND · SHIFT+ENTER FOR NEW LINE
+        </p>
       </div>
     </div>
   );
 }
 
-// ─── Message Bubble ──────────────────────────────────────────────────────────
+// ─── StreamingMessageBlock ────────────────────────────────────────────────────
+// Separate component so we can use a callback ref for the streaming content div
 
-interface MessageBubbleProps {
-  message: ChatMessage;
+interface StreamingMessageBlockProps {
+  msg: ChatMessage;
   accentColor: string;
-  onStreamingRef?: (el: HTMLDivElement | null) => void;
+  onOptionClick: (msgId: string, index: number, opt: string) => void;
+  onRegisterRef: (msgId: string, el: HTMLDivElement | null) => void;
 }
 
-function MessageBubble({ message, accentColor, onStreamingRef }: MessageBubbleProps) {
-  const isUser = message.role === 'user';
-  const isSystem = message.role === 'system';
-
-  if (isSystem) {
+function StreamingMessageBlock({ msg, accentColor, onOptionClick, onRegisterRef }: StreamingMessageBlockProps) {
+  if (msg.role === 'user') {
     return (
-      <div
-        style={{
-          display: 'flex',
-          alignItems: 'center',
-          gap: '8px',
-          padding: '8px 14px',
-          background: 'var(--theme-bg-tertiary)',
-          borderLeft: `3px solid ${accentColor}`,
-        }}
-      >
-        <Loader size={10} className="animate-spin" style={{ color: accentColor, flexShrink: 0 }} />
-        <span
-          style={{
-            fontSize: '10px',
-            fontWeight: 700,
-            letterSpacing: '0.08em',
-            color: accentColor,
-            fontFamily: 'JetBrains Mono, monospace',
-          }}
-        >
-          {message.content}
-        </span>
-      </div>
-    );
-  }
-
-  if (isUser) {
-    return (
-      <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
-        <div
-          style={{
-            maxWidth: '80%',
-            padding: '12px 16px',
-            background: 'var(--theme-bg-secondary)',
-            border: `2px solid color-mix(in srgb, ${accentColor} 40%, var(--theme-border))`,
-            borderRadius: '3px',
-          }}
-        >
+      <div className="py-3" style={{ borderBottom: '1px solid rgba(33,38,45,0.5)' }}>
+        <div className="flex items-start gap-3">
           <span
-            style={{
-              fontSize: '12px',
-              color: 'var(--theme-text-primary)',
-              fontFamily: 'JetBrains Mono, monospace',
-              letterSpacing: '0.03em',
-              lineHeight: 1.6,
-              whiteSpace: 'pre-wrap',
-              wordBreak: 'break-word',
-            }}
+            className="font-mono text-sm font-bold mt-0.5 select-none shrink-0"
+            style={{ color: accentColor }}
           >
-            {message.content}
+            ❯
           </span>
+          <div
+            className="font-mono text-sm whitespace-pre-wrap break-words"
+            style={{ color: '#c9d1d9' }}
+          >
+            {msg.content}
+          </div>
         </div>
       </div>
     );
   }
 
   // Assistant message
-  return (
-    <div style={{ display: 'flex', gap: '10px', maxWidth: '100%' }}>
-      {/* Avatar */}
-      <div
-        style={{
-          width: '28px',
-          height: '28px',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          background: `color-mix(in srgb, ${accentColor} 15%, transparent)`,
-          border: `2px solid color-mix(in srgb, ${accentColor} 40%, transparent)`,
-          borderRadius: '3px',
-          flexShrink: 0,
-        }}
-      >
-        <Terminal size={14} style={{ color: accentColor }} />
-      </div>
+  const detected = !msg.isStreaming ? detectMultipleChoice(msg.content) : null;
+  const mcqOptions = msg.question?.options?.length
+    ? msg.question.options.map(o => o.label)
+    : detected?.options || null;
+  const mcqQuestion = msg.question?.question || detected?.question || '';
 
-      {/* Content */}
-      <div style={{ flex: 1, minWidth: 0 }}>
-        <span
-          style={{
-            display: 'block',
-            fontSize: '9px',
-            fontWeight: 700,
-            letterSpacing: '0.12em',
-            color: accentColor,
-            fontFamily: 'JetBrains Mono, monospace',
-            marginBottom: '6px',
-          }}
-        >
-          DEVOPS
-        </span>
-        {message.streaming ? (
-          /* IMPORTANT: The streaming content div (ref={onStreamingRef}) must NEVER
-             have React-managed children, because scheduleRender() sets innerHTML
-             directly. If React children exist inside, React's vDOM will desync from
-             the real DOM, causing "removeChild" crashes during reconciliation.
-             The cursor is rendered as a SIBLING, not a child. */
-          <div style={{ position: 'relative' }}>
+  return (
+    <div className="py-4" style={{ borderBottom: '1px solid rgba(33,38,45,0.5)' }}>
+      {/* Tool chips — inline in the flow */}
+      {msg.toolChips.length > 0 && (
+        <div className="flex flex-col gap-0.5 mb-3">
+          {msg.toolChips.map(chip => (
             <div
-              ref={onStreamingRef}
-              className="msg-markdown"
-              style={{
-                fontSize: '12px',
-                color: 'var(--theme-text-primary)',
-                fontFamily: 'JetBrains Mono, monospace',
-                letterSpacing: '0.02em',
-                lineHeight: 1.65,
-                wordBreak: 'break-word',
-                minHeight: '20px',
-              }}
-            />
-            {/* Cursor rendered OUTSIDE the innerHTML container to avoid DOM desync */}
-            {!streamingHasContent(message) && (
-              <span
-                style={{
-                  display: 'inline-block',
-                  width: '8px',
-                  height: '16px',
-                  background: accentColor,
-                  animation: 'cursor-blink 1s step-end infinite',
-                }}
-              />
-            )}
-          </div>
-        ) : (
-          <div
-            className="msg-markdown"
-            style={{
-              fontSize: '12px',
-              color: 'var(--theme-text-primary)',
-              fontFamily: 'JetBrains Mono, monospace',
-              letterSpacing: '0.02em',
-              lineHeight: 1.65,
-              wordBreak: 'break-word',
-            }}
-            dangerouslySetInnerHTML={{ __html: renderMarkdown(message.content) }}
-          />
-        )}
-      </div>
-    </div>
-  );
-}
-
-function streamingHasContent(msg: ChatMessage): boolean {
-  return msg.content.length > 0;
-}
-
-// ─── DevOps Activity Panel (terminal-style live feed) ─────────────────────────
-
-interface DevOpsActivityPanelProps {
-  isActive: boolean;
-  isComplete: boolean;
-  terminalRef: React.RefObject<HTMLPreElement | null>;
-  scrollContainerRef: React.RefObject<HTMLDivElement | null>;
-  autoScrollRef: React.MutableRefObject<boolean>;
-  onToggleCollapse: () => void;
-  isCollapsed: boolean;
-  elapsedSeconds: number;
-}
-
-function DevOpsActivityPanel({
-  isActive,
-  isComplete,
-  terminalRef,
-  scrollContainerRef,
-  autoScrollRef,
-  onToggleCollapse,
-  isCollapsed,
-  elapsedSeconds,
-}: DevOpsActivityPanelProps) {
-  // Detect manual scroll-up to pause auto-scroll
-  const handleScroll = useCallback(() => {
-    const el = scrollContainerRef.current;
-    if (!el) return;
-    const isAtBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 50;
-    autoScrollRef.current = isAtBottom;
-  }, [scrollContainerRef, autoScrollRef]);
-
-  const statusColor = isComplete ? '#39d353' : isActive ? '#39d353' : '#484f58';
-  const statusLabel = isComplete ? 'COMPLETE' : isActive ? 'ACTIVE' : 'IDLE';
-
-  const formatTime = (s: number) => {
-    const m = Math.floor(s / 60);
-    const sec = s % 60;
-    return `${m}:${sec.toString().padStart(2, '0')}`;
-  };
-
-  return (
-    <div
-      style={{
-        flexShrink: 0,
-        borderTop: '2px solid #1b2332',
-        background: '#0d1117',
-        display: 'flex',
-        flexDirection: 'column',
-        maxHeight: isCollapsed ? '38px' : '280px',
-        minHeight: '38px',
-        transition: 'max-height 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
-        overflow: 'hidden',
-        position: 'relative',
-      }}
-    >
-      {/* Subtle scanline overlay for CRT effect */}
-      {isActive && (
-        <div
-          style={{
-            position: 'absolute',
-            top: 0,
-            left: 0,
-            right: 0,
-            bottom: 0,
-            pointerEvents: 'none',
-            zIndex: 1,
-            background: 'repeating-linear-gradient(0deg, transparent, transparent 2px, rgba(255,255,255,0.008) 2px, rgba(255,255,255,0.008) 4px)',
-          }}
-        />
+              key={chip.id}
+              className="flex items-center gap-1.5 font-mono py-0.5"
+              style={{ fontSize: '12px' }}
+            >
+              <span style={{ color: 'var(--chart-2)', fontSize: '11px' }}>⚡</span>
+              <span style={{ color: '#c9d1d9', fontWeight: 600 }}>{chip.name}</span>
+              {chip.inputSummary && (
+                <>
+                  <span style={{ color: '#484f58' }}>→</span>
+                  <span style={{ color: '#6e7681' }}>{chip.inputSummary}</span>
+                </>
+              )}
+              {chip.status === 'running' ? (
+                <span
+                  className="ml-1"
+                  style={{
+                    fontSize: '10px',
+                    color: 'var(--chart-3)',
+                    animation: 'ab-pulse 1s ease-in-out infinite',
+                    display: 'inline-block',
+                  }}
+                >
+                  ⟳
+                </span>
+              ) : (
+                <span className="ml-1" style={{ fontSize: '11px', color: '#3fb950' }}>✓</span>
+              )}
+            </div>
+          ))}
+        </div>
       )}
 
-      {/* Header */}
-      <button
-        onClick={onToggleCollapse}
-        style={{
-          display: 'flex',
-          alignItems: 'center',
-          gap: '10px',
-          padding: '9px 16px',
-          background: '#161b22',
-          border: 'none',
-          borderBottom: isCollapsed ? 'none' : '1px solid #21262d',
-          cursor: 'pointer',
-          flexShrink: 0,
-          width: '100%',
-          textAlign: 'left',
-          zIndex: 2,
-          position: 'relative',
-        }}
-      >
-        {/* Status dot with glow */}
-        <span
-          style={{
-            width: 7,
-            height: 7,
-            borderRadius: '50%',
-            background: statusColor,
-            flexShrink: 0,
-            animation: isActive ? 'dot-pulse 1.5s ease-in-out infinite' : 'none',
-            boxShadow: isActive
-              ? `0 0 6px ${statusColor}, 0 0 12px ${statusColor}66`
-              : isComplete
-              ? `0 0 4px ${statusColor}88`
-              : 'none',
-          }}
-        />
-
-        {/* Title */}
-        <span
-          style={{
-            fontSize: '10px',
-            fontWeight: 700,
-            letterSpacing: '0.14em',
-            color: '#58a6ff',
-            fontFamily: 'JetBrains Mono, monospace',
-          }}
-        >
-          ⚡ DEVOPS ENGINE
-        </span>
-
-        {/* Status label */}
-        <span
-          style={{
-            fontSize: '8px',
-            fontWeight: 700,
-            letterSpacing: '0.12em',
-            color: statusColor,
-            fontFamily: 'JetBrains Mono, monospace',
-            background: isActive ? 'rgba(57, 211, 83, 0.08)' : 'transparent',
-            border: isActive ? '1px solid rgba(57, 211, 83, 0.25)' : '1px solid transparent',
-            padding: '1px 6px',
-            transition: 'all 0.2s',
-          }}
-        >
-          {statusLabel}
-        </span>
-
-        {/* Elapsed time */}
-        {(isActive || isComplete) && (
-          <span
-            style={{
-              fontSize: '9px',
-              fontWeight: 600,
-              color: '#484f58',
-              fontFamily: 'JetBrains Mono, monospace',
-              letterSpacing: '0.06em',
-              marginLeft: 'auto',
-            }}
-          >
-            {formatTime(elapsedSeconds)}
-          </span>
-        )}
-
-        {/* Collapse chevron */}
-        <ChevronRight
-          size={11}
-          style={{
-            color: '#484f58',
-            transform: isCollapsed ? 'rotate(0deg)' : 'rotate(90deg)',
-            transition: 'transform 0.2s',
-            marginLeft: isActive || isComplete ? '4px' : 'auto',
-            flexShrink: 0,
-          }}
-        />
-      </button>
-
-      {/* Terminal body */}
-      <div
-        ref={scrollContainerRef}
-        onScroll={handleScroll}
-        style={{
-          flex: 1,
-          overflowY: 'auto',
-          overflowX: 'hidden',
-          padding: '12px 16px',
-          minHeight: 0,
-          position: 'relative',
-          zIndex: 2,
-          /* Custom scrollbar for the terminal */
-          scrollbarWidth: 'thin',
-          scrollbarColor: '#21262d #0d1117',
-        }}
-      >
-        {/* System start message */}
-        <div
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: '6px',
-            marginBottom: '8px',
-            paddingBottom: '8px',
-            borderBottom: '1px solid #21262d',
-          }}
-        >
-          <Terminal size={10} style={{ color: '#484f58', flexShrink: 0 }} />
-          <span
-            style={{
-              fontSize: '9px',
-              fontWeight: 700,
-              letterSpacing: '0.1em',
-              color: '#484f58',
-              fontFamily: 'JetBrains Mono, monospace',
-            }}
-          >
-            {isActive ? 'STREAMING OUTPUT' : isComplete ? 'BUILD OUTPUT' : 'WAITING'}
-          </span>
+      {/* Thinking indicator — animated inline */}
+      {msg.thinking && (
+        <div className="mb-3">
+          {!msg.thinkingDone ? (
+            <div className="flex items-center gap-2">
+              <span style={{ fontSize: '13px' }}>💭</span>
+              <span
+                className="font-mono"
+                style={{
+                  fontSize: '12px',
+                  color: '#8b949e',
+                  animation: 'ab-pulse 1.5s ease-in-out infinite',
+                }}
+              >
+                thinking
+              </span>
+              <span className="ab-thinking-dots font-mono" style={{ fontSize: '12px', color: '#8b949e' }}>
+                <span className="ab-dot">.</span>
+                <span className="ab-dot">.</span>
+                <span className="ab-dot">.</span>
+              </span>
+            </div>
+          ) : (
+            <details className="group">
+              <summary
+                className="cursor-pointer select-none flex items-center gap-1.5 font-mono list-none"
+                style={{ fontSize: '11px', color: '#484f58' }}
+              >
+                <span>💭</span>
+                <span>thought for a moment</span>
+                <ChevronRight
+                  size={10}
+                  className="transition-transform group-open:rotate-90"
+                  style={{ color: '#484f58' }}
+                />
+              </summary>
+              <div
+                className="mt-2 pl-4 font-mono whitespace-pre-wrap max-h-40 overflow-y-auto ab-scroll"
+                style={{
+                  fontSize: '11px',
+                  color: '#484f58',
+                  borderLeft: '2px solid #21262d',
+                }}
+              >
+                {msg.thinking}
+              </div>
+            </details>
+          )}
         </div>
+      )}
 
-        {/* Raw streaming text — updated via direct DOM manipulation */}
-        <pre
-          ref={terminalRef}
-          style={{
-            margin: 0,
-            padding: 0,
-            fontSize: '11px',
-            lineHeight: 1.7,
-            color: '#c9d1d9',
-            fontFamily: 'JetBrains Mono, monospace',
-            whiteSpace: 'pre-wrap',
-            wordBreak: 'break-word',
-            letterSpacing: '0.02em',
-          }}
-        />
-
-        {/* Blinking block cursor while streaming */}
-        {isActive && (
+      {/* Text content */}
+      {msg.isStreaming ? (
+        <div className="font-mono text-sm leading-relaxed" style={{ color: '#c9d1d9' }}>
+          {/* IMPORTANT: streaming div must not have React children — innerHTML is set directly */}
+          <div
+            ref={el => onRegisterRef(msg.id, el)}
+            className="msg-markdown inline"
+          />
           <span
+            className="inline-block w-2 h-4 align-text-bottom ml-0.5"
             style={{
-              display: 'inline-block',
-              width: '7px',
-              height: '14px',
-              background: '#39d353',
+              background: accentColor,
               animation: 'cursor-blink 1s step-end infinite',
-              verticalAlign: 'text-bottom',
-              marginLeft: '2px',
-              boxShadow: '0 0 4px rgba(57, 211, 83, 0.4)',
             }}
           />
-        )}
+        </div>
+      ) : msg.content ? (
+        <div
+          className="msg-markdown font-mono text-sm leading-relaxed"
+          style={{ color: '#c9d1d9' }}
+          dangerouslySetInnerHTML={{ __html: renderMarkdown(msg.content) }}
+        />
+      ) : null}
 
-        {/* Completion banner */}
-        {isComplete && (
+      {/* MCQ choice cards */}
+      {mcqOptions && mcqOptions.length > 0 && !msg.isStreaming && (
+        <div className="mt-5">
+          {mcqQuestion && (
+            <p
+              className="font-mono font-bold mb-3"
+              style={{ fontSize: '12px', color: '#c9d1d9', letterSpacing: '0.04em' }}
+            >
+              {mcqQuestion}
+            </p>
+          )}
           <div
+            className="grid gap-2"
             style={{
-              marginTop: '12px',
-              paddingTop: '10px',
-              borderTop: '1px solid #21262d',
-              display: 'flex',
-              alignItems: 'center',
-              gap: '8px',
+              gridTemplateColumns: mcqOptions.length <= 3
+                ? `repeat(${mcqOptions.length}, 1fr)`
+                : 'repeat(auto-fit, minmax(200px, 1fr))',
             }}
           >
-            <CheckCircle size={13} style={{ color: '#39d353', flexShrink: 0 }} />
-            <span
-              style={{
-                fontSize: '10px',
-                fontWeight: 700,
-                letterSpacing: '0.12em',
-                color: '#39d353',
-                fontFamily: 'JetBrains Mono, monospace',
-              }}
-            >
-              ✓ BUILD COMPLETE
-            </span>
-            <span
-              style={{
-                fontSize: '9px',
-                color: '#484f58',
-                fontFamily: 'JetBrains Mono, monospace',
-                marginLeft: 'auto',
-              }}
-            >
-              {formatTime(elapsedSeconds)}
-            </span>
-          </div>
-        )}
-      </div>
+            {mcqOptions.map((opt, i) => {
+              const isSelected = msg.question?.answered === opt;
+              const isAnswered = !!msg.question?.answered;
+              const dimmed = isAnswered && !isSelected;
 
-      {/* Bottom glow line when active */}
-      {isActive && (
-        <div
-          style={{
-            height: '2px',
-            flexShrink: 0,
-            background: 'linear-gradient(90deg, transparent, #39d353, #58a6ff, #39d353, transparent)',
-            backgroundSize: '200% 100%',
-            animation: 'glow-line 2s linear infinite',
-            opacity: 0.7,
-          }}
-        />
+              return (
+                <button
+                  key={i}
+                  disabled={isAnswered}
+                  onClick={() => onOptionClick(msg.id, i, opt)}
+                  className="text-left font-mono transition-all"
+                  style={{
+                    fontSize: '12px',
+                    padding: '14px 16px',
+                    background: isSelected
+                      ? `color-mix(in srgb, ${accentColor} 10%, #0d1117)`
+                      : '#161b22',
+                    border: isSelected
+                      ? `2px solid ${accentColor}`
+                      : '2px solid #21262d',
+                    opacity: dimmed ? 0.3 : 1,
+                    cursor: isAnswered ? 'default' : 'pointer',
+                  }}
+                  onMouseEnter={e => {
+                    if (!isAnswered) {
+                      e.currentTarget.style.borderColor = `color-mix(in srgb, ${accentColor} 60%, transparent)`;
+                      e.currentTarget.style.background = `color-mix(in srgb, ${accentColor} 5%, #161b22)`;
+                    }
+                  }}
+                  onMouseLeave={e => {
+                    if (!isAnswered && !isSelected) {
+                      e.currentTarget.style.borderColor = '#21262d';
+                      e.currentTarget.style.background = '#161b22';
+                    }
+                  }}
+                >
+                  <div className="flex items-start gap-3">
+                    <span
+                      className="font-bold text-sm mt-px shrink-0"
+                      style={{ color: isSelected ? accentColor : '#484f58', minWidth: '16px' }}
+                    >
+                      {i + 1}
+                    </span>
+                    <div className="flex-1 min-w-0">
+                      <span
+                        className="font-semibold block"
+                        style={{
+                          fontSize: '12px',
+                          letterSpacing: '0.03em',
+                          color: isSelected ? accentColor : '#c9d1d9',
+                        }}
+                      >
+                        {opt}
+                      </span>
+                      {msg.question?.options?.[i]?.description && (
+                        <span
+                          className="block mt-1 leading-relaxed"
+                          style={{ color: '#6e7681', fontSize: '10px' }}
+                        >
+                          {msg.question.options[i].description}
+                        </span>
+                      )}
+                    </div>
+                    {isSelected && (
+                      <CheckCircle
+                        size={14}
+                        className="shrink-0 mt-0.5"
+                        style={{ color: accentColor }}
+                      />
+                    )}
+                  </div>
+                </button>
+              );
+            })}
+          </div>
+        </div>
       )}
     </div>
   );
@@ -2102,7 +1992,6 @@ export function AppBuilderPage() {
     if (intent === 'new-app') {
       setState({ screen: 'new-app-backend' });
     } else {
-      // Goliath feature goes straight to chat
       setState({ screen: 'chat', intent: 'goliath-feature', backend: null });
     }
   }
@@ -2111,7 +2000,6 @@ export function AppBuilderPage() {
     setState({ screen: 'chat', intent: 'new-app', backend });
   }
 
-  // Build subtitle based on current screen
   const subtitleMap: Record<string, string> = {
     'intent': 'Select your build intent to begin',
     'new-app-backend': 'New App — choose a backend',
@@ -2121,10 +2009,14 @@ export function AppBuilderPage() {
   return (
     <div className="flex flex-col h-full min-h-0">
       <AppBuilderStyles />
-      <PageHeader
-        title="App Builder"
-        subtitle={subtitleMap[state.screen]}
-      />
+
+      {/* Hide PageHeader in chat mode — BuilderChat has its own minimal header */}
+      {state.screen !== 'chat' && (
+        <PageHeader
+          title="App Builder"
+          subtitle={subtitleMap[state.screen]}
+        />
+      )}
 
       {state.screen === 'intent' && (
         <IntentSelector onSelect={handleIntentSelect} />
