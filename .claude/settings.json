@@ -6,6 +6,11 @@
       "env": {
         "CONVEX_URL": "https://charming-cuttlefish-923.convex.cloud"
       }
+    },
+    "recall": {
+      "command": "node",
+      "args": ["/opt/goliath/recall-mcp-server/index.mjs"],
+      "env": {}
     }
   }
 }
