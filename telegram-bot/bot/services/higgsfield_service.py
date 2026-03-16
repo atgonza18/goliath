@@ -12,13 +12,15 @@ then return the download URL of the generated file.
 
 Authentication:
   The Higgsfield SDK reads the API key from the environment variable HF_KEY
-  (as "{key}:{secret}") or HF_API_KEY + HF_API_SECRET separately.
-  Since the provided key appears to be a single-part key (no colon), we pass
-  it directly to the AsyncClient as api_key and set the auth header to
-  'Key {api_key}' (the SDK's native format).
+  (as "{key_id}:{key_secret}") or HF_API_KEY + HF_API_SECRET separately.
+  We store the key in .env as HIGGSFIELD_API_KEY in "key_id:key_secret" format
+  and pass it directly to the AsyncClient as api_key.  The SDK sets the
+  Authorization header to 'Key {api_key}'.
 
 Model application identifiers follow the Higgsfield Platform path convention:
-  organization/model-name/version/task-type
+  organization/model-name/version[/task-type]
+  Some models include a task-type suffix (e.g. bytedance/seedream/v4/text-to-image)
+  while others omit it (e.g. higgsfield-ai/soul/standard).
 """
 
 from __future__ import annotations
@@ -43,11 +45,14 @@ logger = logging.getLogger(__name__)
 
 # Image generation models
 IMAGE_MODELS: dict[str, str] = {
-    # Nano Banana Pro — Higgsfield's flagship image model (Soul/Nano)
-    "nano-banana-pro":  "higgsfield/soul/standard/text-to-image",
-    "soul":             "higgsfield/soul/standard/text-to-image",
+    # Nano Banana Pro — Higgsfield's flagship image model
+    # Official docs path: https://platform.higgsfield.ai/higgsfield-ai/soul/standard
+    "nano-banana-pro":  "higgsfield-ai/soul/standard",
+    "soul":             "higgsfield-ai/soul/standard",
     # Fallback generic image model (ByteDance Seedream)
     "seedream":         "bytedance/seedream/v4/text-to-image",
+    # Reve text-to-image model
+    "reve":             "reve/text-to-image",
 }
 
 DEFAULT_IMAGE_MODEL = "nano-banana-pro"
