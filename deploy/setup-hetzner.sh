@@ -49,7 +49,7 @@ log "Target directory: $GOLIATH_ROOT"
 # ──────────────────────────────────────────
 # Step 1: System packages
 # ──────────────────────────────────────────
-log "Step 1/8: Installing system packages..."
+log "Step 1/9: Installing system packages..."
 apt-get update -qq
 apt-get install -y -qq \
     python3 python3-pip python3-venv \
@@ -65,7 +65,7 @@ log "Python version: $PYTHON_VER"
 # ──────────────────────────────────────────
 # Step 2: Install Node.js (for Claude CLI)
 # ──────────────────────────────────────────
-log "Step 2/8: Installing Node.js (required for Claude CLI)..."
+log "Step 2/9: Installing Node.js (required for Claude CLI)..."
 if ! command -v node &>/dev/null; then
     curl -fsSL https://deb.nodesource.com/setup_20.x | bash - > /dev/null 2>&1
     apt-get install -y -qq nodejs > /dev/null
@@ -76,7 +76,7 @@ log "Node.js version: $NODE_VER"
 # ──────────────────────────────────────────
 # Step 3: Install Claude CLI
 # ──────────────────────────────────────────
-log "Step 3/8: Installing Claude CLI..."
+log "Step 3/9: Installing Claude CLI..."
 if ! command -v claude &>/dev/null; then
     npm install -g @anthropic-ai/claude-code > /dev/null 2>&1
     log "Claude CLI installed: $(claude --version 2>/dev/null || echo 'installed')"
@@ -95,7 +95,7 @@ echo ""
 # ──────────────────────────────────────────
 # Step 4: Create goliath user
 # ──────────────────────────────────────────
-log "Step 4/8: Creating goliath system user..."
+log "Step 4/9: Creating goliath system user..."
 if ! id "$GOLIATH_USER" &>/dev/null; then
     useradd --system --create-home --shell /bin/bash "$GOLIATH_USER"
     log "Created user: $GOLIATH_USER"
@@ -106,7 +106,7 @@ fi
 # ──────────────────────────────────────────
 # Step 5: Clone or update repo
 # ──────────────────────────────────────────
-log "Step 5/8: Setting up repository..."
+log "Step 5/9: Setting up repository..."
 if [ -d "$GOLIATH_ROOT/.git" ]; then
     log "Repository exists, pulling latest..."
     cd "$GOLIATH_ROOT"
@@ -121,7 +121,7 @@ chown -R "$GOLIATH_USER:$GOLIATH_USER" "$GOLIATH_ROOT"
 # ──────────────────────────────────────────
 # Step 6: Python virtual environment + dependencies
 # ──────────────────────────────────────────
-log "Step 6/8: Setting up Python virtual environment..."
+log "Step 6/9: Setting up Python virtual environment..."
 sudo -u "$GOLIATH_USER" bash -c "
     cd $GOLIATH_ROOT
     python3 -m venv venv
@@ -134,7 +134,7 @@ log "Python dependencies installed"
 # ──────────────────────────────────────────
 # Step 7: Environment file
 # ──────────────────────────────────────────
-log "Step 7/8: Configuring environment..."
+log "Step 7/9: Configuring environment..."
 ENV_FILE="$GOLIATH_ROOT/.env"
 if [ ! -f "$ENV_FILE" ]; then
     cat > "$ENV_FILE" << 'ENVEOF'
@@ -169,7 +169,7 @@ fi
 # ──────────────────────────────────────────
 # Step 8: Systemd service + log rotation + cron + health check
 # ──────────────────────────────────────────
-log "Step 8/8: Installing systemd service..."
+log "Step 8/9: Installing systemd service..."
 
 # Systemd service
 cp "$GOLIATH_ROOT/deploy/goliath-bot.service" /etc/systemd/system/goliath-bot.service
@@ -204,6 +204,30 @@ fi
 # Set timezone to US Central
 timedatectl set-timezone America/Chicago 2>/dev/null || warn "Could not set timezone (may need manual setup)"
 log "Timezone set to America/Chicago (US Central)"
+
+# ──────────────────────────────────────────
+# Step 9: Firewall (UFW)
+# ──────────────────────────────────────────
+log "Step 9/9: Configuring firewall (UFW)..."
+
+# Ensure UFW is installed
+apt-get install -y -qq ufw > /dev/null 2>&1
+
+# Allow SSH first (critical — don't lock yourself out)
+ufw allow 22/tcp comment "SSH"
+
+# Allow Goliath Web GUI
+ufw allow 3000/tcp comment "Goliath Web GUI"
+
+# Allow Goliath Webhook Server
+ufw allow 8000/tcp comment "Goliath Webhook Server"
+
+# Enable UFW if not already active (--force skips the interactive prompt)
+if ! ufw status | grep -q "Status: active"; then
+    ufw --force enable
+fi
+
+log "Firewall configured: SSH (22), Web GUI (3000), Webhook (8000) allowed"
 
 # ──────────────────────────────────────────
 # Done
