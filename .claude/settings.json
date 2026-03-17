@@ -11,6 +11,11 @@
       "command": "node",
       "args": ["/opt/goliath/recall-mcp-server/index.mjs"],
       "env": {}
+    },
+    "playwright": {
+      "command": "npx",
+      "args": ["@playwright/mcp@latest", "--headless"],
+      "env": {}
     }
   }
 }
