@@ -1,6 +1,7 @@
 import { Router, Request, Response } from 'express';
 import path from 'path';
 import fs from 'fs';
+import { execFile } from 'child_process';
 import { getGoliathRoot, getPodProductionDb } from '../services/database';
 
 export const productionRouter = Router();
@@ -286,9 +287,25 @@ productionRouter.get('/production/trends', (_req: Request, res: Response) => {
 const DASHBOARD_CACHE_TTL_MS = 60_000;
 let dashboardCache: { data: object; expires: number } | null = null;
 
+// DB row shape — uses actual column names (no aliasing)
+interface PodRow {
+  project_key: string;
+  report_date: string;
+  activity_category: string;
+  activity_name: string;
+  qty_to_date: number | null;
+  qty_last_workday: number | null;
+  qty_completed_yesterday: number | null;
+  total_qty: number | null;
+  unit: string | null;
+  pct_complete: number | null;
+  today_location: string | null;
+  notes: string | null;
+}
+
 /**
  * GET /api/production/dashboard
- * Returns real production data extracted from POD PDFs — activities, quantities, rates.
+ * Returns production summary per project matching the frontend ProjectProductionSummary type.
  * Query: ?days=30 (default 30)
  */
 productionRouter.get('/production/dashboard', (req: Request, res: Response) => {
@@ -305,83 +322,34 @@ productionRouter.get('/production/dashboard', (req: Request, res: Response) => {
     const cutoffDate = localDateStr(new Date(Date.now() - days * 86_400_000));
     const todayStr = localDateStr();
 
-    // Get all production data in date range
-    // Map real column names to legacy aliases so downstream TS code stays unchanged
+    // Get all production data in date range — use real column names
     const rows = db.prepare(`
-      SELECT project_key, report_date,
-             activity_name        AS activity,
-             qty_completed_yesterday AS quantity_today,
-             unit,
-             pct_complete         AS percent_complete,
-             qty_to_date          AS actual_rate,
-             total_qty            AS required_rate,
-             today_location       AS blocks,
-             notes
+      SELECT project_key, report_date, activity_category, activity_name,
+             qty_to_date, qty_last_workday, qty_completed_yesterday,
+             total_qty, unit, pct_complete, today_location, notes
       FROM pod_production
       WHERE report_date >= ?
-      ORDER BY report_date DESC, project_key, activity_name
-    `).all(cutoffDate) as Array<{
-      project_key: string; report_date: string; activity: string;
-      quantity_today: number | null; unit: string | null;
-      percent_complete: number | null; actual_rate: number | null;
-      required_rate: number | null; blocks: string | null; notes: string | null;
-    }>;
+      ORDER BY report_date DESC, project_key, activity_category, activity_name
+    `).all(cutoffDate) as PodRow[];
 
-    // Build per-project data
-    const projectMap = new Map<string, {
-      activities: Array<{
-        activity: string; quantity_today: number | null; unit: string | null;
-        percent_complete: number | null; actual_rate: number | null;
-        required_rate: number | null; blocks: string | null; notes: string | null;
-        report_date: string;
-      }>;
-      dailySeries: Map<string, Map<string, number>>;
-      latestDate: string | null;
-    }>();
+    // Group rows by project, then find latest date per project
+    const projectMap = new Map<string, { rows: PodRow[]; latestDate: string | null }>();
 
     for (const row of rows) {
       if (!projectMap.has(row.project_key)) {
-        projectMap.set(row.project_key, {
-          activities: [],
-          dailySeries: new Map(),
-          latestDate: null,
-        });
+        projectMap.set(row.project_key, { rows: [], latestDate: null });
       }
-      const proj = projectMap.get(row.project_key)!;
-
-      // Track latest date
-      if (!proj.latestDate || row.report_date > proj.latestDate) {
-        proj.latestDate = row.report_date;
+      const p = projectMap.get(row.project_key)!;
+      p.rows.push(row);
+      if (!p.latestDate || row.report_date > p.latestDate) {
+        p.latestDate = row.report_date;
       }
-
-      // Add to activities (latest date only for the summary)
-      if (row.report_date === proj.latestDate || proj.activities.length === 0) {
-        proj.activities.push({
-          activity: row.activity,
-          quantity_today: row.quantity_today,
-          unit: row.unit,
-          percent_complete: row.percent_complete,
-          actual_rate: row.actual_rate,
-          required_rate: row.required_rate,
-          blocks: row.blocks,
-          notes: row.notes,
-          report_date: row.report_date,
-        });
-      }
-
-      // Daily series: date -> activity -> quantity
-      if (!proj.dailySeries.has(row.report_date)) {
-        proj.dailySeries.set(row.report_date, new Map());
-      }
-      const dayMap = proj.dailySeries.get(row.report_date)!;
-      dayMap.set(row.activity, (dayMap.get(row.activity) || 0) + (row.quantity_today || 0));
     }
 
-    // Build project response
+    // Build project summaries matching ProjectProductionSummary
     const projects: object[] = [];
-    const portfolioDailySeries = new Map<string, Map<string, number>>();
     let activeSites = 0;
-    const todayTotals = new Map<string, { quantity: number; unit: string }>();
+    let projectsWithData = 0;
 
     const sortedKeys = Object.entries(PROJECTS)
       .sort(([, a], [, b]) => a.number - b.number)
@@ -390,63 +358,42 @@ productionRouter.get('/production/dashboard', (req: Request, res: Response) => {
     for (const key of sortedKeys) {
       const info = PROJECTS[key];
       const projData = projectMap.get(key);
-      const hasData = !!projData && projData.activities.length > 0;
+      const hasData = !!projData && projData.rows.length > 0;
 
-      // Filter activities to only latest date for this project
-      let latestActivities: Array<{
-        activity: string; quantity_today: number | null; unit: string | null;
-        percent_complete: number | null; actual_rate: number | null;
-        required_rate: number | null; blocks: string | null; notes: string | null;
-        report_date: string;
-      }> = [];
-      if (projData && projData.latestDate) {
-        latestActivities = projData.activities.filter(
-          a => a.report_date === projData.latestDate
-        );
-      }
+      if (hasData) projectsWithData++;
+      if (projData?.latestDate === todayStr) activeSites++;
 
-      // Check if project reported today
-      if (projData?.latestDate === todayStr) {
-        activeSites++;
-      }
+      // Get latest-date activities grouped by category
+      const latestRows = projData
+        ? projData.rows.filter(r => r.report_date === projData.latestDate)
+        : [];
 
-      // Aggregate today's totals for portfolio
-      if (projData) {
-        const todayData = projData.dailySeries.get(todayStr);
-        if (todayData) {
-          for (const [act, qty] of todayData) {
-            const existing = todayTotals.get(act);
-            if (existing) {
-              existing.quantity += qty;
-            } else {
-              // Find unit from activities
-              const actData = projData.activities.find(a => a.activity === act);
-              todayTotals.set(act, { quantity: qty, unit: actData?.unit || 'units' });
-            }
-          }
+      // Build category summary
+      const catMap = new Map<string, { count: number; pcts: number[] }>();
+      const allPcts: number[] = [];
+
+      for (const row of latestRows) {
+        const cat = row.activity_category || 'General';
+        if (!catMap.has(cat)) catMap.set(cat, { count: 0, pcts: [] });
+        const c = catMap.get(cat)!;
+        c.count++;
+        if (row.pct_complete != null) {
+          c.pcts.push(row.pct_complete);
+          allPcts.push(row.pct_complete);
         }
       }
 
-      // Build daily series for project
-      const dailySeries: Array<{ date: string; activities: Record<string, number>; total: number }> = [];
-      if (projData) {
-        for (const [date, actMap] of Array.from(projData.dailySeries.entries()).sort()) {
-          const activities: Record<string, number> = {};
-          let total = 0;
-          for (const [act, qty] of actMap) {
-            activities[act] = qty;
-            total += qty;
+      const categoriesSummary = Array.from(catMap.entries()).map(([category, data]) => ({
+        category,
+        activity_count: data.count,
+        avg_pct_complete: data.pcts.length > 0
+          ? Math.round((data.pcts.reduce((s, v) => s + v, 0) / data.pcts.length) * 10) / 10
+          : null,
+      }));
 
-            // Also aggregate into portfolio daily
-            if (!portfolioDailySeries.has(date)) {
-              portfolioDailySeries.set(date, new Map());
-            }
-            const pDay = portfolioDailySeries.get(date)!;
-            pDay.set(act, (pDay.get(act) || 0) + qty);
-          }
-          dailySeries.push({ date, activities, total });
-        }
-      }
+      const overallProgress = allPcts.length > 0
+        ? Math.round((allPcts.reduce((s, v) => s + v, 0) / allPcts.length) * 10) / 10
+        : null;
 
       projects.push({
         key,
@@ -454,37 +401,11 @@ productionRouter.get('/production/dashboard', (req: Request, res: Response) => {
         number: info.number,
         latest_date: projData?.latestDate || null,
         has_data: hasData,
-        activities: latestActivities.map(a => ({
-          activity: a.activity,
-          quantity_today: a.quantity_today,
-          unit: a.unit,
-          percent_complete: a.percent_complete,
-          actual_rate: a.actual_rate,
-          required_rate: a.required_rate,
-          blocks: a.blocks,
-          notes: a.notes,
-        })),
-        daily_series: dailySeries,
+        activity_count: latestRows.length,
+        category_count: catMap.size,
+        categories_summary: categoriesSummary,
+        overall_progress: overallProgress,
       });
-    }
-
-    // Portfolio daily series
-    const portfolioDaily = Array.from(portfolioDailySeries.entries())
-      .sort(([a], [b]) => a.localeCompare(b))
-      .map(([date, actMap]) => {
-        const activities: Record<string, number> = {};
-        let total = 0;
-        for (const [act, qty] of actMap) {
-          activities[act] = qty;
-          total += qty;
-        }
-        return { date, activities, total };
-      });
-
-    // Today totals as object
-    const todayTotalsObj: Record<string, { quantity: number; unit: string }> = {};
-    for (const [act, data] of todayTotals) {
-      todayTotalsObj[act] = data;
     }
 
     const response = {
@@ -492,8 +413,7 @@ productionRouter.get('/production/dashboard', (req: Request, res: Response) => {
       portfolio: {
         active_sites: activeSites,
         total_projects: Object.keys(PROJECTS).length,
-        today_totals: todayTotalsObj,
-        daily_series: portfolioDaily,
+        projects_with_data: projectsWithData,
       },
       projects,
     };
@@ -504,6 +424,153 @@ productionRouter.get('/production/dashboard', (req: Request, res: Response) => {
     console.error('[GET /api/production/dashboard]', err);
     res.status(500).json({ error: 'Failed to build production dashboard' });
   }
+});
+
+/**
+ * GET /api/production/dashboard/:projectKey
+ * Returns detailed production data for a single project — categories with activities.
+ * Matches the frontend ProjectProductionDetail / PodCategory / PodActivity types.
+ */
+productionRouter.get('/production/dashboard/:projectKey', (req: Request, res: Response) => {
+  try {
+    const projectKey = req.params.projectKey as string;
+
+    if (!PROJECTS[projectKey]) {
+      res.status(404).json({ error: `Unknown project key: ${projectKey}` });
+      return;
+    }
+
+    const info = PROJECTS[projectKey];
+    const db = getPodProductionDb();
+
+    // Find the latest report date for this project
+    const latestRow = db.prepare(`
+      SELECT MAX(report_date) as latest_date
+      FROM pod_production
+      WHERE project_key = ?
+    `).get(projectKey) as { latest_date: string | null } | undefined;
+
+    const latestDate = latestRow?.latest_date || null;
+
+    if (!latestDate) {
+      res.json({
+        key: projectKey,
+        name: info.name,
+        number: info.number,
+        latest_date: null,
+        categories: [],
+      });
+      return;
+    }
+
+    // Get all activities for latest date, grouped by category
+    const actRows = db.prepare(`
+      SELECT activity_category, activity_name,
+             qty_to_date, qty_last_workday, qty_completed_yesterday,
+             total_qty, unit, pct_complete, today_location, notes
+      FROM pod_production
+      WHERE project_key = ? AND report_date = ?
+      ORDER BY activity_category, activity_name
+    `).all(projectKey, latestDate) as Array<{
+      activity_category: string;
+      activity_name: string;
+      qty_to_date: number | null;
+      qty_last_workday: number | null;
+      qty_completed_yesterday: number | null;
+      total_qty: number | null;
+      unit: string | null;
+      pct_complete: number | null;
+      today_location: string | null;
+      notes: string | null;
+    }>;
+
+    // Group into categories
+    const catMap = new Map<string, Array<{
+      activity_name: string;
+      qty_to_date: number | null;
+      qty_last_workday: number | null;
+      qty_completed_yesterday: number;
+      total_qty: number | null;
+      unit: string | null;
+      pct_complete: number | null;
+      today_location: string | null;
+      notes: string | null;
+    }>>();
+
+    for (const row of actRows) {
+      const cat = row.activity_category || 'General';
+      if (!catMap.has(cat)) catMap.set(cat, []);
+      catMap.get(cat)!.push({
+        activity_name: row.activity_name,
+        qty_to_date: row.qty_to_date,
+        qty_last_workday: row.qty_last_workday,
+        qty_completed_yesterday: row.qty_completed_yesterday ?? 0,
+        total_qty: row.total_qty,
+        unit: row.unit,
+        pct_complete: row.pct_complete,
+        today_location: row.today_location,
+        notes: row.notes,
+      });
+    }
+
+    const categories = Array.from(catMap.entries()).map(([category, activities]) => ({
+      category,
+      activities,
+    }));
+
+    res.json({
+      key: projectKey,
+      name: info.name,
+      number: info.number,
+      latest_date: latestDate,
+      categories,
+    });
+  } catch (err) {
+    console.error('[GET /api/production/dashboard/:projectKey]', err);
+    res.status(500).json({ error: 'Failed to load project production detail' });
+  }
+});
+
+/**
+ * POST /api/production/extract
+ * Triggers the POD extraction script (extract_pod_data.py) asynchronously.
+ */
+let extractionRunning = false;
+
+productionRouter.post('/production/extract', (_req: Request, res: Response) => {
+  if (extractionRunning) {
+    res.json({ status: 'already_running', message: 'Extraction is already in progress' });
+    return;
+  }
+
+  const root = getGoliathRoot();
+  const scriptPath = path.join(root, 'scripts', 'extract_pod_data.py');
+
+  if (!fs.existsSync(scriptPath)) {
+    res.status(500).json({ status: 'error', message: 'Extraction script not found' });
+    return;
+  }
+
+  extractionRunning = true;
+
+  // Run extraction asynchronously — don't wait for completion
+  const pythonPath = path.join(root, 'venv', 'bin', 'python3');
+  const python = fs.existsSync(pythonPath) ? pythonPath : 'python3';
+
+  execFile(python, [scriptPath], {
+    cwd: root,
+    timeout: 600_000, // 10 min max
+    env: { ...process.env, PYTHONUNBUFFERED: '1' },
+  }, (err, _stdout, stderr) => {
+    extractionRunning = false;
+    // Clear dashboard cache so next request picks up new data
+    dashboardCache = null;
+    if (err) {
+      console.error('[POST /api/production/extract] Script error:', stderr?.slice(0, 500));
+    }
+  });
+
+  res.json({ status: 'started', message: 'Extraction started in background' });
 });
 
 /**
