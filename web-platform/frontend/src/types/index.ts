@@ -341,6 +341,69 @@ export interface ProductionDashboardData {
   projects: ProjectProductionSummary[];
 }
 
+// ---- Call / Debrief types ----
+export interface CallSummary {
+  bot_id: string;
+  meeting_url: string;
+  bot_name: string;
+  status: string;
+  has_transcript: boolean;
+  transcript_file: string | null;
+  participants: string[];
+  participant_count: number;
+  duration_minutes: number;
+  created_at: string;
+  completed_at: string | null;
+  error: string | null;
+  review_id: string | null;
+  review_status: string | null;
+  meeting_title: string | null;
+  project_key: string | null;
+}
+
+export interface CallReviewConstraint {
+  id: string;
+  description: string;
+  discipline: string;
+  priority: 'low' | 'medium' | 'high';
+  owner: string | null;
+  due_date: string | null;
+  category: 'NEW' | 'UPDATE' | 'CLOSE' | 'SKIP';
+  current_status: string | null;
+  existing_constraint_id: string | null;
+  action_status: 'pending' | 'approved' | 'rejected' | 'pushed';
+  pushed_at: string | null;
+  push_result: string | null;
+}
+
+export interface CallReview {
+  id: string;
+  meeting_title: string | null;
+  project_key: string | null;
+  summary: string;
+  action_items: string;
+  decisions: string;
+  status: string;
+  created_at: string;
+  reviewed_at: string | null;
+}
+
+export interface CallDetail {
+  bot_id: string;
+  meeting_url: string;
+  bot_name: string;
+  status: string;
+  created_at: string;
+  completed_at: string | null;
+  error: string | null;
+  participants: string[];
+  participant_count: number;
+  duration_minutes: number;
+  review: CallReview | null;
+  constraints: CallReviewConstraint[];
+  transcript_preview: string;
+}
+
 // ---- API types ----
 export interface ApiError {
   message: string;

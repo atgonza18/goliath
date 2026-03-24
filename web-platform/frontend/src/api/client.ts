@@ -1,6 +1,8 @@
 import type {
   ActionItem,
   Agent,
+  CallDetail,
+  CallSummary,
   ChatResponse,
   SubagentEvent,
   ConstraintStats,
@@ -412,6 +414,53 @@ class ApiClient {
   ): Promise<{ results: { content: string; score: number }[] }> {
     return this.request<{ results: { content: string; score: number }[] }>(
       `/memories/search?q=${encodeURIComponent(query)}`
+    );
+  }
+
+  // Calls / Debrief
+  async getCalls(): Promise<CallSummary[]> {
+    return this.request<CallSummary[]>('/calls');
+  }
+
+  async getCallDetail(botId: string): Promise<CallDetail> {
+    return this.request<CallDetail>(`/calls/${botId}`);
+  }
+
+  async approveConstraint(constraintId: string): Promise<{ success: boolean }> {
+    return this.request<{ success: boolean }>(
+      `/calls/constraints/${constraintId}/approve`,
+      { method: 'POST' }
+    );
+  }
+
+  async rejectConstraint(constraintId: string): Promise<{ success: boolean }> {
+    return this.request<{ success: boolean }>(
+      `/calls/constraints/${constraintId}/reject`,
+      { method: 'POST' }
+    );
+  }
+
+  async updateConstraintCategory(
+    constraintId: string,
+    category: string
+  ): Promise<{ success: boolean }> {
+    return this.request<{ success: boolean }>(
+      `/calls/constraints/${constraintId}/update-category`,
+      { method: 'POST', body: JSON.stringify({ category }) }
+    );
+  }
+
+  async approveAllConstraints(botId: string): Promise<{ success: boolean; approved_count: number }> {
+    return this.request<{ success: boolean; approved_count: number }>(
+      `/calls/${botId}/approve-all`,
+      { method: 'POST' }
+    );
+  }
+
+  async pushConstraint(constraintId: string): Promise<{ success: boolean; message: string }> {
+    return this.request<{ success: boolean; message: string }>(
+      `/calls/constraints/${constraintId}/push`,
+      { method: 'POST' }
     );
   }
 
