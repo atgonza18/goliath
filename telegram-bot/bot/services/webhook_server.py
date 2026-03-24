@@ -1,7 +1,5 @@
 """Lightweight aiohttp webhook server for Power Automate integration."""
 
-import hashlib
-import hmac
 import logging
 import time
 from collections import defaultdict
@@ -90,187 +88,26 @@ async def handle_teams(request):
 
 
 async def handle_recall_webhook(request):
-    """Handle Recall.ai webhook callbacks (bot status changes, transcript ready).
+    """Legacy Recall.ai webhook endpoint — kept for backward compatibility.
 
-    Recall.ai sends POST requests when bot status changes (joining, in_call,
-    done, fatal) and when transcripts are ready. We update our DB and trigger
-    transcript processing when appropriate.
-
-    Security layers (HIGH-SEVERITY ENGINE GAP FIX):
-      1. Rate limiting — max 30 requests/min per IP
-      2. HMAC signature verification if RECALL_WEBHOOK_SECRET is configured
-      3. Bot ID validation — reject callbacks for unknown bot IDs
+    We no longer rely on inbound webhooks from Recall.ai.  All transcript
+    processing is driven by outbound polling (RecallTranscriptPoller every
+    2 minutes).  This endpoint simply accepts and logs the event without
+    triggering any processing.  The poller will pick it up on its next cycle.
     """
-    # Layer 1: Rate limiting
-    if not _check_rate_limit(request):
-        logger.warning(f"Recall webhook rate-limited: {request.remote}")
-        return web.json_response({"error": "rate limited"}, status=429)
-
-    # Always read the raw body first — needed for both HMAC verification
-    # and JSON parsing regardless of whether a secret is configured.
-    raw_body = await request.read()
-
-    # Layer 2: HMAC signature verification (if secret is configured)
-    # Recall.ai sends the signature as "sha256=<hex_digest>" in the
-    # X-Recall-Signature header.  We must strip the "sha256=" prefix before
-    # comparing, or every webhook is rejected with 403.
-    recall_secret = request.app.get("recall_webhook_secret")
-    if recall_secret:
-        sig_header = request.headers.get("X-Recall-Signature", "")
-        # Strip "sha256=" prefix if present (Recall.ai v2 webhook format)
-        sig_value = sig_header.removeprefix("sha256=")
-        expected_sig = hmac.new(
-            recall_secret.encode(), raw_body, hashlib.sha256
-        ).hexdigest()
-        if not sig_value or not hmac.compare_digest(sig_value, expected_sig):
-            logger.warning(
-                f"Recall webhook HMAC mismatch from {request.remote} "
-                f"(got={sig_header[:30]}..., expected=sha256={expected_sig[:20]}...)"
-            )
-            return web.json_response({"error": "invalid signature"}, status=403)
-
+    # Accept the request and log for observability, but don't process
     try:
-        import json as _json
-        data = _json.loads(raw_body)
-    except Exception:
-        return web.json_response({"error": "invalid json"}, status=400)
-
-    event = data.get("event", "unknown")
-    bot_data = data.get("data", {}).get("bot", {})
-    bot_id = bot_data.get("id", "")
-
-    logger.info(f"Recall webhook: event={event}, bot_id={bot_id}")
-
-    # Layer 3: Bot ID validation — only accept callbacks for bots we created
-    recall_service = request.app.get("recall_service")
-    if recall_service and bot_id:
-        try:
-            known_bot = await recall_service._db.execute(
-                "SELECT id FROM recall_bots WHERE bot_id = ? LIMIT 1",
-                (bot_id,),
-            )
-            if not await known_bot.fetchone():
-                logger.warning(
-                    f"Recall webhook rejected: unknown bot_id={bot_id} "
-                    f"from {request.remote}"
-                )
-                return web.json_response({"error": "unknown bot"}, status=404)
-        except Exception:
-            # DB check failed — allow through but log (fail-open for resilience)
-            logger.debug("Could not verify bot_id against DB — allowing through", exc_info=True)
-
-    if recall_service and bot_id:
-        try:
-            # Update bot status in DB
-            status_map = {
-                "bot.joining_call": "joining",
-                "bot.in_waiting_room": "waiting_room",
-                "bot.in_call_not_recording": "in_call",
-                "bot.in_call_recording": "recording",
-                "bot.call_ended": "call_ended",
-                "bot.done": "done",
-                "bot.fatal": "fatal",
-            }
-            new_status = status_map.get(event)
-            if new_status:
-                await recall_service._db.execute(
-                    """UPDATE recall_bots
-                       SET status = ?, updated_at = strftime('%Y-%m-%dT%H:%M:%S','now')
-                       WHERE bot_id = ?""",
-                    (new_status, bot_id),
-                )
-                await recall_service._db.commit()
-        except Exception:
-            logger.exception(f"Failed to update Recall bot status for {bot_id}")
-
-        # ── CRITICAL: When the bot is done, kick off transcript processing ─────
-        # The webhook is the fastest and most reliable delivery path.
-        # We fire a background task immediately rather than waiting for the
-        # 2-minute cron poller to notice the completed bot.
-        #
-        # The RecallTranscriptPoller dedup tracker ensures that even if both
-        # the webhook trigger AND the cron poller run, the transcript is only
-        # processed once.
-        if event in ("bot.done", "bot.call_ended"):
-            try:
-                # Look up the chat_id so we can route results to the right user
-                cursor = await recall_service._db.execute(
-                    "SELECT chat_id FROM recall_bots WHERE bot_id = ? LIMIT 1",
-                    (bot_id,),
-                )
-                row = await cursor.fetchone()
-                chat_id = (row["chat_id"] if row else None) or 0
-
-                import asyncio as _asyncio
-                from bot.services.recall_transcript_poller import RecallTranscriptPoller
-                _asyncio.create_task(
-                    _webhook_trigger_transcript(recall_service, bot_id, chat_id)
-                )
-                logger.info(
-                    f"Recall webhook: queued transcript fetch for bot {bot_id[:8]} "
-                    f"(event={event}, chat_id={chat_id})"
-                )
-            except Exception:
-                logger.exception(
-                    f"Failed to queue webhook-triggered transcript fetch for {bot_id[:8]}"
-                )
-
-    return web.json_response({"received": True}, status=200)
-
-
-async def _webhook_trigger_transcript(recall_service, bot_id: str, chat_id: int) -> None:
-    """Background task: fetch and process transcript after a bot.done webhook.
-
-    Uses RecallTranscriptPoller for dedup-safe processing — if the cron poller
-    or the in-memory per-bot poller already handled this bot, this is a no-op.
-
-    On failure, sends a Telegram notification so the user knows to pull the
-    transcript manually rather than waiting in silence.
-    """
-    import asyncio as _asyncio
-    import logging as _logging
-    _log = _logging.getLogger(__name__)
-
-    # Small delay: Recall.ai sometimes sends bot.done slightly before the
-    # transcript S3 object is ready.  15 seconds gives the recording pipeline
-    # time to finish before we attempt the first download.
-    await _asyncio.sleep(15)
-
-    try:
-        from bot.services.recall_transcript_poller import RecallTranscriptPoller
-        poller = RecallTranscriptPoller(recall_service, recall_service._db)
-
-        # Dedup check — bail out if already handled
-        if poller.is_processed(bot_id):
-            _log.info(
-                f"Recall webhook trigger: bot {bot_id[:8]} already in dedup tracker — skipping"
-            )
-            return
-
-        result = await poller._check_and_process_bot(bot_id, chat_id)
-        _log.info(
-            f"Recall webhook trigger: transcript processing result for "
-            f"bot {bot_id[:8]}: {result}"
+        data = await request.json()
+        event = data.get("event", "unknown")
+        bot_id = data.get("data", {}).get("bot", {}).get("id", "")
+        logger.info(
+            f"Recall webhook received (no-op): event={event}, bot_id={bot_id[:8] if bot_id else 'N/A'} "
+            f"— transcript processing handled by outbound poller"
         )
     except Exception:
-        _log.exception(
-            f"Recall webhook trigger: unexpected error processing bot {bot_id[:8]}"
-        )
-        # Notify the user that post-call processing failed so they don't
-        # wait in silence.  They can pull the transcript manually.
-        if chat_id:
-            try:
-                await recall_service._queue_notification(
-                    chat_id,
-                    f"⚠️ Post-call processing failed for bot "
-                    f"{bot_id[:8]} — pull transcript manually with "
-                    f"/meetings or ask me to re-process it.",
-                )
-            except Exception:
-                _log.debug(
-                    "Failed to queue failure notification for webhook trigger",
-                    exc_info=True,
-                )
+        pass
+
+    return web.json_response({"received": True, "note": "polling-mode"}, status=200)
 
 
 async def handle_outbox(request):
@@ -310,15 +147,15 @@ def create_webhook_app(
     memory=None,
     web_conversations=None,
     token_tracker=None,
-    recall_webhook_secret: str = None,
+    recall_webhook_secret: str = None,  # Deprecated — kept for call-site compat
     app_builder_store=None,
 ) -> web.Application:
     app = web.Application()
     app["message_queue"] = message_queue
     app["webhook_auth_token"] = auth_token
-    if recall_webhook_secret:
-        app["recall_webhook_secret"] = recall_webhook_secret
-        logger.info("Recall webhook HMAC verification enabled")
+    # NOTE: recall_webhook_secret is no longer used — we poll outbound
+    # instead of receiving inbound webhooks.  The parameter is kept for
+    # backward compatibility with existing call sites.
     if recall_service:
         app["recall_service"] = recall_service
 

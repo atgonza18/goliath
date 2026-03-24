@@ -1,6 +1,9 @@
 import asyncio
 import logging
+import os
+import signal
 import socket as _socket
+import sys
 from pathlib import Path
 
 from telegram.ext import ApplicationBuilder, ContextTypes
@@ -39,7 +42,7 @@ from bot.config import (
     TELEGRAM_BOT_TOKEN, MEMORY_DB_PATH,
     WEBHOOK_PORT, WEBHOOK_AUTH_TOKEN, REPORT_CHAT_ID,
     GMAIL_ADDRESS, GMAIL_APP_PASSWORD,
-    RECALL_API_KEY, RECALL_WEBHOOK_SECRET, REPO_ROOT,
+    RECALL_API_KEY, REPO_ROOT,
 )
 from bot.handlers import register_all_handlers
 from bot.memory.store import MemoryStore
@@ -56,7 +59,7 @@ from bot.services.message_queue import MessageQueue
 from bot.services.preferences import PreferenceStore
 from bot.services.webhook_server import start_webhook_server
 from bot.services.queue_processor import run_queue_processor
-from bot.web_api import WebConversationStore
+from bot.web_api import WebConversationStore, AppBuilderStore
 from bot.services.email_service import EmailService
 from bot.services.recall_service import RecallService
 from bot.services.teams_meeting_detector import TeamsMeetingDetector
@@ -172,6 +175,11 @@ async def post_init(application) -> None:
     await web_conversations.initialize()
     application.bot_data["web_conversations"] = web_conversations
 
+    # App builder store shares the same DB connection
+    app_builder_store = AppBuilderStore(memory._db)
+    await app_builder_store.initialize()
+    application.bot_data["app_builder_store"] = app_builder_store
+
     # Message queue shares the same DB connection
     queue = MessageQueue(memory._db)
     await queue.initialize()
@@ -251,7 +259,8 @@ async def post_init(application) -> None:
         memory=memory,
         web_conversations=web_conversations,
         token_tracker=token_tracker,
-        recall_webhook_secret=RECALL_WEBHOOK_SECRET or None,
+        # recall_webhook_secret no longer needed — polling replaces webhooks
+        app_builder_store=app_builder_store,
     )
     application.bot_data["webhook_runner"] = webhook_runner
     if WEBHOOK_AUTH_TOKEN:
@@ -482,6 +491,51 @@ async def _process_pending_transcripts(
                 pass
 
 
+_conflict_count = 0
+_conflict_window_start = 0.0
+_CONFLICT_THRESHOLD = 50     # exit if this many Conflicts in the window
+_CONFLICT_WINDOW_SECS = 120  # sliding window
+
+
+async def _handle_error(update: object, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Global error handler for the Telegram bot.
+
+    Conflict errors are normal and frequent — the library retries automatically.
+    We only intervene if Conflicts become excessive (>50 in 2 minutes), which
+    indicates a genuine dual-instance problem.  Network errors are silently
+    retried by the library.
+    """
+    import time
+    from telegram.error import Conflict, NetworkError, TimedOut
+
+    error = context.error
+
+    if isinstance(error, Conflict):
+        global _conflict_count, _conflict_window_start
+        now = time.monotonic()
+        if now - _conflict_window_start > _CONFLICT_WINDOW_SECS:
+            _conflict_count = 0
+            _conflict_window_start = now
+        _conflict_count += 1
+
+        if _conflict_count <= 3 or _conflict_count % 20 == 0:
+            logger.warning(f"Telegram Conflict #{_conflict_count} (library will retry)")
+
+        if _conflict_count >= _CONFLICT_THRESHOLD:
+            logger.critical(
+                f"Excessive Conflicts ({_conflict_count} in {_CONFLICT_WINDOW_SECS}s). "
+                "Exiting for systemd restart."
+            )
+            os._exit(1)
+        return
+
+    if isinstance(error, (NetworkError, TimedOut)):
+        logger.warning(f"Telegram network error (will retry): {error}")
+        return
+
+    logger.error(f"Unhandled error: {error}", exc_info=context.error)
+
+
 async def _cleanup_conversations(context: ContextTypes.DEFAULT_TYPE) -> None:
     conversation = context.bot_data.get("conversation")
     if conversation:
@@ -532,8 +586,41 @@ async def _run_startup_self_test() -> str:
         return f"<i>Self-test: failed ({type(e).__name__})</i>"
 
 
+def _install_signal_handlers():
+    """Install signal handlers for graceful shutdown.
+
+    SIGTERM from systemd (ExecStop or MemoryMax cgroup kill) and SIGINT
+    (Ctrl-C during dev) are caught so we can log why the bot is stopping
+    rather than dying silently.  The default Python behaviour (raising
+    SystemExit / KeyboardInterrupt) still fires, which lets
+    Application.run_polling() clean up properly.
+    """
+    import resource
+
+    def _log_shutdown(signum, frame):
+        sig_name = signal.Signals(signum).name
+        logger.warning(
+            f"Received {sig_name} (signal {signum}) — initiating graceful shutdown. "
+            f"Pending orchestrations will be cancelled."
+        )
+        # Log memory usage at shutdown for diagnostics
+        try:
+            usage = resource.getrusage(resource.RUSAGE_SELF)
+            rss_mb = usage.ru_maxrss / 1024  # Linux: ru_maxrss is in KB
+            logger.info(f"Peak RSS at shutdown: {rss_mb:.0f} MB")
+        except Exception:
+            pass
+        # Re-raise the default handler so Python's normal shutdown proceeds
+        signal.signal(signum, signal.SIG_DFL)
+        os.kill(os.getpid(), signum)
+
+    signal.signal(signal.SIGTERM, _log_shutdown)
+    signal.signal(signal.SIGINT, _log_shutdown)
+
+
 def main():
     setup_logging()
+    _install_signal_handlers()
     logger.info("Starting GOLIATH Telegram Bot...")
 
     app = (
@@ -557,6 +644,7 @@ def main():
         .build()
     )
     register_all_handlers(app)
+    app.add_error_handler(_handle_error)
 
     logger.info("Bot is polling. Send /start in Telegram to begin.")
     app.run_polling(drop_pending_updates=True)

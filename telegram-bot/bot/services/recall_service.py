@@ -167,12 +167,10 @@ class RecallService:
             },
         }
 
-        # Attach webhook URL so Recall.ai POSTs status events (bot.done, etc.)
-        # directly to our server.  Without this, webhooks only arrive if the
-        # URL is configured globally in the Recall.ai dashboard — per-bot
-        # configuration is more reliable and explicit.
-        if self._webhook_url:
-            payload["webhook_url"] = self._webhook_url
+        # NOTE: webhook_url intentionally NOT sent.  We rely on outbound
+        # polling (RecallTranscriptPoller every 2 min) instead of inbound
+        # webhooks.  This avoids needing a public HTTPS endpoint / Cloudflare
+        # tunnel for Recall.ai to POST to.
 
         if join_at:
             payload["join_at"] = join_at
@@ -225,6 +223,45 @@ class RecallService:
         except Exception as e:
             logger.exception("Unexpected error creating Recall bot")
             return {"error": f"Unexpected error: {str(e)}"}
+
+    async def list_api_bots(self, status: str = None, limit: int = 50) -> list[dict]:
+        """List recent bots from the Recall.ai API (outbound polling).
+
+        Calls GET /api/v1/bot/ to discover bots — including ones that may
+        have been created outside our normal flow (e.g., via API console).
+
+        Args:
+            status: Optional latest-status filter (e.g., 'done', 'fatal')
+            limit: Max results per page (default 50)
+
+        Returns:
+            List of bot dicts from the API, or empty list on error.
+        """
+        if not self.is_configured:
+            return []
+
+        params = {"ordering": "-created_at", "limit": str(limit)}
+        if status:
+            params["status_changes__latest_code"] = status
+
+        try:
+            async with aiohttp.ClientSession() as session:
+                async with session.get(
+                    f"{self._base_url}/api/v1/bot/",
+                    headers=self._headers(),
+                    params=params,
+                    timeout=aiohttp.ClientTimeout(total=20),
+                ) as resp:
+                    if resp.status != 200:
+                        logger.warning(
+                            f"Recall API list bots returned HTTP {resp.status}"
+                        )
+                        return []
+                    data = await resp.json()
+                    return data.get("results", [])
+        except Exception as e:
+            logger.warning(f"Failed to list bots from Recall.ai API: {e}")
+            return []
 
     async def get_bot_status(self, bot_id: str) -> dict:
         """Get the current status of a Recall.ai bot."""

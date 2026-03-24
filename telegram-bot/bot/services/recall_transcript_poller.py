@@ -1,36 +1,33 @@
-"""Recall.ai Transcript Poller — periodic background task that checks all
-known Recall bots for completion and processes their transcripts with
-file-based deduplication.
+"""Recall.ai Transcript Poller — periodic background task that polls the
+Recall.ai API for completed bots, fetches transcripts, processes them
+through the existing pipeline, and populates the call_reviews table for
+the /calls GUI page.
 
-Problem this solves:
-  When send_bot_to_meeting() is called, it starts an in-memory asyncio task
-  to poll that specific bot. But if the bot process restarts (or if a bot
-  was scheduled outside the normal handler, e.g., via the Recall API directly),
-  that polling task is lost. Transcripts then go unprocessed until someone
-  manually triggers it.
+This replaces the inbound-webhook approach.  Instead of Recall.ai POSTing
+to our server, we poll *outbound* every 2 minutes.  No public HTTPS
+endpoint or Cloudflare tunnel required.
 
-Solution:
-  A periodic scheduler task that:
-  1. Queries the recall_bots SQLite table for any bot that:
-     - Has no completed_at AND no error (still in progress), OR
-     - Is "done" but has no transcript_file (transcript not fetched yet)
-  2. Calls the Recall.ai API to check current status
-  3. If the bot is done and recording is available, fetches the transcript
-  4. Routes the transcript through the normal processing pipeline
-  5. Marks the bot_id in a persistent JSON tracker so restarts never reprocess
+Flow (every 2 minutes):
+  1. Query Recall.ai API: GET /api/v1/bot/?status_changes__latest_code=done
+     to discover completed bots (including ones not in our local DB).
+  2. Insert any newly discovered bots into the local recall_bots table.
+  3. Query local recall_bots for candidates (incomplete / transcript-missing).
+  4. For each candidate, fetch transcript via Recall.ai API.
+  5. Save transcript file, queue for AI processing (summary/constraints).
+  6. Write a call_review row into web-platform chat.db so the call appears
+     in the /calls GUI immediately.
+  7. Mark bot_id in persistent JSON tracker (dedup — survives restarts).
 
 Dedup tracker:
   File: /opt/goliath/telegram-bot/data/recall_processed_bots.json
   Format: {"processed": {"<bot_id>": {"processed_at": "...", "transcript_file": "..."}}}
-  This file survives restarts and prevents duplicate processing.
-
-Also catches "orphaned" bots: any bot in the Recall.ai API that finished
-but was never recorded in our local DB (e.g., bots scheduled via API console).
 """
 
 import asyncio
 import json
 import logging
+import sqlite3
+import time
 from datetime import datetime
 from pathlib import Path
 
@@ -48,9 +45,52 @@ TRACKER_FILE = Path(__file__).resolve().parent.parent.parent / "data" / "recall_
 # How often the poller checks (used by the scheduler, not internally)
 POLL_INTERVAL_SECONDS = 120  # 2 minutes
 
+# Path to the web-platform chat.db (shared with the Express backend)
+CHAT_DB_PATH = REPO_ROOT / "web-platform" / "backend" / "data" / "chat.db"
+
+# SQL to ensure call_review tables exist (mirrors the TypeScript schema)
+_CALL_REVIEW_SCHEMA = """
+CREATE TABLE IF NOT EXISTS call_reviews (
+    id TEXT PRIMARY KEY,
+    bot_id TEXT NOT NULL,
+    meeting_url TEXT,
+    meeting_title TEXT,
+    project_key TEXT,
+    participants TEXT,
+    duration_minutes INTEGER DEFAULT 0,
+    summary TEXT,
+    action_items TEXT,
+    decisions TEXT,
+    transcript_file TEXT,
+    status TEXT DEFAULT 'pending_review' CHECK(status IN ('pending_review', 'reviewed', 'dismissed')),
+    created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%S','now')),
+    reviewed_at TEXT
+);
+
+CREATE TABLE IF NOT EXISTS call_review_constraints (
+    id TEXT PRIMARY KEY,
+    review_id TEXT NOT NULL REFERENCES call_reviews(id) ON DELETE CASCADE,
+    description TEXT NOT NULL,
+    discipline TEXT DEFAULT 'Other',
+    priority TEXT DEFAULT 'medium' CHECK(priority IN ('low', 'medium', 'high')),
+    owner TEXT,
+    due_date TEXT,
+    category TEXT DEFAULT 'NEW' CHECK(category IN ('NEW', 'UPDATE', 'CLOSE', 'SKIP')),
+    current_status TEXT,
+    existing_constraint_id TEXT,
+    action_status TEXT DEFAULT 'pending' CHECK(action_status IN ('pending', 'approved', 'rejected', 'pushed')),
+    pushed_at TEXT,
+    push_result TEXT,
+    created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%S','now'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_crc_review ON call_review_constraints(review_id);
+CREATE INDEX IF NOT EXISTS idx_crc_status ON call_review_constraints(action_status);
+"""
+
 
 class RecallTranscriptPoller:
-    """Checks all known Recall.ai bots for transcript readiness with dedup.
+    """Polls Recall.ai API for completed bots and processes transcripts.
 
     The poller is designed to be called repeatedly by the scheduler's
     interval task system. Each invocation is stateless (reads the tracker
@@ -113,28 +153,100 @@ class RecallTranscriptPoller:
         return len(self._tracker["processed"])
 
     # ------------------------------------------------------------------
+    # API-based bot discovery
+    # ------------------------------------------------------------------
+
+    async def _discover_api_bots(self) -> int:
+        """Poll the Recall.ai API for recently completed bots and insert
+        any that are not already in our local recall_bots table.
+
+        This catches bots created via the Recall.ai dashboard, API console,
+        or any path that bypasses send_bot_to_meeting().
+
+        Returns the number of newly inserted bots.
+        """
+        try:
+            api_bots = await self._recall.list_api_bots(status="done", limit=25)
+        except Exception:
+            logger.debug("Recall poller: API discovery failed", exc_info=True)
+            return 0
+
+        if not api_bots:
+            return 0
+
+        inserted = 0
+        for bot in api_bots:
+            bot_id = bot.get("id", "")
+            if not bot_id:
+                continue
+
+            # Skip if already in dedup tracker
+            if self.is_processed(bot_id):
+                continue
+
+            # Skip if already in local DB
+            try:
+                cursor = await self._db.execute(
+                    "SELECT 1 FROM recall_bots WHERE bot_id = ? LIMIT 1",
+                    (bot_id,),
+                )
+                if await cursor.fetchone():
+                    continue
+            except Exception:
+                continue
+
+            # New bot not in our DB — insert it so _get_candidate_bots picks it up
+            meeting_url = bot.get("meeting_url", "")
+            bot_name = bot.get("bot_name", "")
+            try:
+                await self._db.execute(
+                    """INSERT OR IGNORE INTO recall_bots
+                       (bot_id, meeting_url, bot_name, status, chat_id)
+                       VALUES (?, ?, ?, 'done', ?)""",
+                    (bot_id, meeting_url, bot_name, self._get_default_chat_id()),
+                )
+                await self._db.commit()
+                inserted += 1
+                logger.info(
+                    f"Recall poller: discovered new bot {bot_id[:8]} from API "
+                    f"(meeting_url={meeting_url[:60]})"
+                )
+            except Exception:
+                logger.debug(f"Recall poller: failed to insert discovered bot {bot_id[:8]}", exc_info=True)
+
+        if inserted:
+            logger.info(f"Recall poller: discovered {inserted} new bot(s) from API")
+        return inserted
+
+    # ------------------------------------------------------------------
     # Core polling logic
     # ------------------------------------------------------------------
 
     async def poll_all_bots(self) -> dict:
         """Check all known Recall bots and process any completed transcripts.
 
-        Returns a summary dict: {"checked": N, "processed": N, "errors": N, "skipped": N}
+        Returns a summary dict: {"checked": N, "processed": N, "errors": N, "skipped": N, "discovered": N}
 
         This method is safe to call repeatedly — the dedup tracker ensures
         no bot is processed twice.
         """
         if self._poll_lock.locked():
             logger.debug("Recall poller: poll already in progress, skipping")
-            return {"checked": 0, "processed": 0, "errors": 0, "skipped": 0, "locked": True}
+            return {"checked": 0, "processed": 0, "errors": 0, "skipped": 0, "discovered": 0, "locked": True}
 
         async with self._poll_lock:
             # Reload tracker from disk in case another process updated it
             self._tracker = self._load_tracker()
 
-            summary = {"checked": 0, "processed": 0, "errors": 0, "skipped": 0}
+            summary = {"checked": 0, "processed": 0, "errors": 0, "skipped": 0, "discovered": 0}
 
-            # Get bots that might need processing from our local DB
+            # Step 1: Discover bots from Recall.ai API that aren't in local DB
+            try:
+                summary["discovered"] = await self._discover_api_bots()
+            except Exception:
+                logger.debug("Recall poller: API discovery phase failed", exc_info=True)
+
+            # Step 2: Get bots that might need processing from our local DB
             candidates = await self._get_candidate_bots()
 
             if not candidates:
@@ -170,11 +282,11 @@ class RecallTranscriptPoller:
                     logger.exception(f"Recall poller: error checking bot {bot_id[:8]}")
                     summary["errors"] += 1
 
-            if summary["processed"] > 0 or summary["errors"] > 0:
+            if summary["processed"] > 0 or summary["errors"] > 0 or summary["discovered"] > 0:
                 logger.info(
                     f"Recall poller: done — checked={summary['checked']}, "
                     f"processed={summary['processed']}, errors={summary['errors']}, "
-                    f"skipped={summary['skipped']}"
+                    f"skipped={summary['skipped']}, discovered={summary['discovered']}"
                 )
 
             return summary
@@ -339,6 +451,18 @@ class RecallTranscriptPoller:
         # queuing, it will see this bot is already handled and skip it.
         self.mark_processed(bot_id, transcript_file=str(transcript_file))
 
+        # Populate call_reviews in chat.db so the /calls GUI page
+        # shows this call immediately (without waiting for user to
+        # visit the detail page).
+        self._populate_call_review(
+            bot_id=bot_id,
+            meeting_url=metadata.get("meeting_url", ""),
+            participants=metadata.get("participants", []),
+            duration_minutes=metadata.get("duration_minutes", 0),
+            transcript_file=str(transcript_file),
+            transcript_text=transcript_text,
+        )
+
         # Queue transcript for processing via the message queue.
         # Meeting metadata (participants, duration, URL) is injected into
         # the queue body so the transcript_processor can produce a richer
@@ -362,6 +486,81 @@ class RecallTranscriptPoller:
         )
 
         return "processed"
+
+    # ------------------------------------------------------------------
+    # call_reviews population (writes to web-platform chat.db)
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _populate_call_review(
+        bot_id: str,
+        meeting_url: str,
+        participants: list[str],
+        duration_minutes: int,
+        transcript_file: str,
+        transcript_text: str,
+    ) -> None:
+        """Write a call_review row into the web-platform chat.db so the
+        call appears in the /calls GUI page immediately.
+
+        Uses synchronous sqlite3 (fast, single INSERT). The chat.db is
+        shared with the Express backend via WAL mode — both processes can
+        read/write safely.
+
+        If a review already exists for this bot_id, this is a no-op.
+        """
+        try:
+            # Ensure the directory exists
+            CHAT_DB_PATH.parent.mkdir(parents=True, exist_ok=True)
+
+            db = sqlite3.connect(str(CHAT_DB_PATH), timeout=5)
+            db.execute("PRAGMA journal_mode=WAL")
+            db.executescript(_CALL_REVIEW_SCHEMA)
+
+            # Check if review already exists
+            existing = db.execute(
+                "SELECT 1 FROM call_reviews WHERE bot_id = ? LIMIT 1",
+                (bot_id,),
+            ).fetchone()
+            if existing:
+                db.close()
+                return
+
+            # Generate a unique ID (matches the TypeScript pattern)
+            import random
+            ts_part = format(int(time.time() * 1000), "x")  # base36-ish hex timestamp
+            rand_part = format(random.randint(0, 2**24), "x")
+            review_id = f"cr_{ts_part}_{rand_part}"
+
+            # Extract participants from transcript if metadata didn't provide them
+            if not participants and transcript_text:
+                participants = _extract_speakers(transcript_text)
+
+            # Estimate duration from transcript timestamps if metadata didn't provide it
+            if not duration_minutes and transcript_text:
+                duration_minutes = _estimate_duration(transcript_text)
+
+            db.execute(
+                """INSERT INTO call_reviews
+                   (id, bot_id, meeting_url, participants, duration_minutes,
+                    transcript_file, status)
+                   VALUES (?, ?, ?, ?, ?, ?, 'pending_review')""",
+                (
+                    review_id,
+                    bot_id,
+                    meeting_url or "",
+                    json.dumps(participants),
+                    duration_minutes,
+                    transcript_file,
+                ),
+            )
+            db.commit()
+            db.close()
+            logger.info(
+                f"Recall poller: created call_review {review_id} for bot {bot_id[:8]} in chat.db"
+            )
+        except Exception:
+            logger.exception(f"Recall poller: failed to populate call_review for bot {bot_id[:8]}")
 
     @staticmethod
     def _get_default_chat_id() -> int:
@@ -401,14 +600,43 @@ class RecallTranscriptPoller:
 
 
 # ------------------------------------------------------------------
+# Helpers for transcript parsing (used by _populate_call_review)
+# ------------------------------------------------------------------
+
+def _extract_speakers(transcript_text: str) -> list[str]:
+    """Extract unique speaker names from transcript format '[HH:MM:SS] Name:'."""
+    import re
+    speakers = set()
+    for match in re.finditer(r'\[[\d:]+\]\s+(.+?):', transcript_text):
+        name = match.group(1).strip()
+        if name and 'note taker' not in name.lower():
+            speakers.add(name)
+    return sorted(speakers)
+
+
+def _estimate_duration(transcript_text: str) -> int:
+    """Estimate meeting duration in minutes from last transcript timestamp."""
+    import re
+    timestamps = re.findall(r'\[(\d{2}):(\d{2}):(\d{2})\]', transcript_text)
+    if not timestamps:
+        return 0
+    last = timestamps[-1]
+    return int(last[0]) * 60 + int(last[1])
+
+
+# ------------------------------------------------------------------
 # Scheduler task callback
 # ------------------------------------------------------------------
 
 async def task_recall_transcript_poll(scheduler) -> None:
-    """Scheduler callback: poll all Recall.ai bots for transcript readiness.
+    """Scheduler callback: poll Recall.ai API for completed bots and
+    process their transcripts.
 
     This is registered as an interval task (every 2 minutes) in the scheduler.
     It's lightweight — most cycles will find zero candidates and return fast.
+
+    Replaces the inbound webhook approach: we poll outbound instead of
+    waiting for Recall.ai to POST to our server.
     """
     bot = scheduler.bot
     if not bot or not hasattr(bot, "_bot_data_ref"):
@@ -430,6 +658,10 @@ async def task_recall_transcript_poll(scheduler) -> None:
         if summary.get("processed", 0) > 0:
             logger.info(
                 f"Recall transcript poller: processed {summary['processed']} transcript(s)"
+            )
+        if summary.get("discovered", 0) > 0:
+            logger.info(
+                f"Recall transcript poller: discovered {summary['discovered']} new bot(s) from API"
             )
     except asyncio.TimeoutError:
         logger.warning("Recall transcript poller: timed out after 90s")
