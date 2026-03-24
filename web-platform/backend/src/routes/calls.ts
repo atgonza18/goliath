@@ -256,6 +256,21 @@ function parseTranscriptMarkdown(content: string): {
 }
 
 // ---------------------------------------------------------------------------
+// Helpers — defensive table check
+// ---------------------------------------------------------------------------
+
+/**
+ * Check if a table exists in a database.
+ * Prevents crashes when recall_bots hasn't been created by the Python bot yet.
+ */
+function tableExists(db: ReturnType<typeof getMemoryDb>, tableName: string): boolean {
+  const row = db.prepare(
+    "SELECT name FROM sqlite_master WHERE type='table' AND name=?"
+  ).get(tableName) as { name: string } | undefined;
+  return !!row;
+}
+
+// ---------------------------------------------------------------------------
 // API Routes
 // ---------------------------------------------------------------------------
 
@@ -268,6 +283,13 @@ callsRouter.get('/calls', (req: Request, res: Response) => {
     initTables();
     const memDb = getMemoryDb();
     const chatDb = getChatDb();
+
+    // Defensive: recall_bots table is created by the Python Telegram bot.
+    // If the bot hasn't run yet or memory.db is a fresh fallback, return empty.
+    if (!tableExists(memDb, 'recall_bots')) {
+      res.json([]);
+      return;
+    }
 
     // Get all recall bots
     const bots = memDb.prepare(`
@@ -337,6 +359,12 @@ callsRouter.get('/calls/:botId', (req: Request, res: Response) => {
     const { botId } = req.params;
     const memDb = getMemoryDb();
     const chatDb = getChatDb();
+
+    // Defensive: recall_bots table may not exist yet
+    if (!tableExists(memDb, 'recall_bots')) {
+      res.status(404).json({ error: 'Call not found — recall_bots table does not exist yet' });
+      return;
+    }
 
     // Get bot info
     const bot = memDb.prepare(`
