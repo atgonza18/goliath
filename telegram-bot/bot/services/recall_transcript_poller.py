@@ -277,6 +277,11 @@ class RecallTranscriptPoller:
         except Exception:
             pass
 
+        # Fetch meeting metadata for debrief enrichment (participants,
+        # duration, URL).  This gives the transcript_processor context for
+        # "who was on, what project, how long" in the post-call debrief.
+        metadata = await self._recall.get_meeting_metadata(bot_id)
+
         # Fetch transcript
         transcript_text = await self._recall.get_transcript(bot_id)
         if not transcript_text:
@@ -334,17 +339,26 @@ class RecallTranscriptPoller:
         # queuing, it will see this bot is already handled and skip it.
         self.mark_processed(bot_id, transcript_file=str(transcript_file))
 
-        # Queue transcript for processing via the message queue
+        # Queue transcript for processing via the message queue.
+        # Meeting metadata (participants, duration, URL) is injected into
+        # the queue body so the transcript_processor can produce a richer
+        # debrief with "who was on, how long" context.
         await self._recall._queue_transcript_for_processing(
-            chat_id, transcript_file, transcript_text
+            chat_id, transcript_file, transcript_text,
+            metadata=metadata,
         )
 
         # Send notification
+        participant_count = len(metadata.get("participants", []))
+        duration_min = metadata.get("duration_minutes", 0)
+        duration_note = f", ~{duration_min}min" if duration_min else ""
+        participant_note = f", {participant_count} participants" if participant_count else ""
         await self._recall._queue_notification(
             chat_id,
-            f"Recall transcript poller: auto-processed transcript for bot {bot_id[:8]}.\n"
+            f"🎙️ Meeting ended — processing transcript for bot {bot_id[:8]}"
+            f"{participant_note}{duration_note}.\n"
             f"File: {transcript_file.name} ({len(transcript_text)} chars)\n"
-            f"Queued for full analysis (summary, action items, constraints).",
+            f"Full analysis incoming (summary, constraints, action items).",
         )
 
         return "processed"

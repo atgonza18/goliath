@@ -22,23 +22,46 @@ CT = ZoneInfo("America/Chicago")
 
 import aiohttp
 import aiosqlite
+from yarl import URL as _URL
 
 from bot.config import (
     RECALL_API_KEY,
     RECALL_API_BASE_URL,
     RECALL_BOT_NAME,
+    RECALL_WEBHOOK_URL,
     WEBHOOK_PORT,
     REPO_ROOT,
 )
 
 logger = logging.getLogger(__name__)
 
-# Regex to detect Teams meeting URLs in messages
-# Supports both classic /l/meetup-join/ URLs and newer /meet/ URLs
-TEAMS_URL_PATTERN = re.compile(
-    r'https?://(?:teams\.microsoft\.com/(?:l/meetup-join|meet)/|teams\.live\.com/meet/)[^\s<>"\']+',
+# Regex to detect meeting URLs in messages.
+# Supports Teams, Zoom, and Google Meet links.
+#
+# Teams variants:
+#   https://teams.microsoft.com/l/meetup-join/...  (classic invite link)
+#   https://teams.microsoft.com/meet/...            (new short link)
+#   https://teams.live.com/meet/...                 (personal Teams)
+#
+# Zoom variants:
+#   https://zoom.us/j/12345                         (standard meeting)
+#   https://us02web.zoom.us/j/12345                 (regional subdomain)
+#   https://company.zoom.us/j/12345                 (vanity subdomain)
+#
+# Google Meet:
+#   https://meet.google.com/abc-defg-hij
+MEETING_URL_PATTERN = re.compile(
+    r'https?://(?:'
+    r'teams\.microsoft\.com/(?:l/meetup-join|meet)/'
+    r'|teams\.live\.com/meet/'
+    r'|(?:[\w-]+\.)?zoom\.us/j/'
+    r'|meet\.google\.com/[a-z]{3}-[a-z]{4}-[a-z]{3}'
+    r')[^\s<>"\']*',
     re.IGNORECASE,
 )
+
+# Backward-compatible alias (used by email handler and handlers/meeting.py)
+TEAMS_URL_PATTERN = MEETING_URL_PATTERN
 
 # SQLite schema for tracking active/completed bots
 RECALL_BOT_SCHEMA = """
@@ -46,7 +69,7 @@ CREATE TABLE IF NOT EXISTS recall_bots (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     bot_id TEXT UNIQUE NOT NULL,
     meeting_url TEXT NOT NULL,
-    bot_name TEXT DEFAULT 'Aaron Gonzalez',
+    bot_name TEXT DEFAULT 'Aaron Gonzalez - note taker',
     status TEXT DEFAULT 'creating',
     recording_id TEXT,
     transcript_id TEXT,
@@ -69,7 +92,8 @@ class RecallService:
         self._api_key = RECALL_API_KEY
         self._base_url = RECALL_API_BASE_URL.rstrip("/")
         self._bot_name = RECALL_BOT_NAME
-        self._webhook_base_url: Optional[str] = None  # Set externally if available
+        # Webhook URL that Recall.ai POSTs events to when bot status changes
+        self._webhook_url: Optional[str] = RECALL_WEBHOOK_URL or None
 
     @property
     def is_configured(self) -> bool:
@@ -80,9 +104,14 @@ class RecallService:
         await self._db.commit()
         logger.info("Recall.ai bot tracking table initialized")
 
+    def set_webhook_url(self, url: str) -> None:
+        """Set the full webhook URL for Recall.ai callbacks (e.g., https://your-server.com/webhook/recall)."""
+        self._webhook_url = url.rstrip("/")
+
+    # Backward-compatible alias
     def set_webhook_base_url(self, url: str) -> None:
-        """Set the externally reachable base URL for webhooks (e.g., https://your-server.com)."""
-        self._webhook_base_url = url.rstrip("/")
+        """Deprecated — use set_webhook_url(). Sets base URL and appends /webhook/recall."""
+        self._webhook_url = url.rstrip("/") + "/webhook/recall"
 
     def _headers(self) -> dict:
         return {
@@ -91,10 +120,18 @@ class RecallService:
         }
 
     @staticmethod
-    def extract_teams_url(text: str) -> Optional[str]:
-        """Extract a Teams meeting URL from a text message. Returns None if not found."""
-        match = TEAMS_URL_PATTERN.search(text)
+    def extract_meeting_url(text: str) -> Optional[str]:
+        """Extract a meeting URL (Teams, Zoom, Google Meet) from text. Returns None if not found."""
+        match = MEETING_URL_PATTERN.search(text)
         return match.group(0) if match else None
+
+    @staticmethod
+    def extract_teams_url(text: str) -> Optional[str]:
+        """Backward-compatible alias for extract_meeting_url().
+
+        Now detects Teams, Zoom, AND Google Meet URLs.
+        """
+        return RecallService.extract_meeting_url(text)
 
     async def send_bot_to_meeting(
         self,
@@ -129,6 +166,13 @@ class RecallService:
                 }
             },
         }
+
+        # Attach webhook URL so Recall.ai POSTs status events (bot.done, etc.)
+        # directly to our server.  Without this, webhooks only arrive if the
+        # URL is configured globally in the Recall.ai dashboard — per-bot
+        # configuration is more reliable and explicit.
+        if self._webhook_url:
+            payload["webhook_url"] = self._webhook_url
 
         if join_at:
             payload["join_at"] = join_at
@@ -196,60 +240,108 @@ class RecallService:
             logger.exception(f"Failed to get bot status for {bot_id}")
             return {"error": str(e)}
 
-    async def get_transcript(self, bot_id: str) -> Optional[str]:
+    async def get_transcript(
+        self, bot_id: str, *, _retries: int = 4, _base_delay: float = 15.0
+    ) -> Optional[str]:
         """Fetch the full transcript for a completed bot session.
 
         Returns the transcript as formatted text, or None if not available.
+
+        Recall.ai sometimes marks the bot "done" before the transcript S3
+        object is fully available.  The pre-signed download URL may return
+        403 (AccessDenied) for a short window.  We retry with exponential
+        back-off to ride through this delay.
         """
-        try:
-            async with aiohttp.ClientSession() as session:
-                # First get bot details to find recording ID
-                async with session.get(
-                    f"{self._base_url}/api/v1/bot/{bot_id}/",
-                    headers=self._headers(),
-                    timeout=aiohttp.ClientTimeout(total=15),
-                ) as resp:
-                    bot_data = await resp.json()
+        for attempt in range(1, _retries + 1):
+            try:
+                async with aiohttp.ClientSession() as session:
+                    # First get bot details to find recording ID
+                    async with session.get(
+                        f"{self._base_url}/api/v1/bot/{bot_id}/",
+                        headers=self._headers(),
+                        timeout=aiohttp.ClientTimeout(total=15),
+                    ) as resp:
+                        bot_data = await resp.json()
 
-                # Get recordings from the bot
-                recordings = bot_data.get("recordings", [])
-                if not recordings:
-                    logger.warning(f"No recordings found for bot {bot_id}")
+                    # Get recordings from the bot
+                    recordings = bot_data.get("recordings", [])
+                    if not recordings:
+                        logger.warning(f"No recordings found for bot {bot_id}")
+                        return None
+
+                    recording_id = recordings[0] if isinstance(recordings[0], str) else recordings[0].get("id")
+
+                    # Get recording details with media shortcuts — re-fetch
+                    # each attempt so we get a fresh pre-signed URL.
+                    async with session.get(
+                        f"{self._base_url}/api/v1/recording/{recording_id}/",
+                        headers=self._headers(),
+                        timeout=aiohttp.ClientTimeout(total=15),
+                    ) as resp:
+                        recording_data = await resp.json()
+
+                    # Get the transcript download URL
+                    media_shortcuts = recording_data.get("media_shortcuts", {})
+                    transcript_info = media_shortcuts.get("transcript", {})
+                    transcript_data = transcript_info.get("data", {})
+                    download_url = transcript_data.get("download_url")
+
+                    if not download_url:
+                        logger.warning(f"No transcript download URL for bot {bot_id}")
+                        return None
+
+                    # Download the actual transcript.
+                    # CRITICAL: Use yarl URL(encoded=True) to prevent aiohttp
+                    # from double-encoding the pre-signed S3 query parameters.
+                    # Without this, the AWS signature check fails (403).
+                    async with session.get(
+                        _URL(download_url, encoded=True),
+                        timeout=aiohttp.ClientTimeout(total=60),
+                    ) as resp:
+                        if resp.status == 403 or resp.status == 404:
+                            # S3 object not ready yet — retry after delay
+                            if attempt < _retries:
+                                delay = _base_delay * (2 ** (attempt - 1))
+                                logger.warning(
+                                    f"Transcript download for bot {bot_id[:8]} returned "
+                                    f"HTTP {resp.status} (attempt {attempt}/{_retries}). "
+                                    f"Transcript may not be ready yet — retrying in {delay:.0f}s..."
+                                )
+                                await asyncio.sleep(delay)
+                                continue
+                            else:
+                                logger.error(
+                                    f"Transcript download for bot {bot_id[:8]} still "
+                                    f"returning HTTP {resp.status} after {_retries} attempts"
+                                )
+                                return None
+
+                        if resp.status != 200:
+                            logger.error(
+                                f"Transcript download for bot {bot_id[:8]} "
+                                f"returned unexpected HTTP {resp.status}"
+                            )
+                            return None
+
+                        # Parse JSON — use content_type=None to tolerate
+                        # non-standard Content-Type headers from S3.
+                        transcript_json = await resp.json(content_type=None)
+
+                    # Convert Recall.ai transcript JSON to readable text
+                    return self._format_transcript(transcript_json)
+
+            except Exception as e:
+                if attempt < _retries:
+                    delay = _base_delay * (2 ** (attempt - 1))
+                    logger.warning(
+                        f"Transcript fetch for bot {bot_id[:8]} failed "
+                        f"(attempt {attempt}/{_retries}): {e}. Retrying in {delay:.0f}s..."
+                    )
+                    await asyncio.sleep(delay)
+                else:
+                    logger.exception(f"Failed to get transcript for bot {bot_id}")
                     return None
-
-                recording_id = recordings[0] if isinstance(recordings[0], str) else recordings[0].get("id")
-
-                # Get recording details with media shortcuts
-                async with session.get(
-                    f"{self._base_url}/api/v1/recording/{recording_id}/",
-                    headers=self._headers(),
-                    timeout=aiohttp.ClientTimeout(total=15),
-                ) as resp:
-                    recording_data = await resp.json()
-
-                # Get the transcript download URL
-                media_shortcuts = recording_data.get("media_shortcuts", {})
-                transcript_info = media_shortcuts.get("transcript", {})
-                transcript_data = transcript_info.get("data", {})
-                download_url = transcript_data.get("download_url")
-
-                if not download_url:
-                    logger.warning(f"No transcript download URL for bot {bot_id}")
-                    return None
-
-                # Download the actual transcript
-                async with session.get(
-                    download_url,
-                    timeout=aiohttp.ClientTimeout(total=60),
-                ) as resp:
-                    transcript_json = await resp.json()
-
-                # Convert Recall.ai transcript JSON to readable text
-                return self._format_transcript(transcript_json)
-
-        except Exception as e:
-            logger.exception(f"Failed to get transcript for bot {bot_id}")
-            return None
+        return None
 
     def _format_transcript(self, transcript_json: list) -> str:
         """Convert Recall.ai transcript JSON to human-readable text format.
@@ -383,6 +475,11 @@ class RecallService:
                     )
                     await self._db.commit()
 
+                    # Fetch meeting metadata for debrief enrichment
+                    # (participants, duration, URL — gives transcript_processor
+                    # context for "who was on, how long")
+                    metadata = await self.get_meeting_metadata(bot_id)
+
                     # Fetch and save transcript
                     transcript_text = await self.get_transcript(bot_id)
                     if transcript_text:
@@ -428,7 +525,8 @@ class RecallService:
                         # Queue for transcript processing (after tracker
                         # is marked, so the persistent poller will skip it)
                         await self._queue_transcript_for_processing(
-                            chat_id, transcript_file, transcript_text
+                            chat_id, transcript_file, transcript_text,
+                            metadata=metadata,
                         )
                     else:
                         await self._queue_notification(
@@ -451,6 +549,56 @@ class RecallService:
             "It may still be running — check with /recall_status.",
         )
 
+    async def get_meeting_metadata(self, bot_id: str) -> dict:
+        """Fetch meeting metadata from Recall.ai API for debrief enrichment.
+
+        Extracts participants, duration, and meeting URL from the bot status
+        response. This data is injected into the transcript processing queue
+        so the transcript_processor can produce a richer debrief (who was on,
+        how long the meeting lasted, which project the meeting URL maps to).
+
+        Returns dict with keys: participants, duration_minutes, meeting_url,
+        bot_id. Returns empty dict on error (non-critical — debrief still
+        works without metadata, it just won't have call-level context).
+        """
+        try:
+            status_data = await self.get_bot_status(bot_id)
+            if "error" in status_data:
+                return {}
+
+            # Extract participant names from meeting_participants array
+            participants = []
+            for p in status_data.get("meeting_participants", []):
+                name = p.get("name", "")
+                if name:
+                    participants.append(name)
+
+            # Compute duration from status_changes timestamps
+            duration_minutes = 0
+            status_changes = status_data.get("status_changes", [])
+            if len(status_changes) >= 2:
+                try:
+                    first_ts = status_changes[0].get("created_at", "")
+                    last_ts = status_changes[-1].get("created_at", "")
+                    if first_ts and last_ts:
+                        t1 = datetime.fromisoformat(first_ts.replace("Z", "+00:00"))
+                        t2 = datetime.fromisoformat(last_ts.replace("Z", "+00:00"))
+                        duration_minutes = max(0, int((t2 - t1).total_seconds() / 60))
+                except Exception:
+                    pass
+
+            meeting_url = status_data.get("meeting_url", "")
+
+            return {
+                "participants": participants,
+                "duration_minutes": duration_minutes,
+                "meeting_url": meeting_url,
+                "bot_id": bot_id,
+            }
+        except Exception:
+            logger.debug(f"Failed to get meeting metadata for {bot_id[:8]}", exc_info=True)
+            return {}
+
     async def _queue_notification(self, chat_id: int, text: str) -> None:
         """Queue a notification message to send to the user via Telegram.
 
@@ -468,31 +616,75 @@ class RecallService:
             logger.exception("Failed to queue Recall notification")
 
     async def _queue_transcript_for_processing(
-        self, chat_id: int, transcript_file: Path, transcript_text: str
+        self, chat_id: int, transcript_file: Path, transcript_text: str,
+        metadata: dict = None,
     ) -> None:
         """Queue the transcript for processing by the orchestrator.
 
         Creates a message_queue entry that the queue processor will pick up
         and route through the transcript_processor subagent.
+
+        Args:
+            chat_id: Telegram chat ID for result delivery
+            transcript_file: Path to saved transcript file
+            transcript_text: Raw transcript content
+            metadata: Optional meeting metadata from get_meeting_metadata()
+                      (participants, duration_minutes, meeting_url, bot_id)
         """
         try:
+            # Build enriched context from meeting metadata (if available).
+            # This gives transcript_processor richer context for the debrief:
+            # "who was on, what project, how long".
+            meta_lines = []
+            if metadata:
+                bot_id = metadata.get("bot_id", "")
+                if bot_id:
+                    meta_lines.append(f"Recall Bot ID: {bot_id[:8]}")
+                participants = metadata.get("participants", [])
+                if participants:
+                    meta_lines.append(
+                        f"Meeting participants ({len(participants)}): "
+                        f"{', '.join(participants)}"
+                    )
+                duration = metadata.get("duration_minutes", 0)
+                if duration:
+                    meta_lines.append(f"Meeting duration: ~{duration} minutes")
+                meeting_url = metadata.get("meeting_url", "")
+                if meeting_url:
+                    meta_lines.append(f"Meeting URL: {meeting_url[:120]}")
+
+            metadata_section = ""
+            if meta_lines:
+                metadata_section = "\n".join(meta_lines) + "\n\n"
+
             body = (
                 f"[RECALL.AI TRANSCRIPT READY — auto-processing]\n\n"
                 f"Transcript file: {transcript_file}\n"
-                f"Length: {len(transcript_text)} characters\n\n"
-                f"Process this meeting transcript. Route to transcript_processor subagent.\n"
+                f"Length: {len(transcript_text)} characters\n"
+                f"{metadata_section}"
+                f"\nProcess this meeting transcript. Route to transcript_processor subagent.\n"
                 f"Extract: meeting summary, speakers, project identification, constraints, "
                 f"action items (WHO/WHAT/WHEN), key decisions, and follow-ups.\n"
                 f"Save action items and decisions to memory."
             )
+
+            # Store bot_id as external_message_id so error handlers can
+            # reference which bot's transcript failed (e.g., "Post-call
+            # processing failed for bot abc12345").
+            ext_id = (metadata or {}).get("bot_id", "")
+
             await self._db.execute(
                 """INSERT INTO message_queue
-                   (source, direction, status, body, telegram_chat_id)
-                   VALUES ('recall_transcript', 'inbound', 'new', ?, ?)""",
-                (body, chat_id),
+                   (source, direction, status, body, telegram_chat_id,
+                    external_message_id)
+                   VALUES ('recall_transcript', 'inbound', 'new', ?, ?, ?)""",
+                (body, chat_id, ext_id),
             )
             await self._db.commit()
-            logger.info(f"Transcript queued for processing (chat_id={chat_id})")
+            logger.info(
+                f"Transcript queued for processing (chat_id={chat_id}, "
+                f"bot_id={ext_id[:8] if ext_id else 'N/A'})"
+            )
         except Exception:
             logger.exception("Failed to queue transcript for processing")
 
