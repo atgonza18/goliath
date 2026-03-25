@@ -202,3 +202,56 @@ async def push_pending_constraint_syncs(
             f"Failed to push pending constraint syncs to Convex for call {call_id[:8]}"
         )
         return None
+
+
+async def save_call_transcript(
+    call_id: str,
+    call_title: str,
+    project_name: str,
+    call_date: int,
+    raw_transcript: str,
+    project_id: Optional[str] = None,
+) -> Optional[str]:
+    """Save a raw meeting transcript to Convex for the Transcripts tab.
+
+    Args:
+        call_id: Recall.ai bot ID or unique call identifier
+        call_title: Meeting title/description
+        project_name: Project name for display
+        call_date: Call timestamp in Unix milliseconds
+        raw_transcript: Full raw transcript text
+        project_id: Optional Convex project ID (if matched)
+
+    Returns:
+        Transcript document ID or None on failure
+    """
+    if not raw_transcript:
+        logger.debug("save_call_transcript: empty transcript, skipping")
+        return None
+
+    client = get_convex_client()
+
+    args: dict[str, Any] = {
+        "callId": call_id,
+        "callTitle": call_title,
+        "projectName": project_name,
+        "callDate": call_date,
+        "rawTranscript": raw_transcript,
+    }
+
+    if project_id:
+        args["projectId"] = project_id
+
+    try:
+        result = await client.mutation("calls:saveCallTranscript", args)
+        if result:
+            logger.info(
+                f"Saved transcript to Convex for call {call_id[:8]} "
+                f"({project_name}, {len(raw_transcript)} chars)"
+            )
+        return result
+    except Exception:
+        logger.exception(
+            f"Failed to save transcript to Convex for call {call_id[:8]}"
+        )
+        return None

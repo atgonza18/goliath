@@ -41,6 +41,35 @@ def _pending_sync_path(chat_id) -> Path:
 
 logger = logging.getLogger(__name__)
 
+
+async def _send_calls_page_notification(
+    chat_id, count: int, call_title: str, project_name: str
+) -> None:
+    """Fire a Telegram notification when constraints are pushed to the Calls page.
+
+    Uses the Telegram Bot API directly via aiohttp to avoid threading the bot
+    instance through the orchestrator.  Non-fatal — callers should catch exceptions.
+    """
+    from bot.config import TELEGRAM_BOT_TOKEN
+
+    if not chat_id or not TELEGRAM_BOT_TOKEN:
+        return
+
+    s = "s" if count != 1 else ""
+    text = (
+        f"\U0001f4cb <b>{count}</b> constraint{s} from <b>{call_title}</b> "
+        f"just hit the Calls page — {project_name}. "
+        f"Review \u2192 push/deny when ready."
+    )
+    url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
+    async with aiohttp.ClientSession() as session:
+        await session.post(
+            url,
+            json={"chat_id": int(chat_id), "text": text, "parse_mode": "HTML"},
+            timeout=aiohttp.ClientTimeout(total=10),
+        )
+
+
 # Limit concurrent Claude subprocesses — bumped to 8 for parallel request handling.
 # Multiple user messages can now run concurrently, each spawning subagents.
 _semaphore = asyncio.Semaphore(8)
@@ -416,17 +445,46 @@ class NimrodOrchestrator:
                     call_id = getattr(self, '_current_call_id', None) or f"call-{int(_time.time())}"
                     call_title = getattr(self, '_current_call_title', None) or f"Meeting — {project_name}"
 
+                    call_date_ms = int(_time.time() * 1000)
                     await push_pending_constraint_syncs(
                         call_id=call_id,
                         call_title=call_title,
                         project_name=project_name,
-                        call_date=int(_time.time() * 1000),
+                        call_date=call_date_ms,
                         constraints=convex_constraints,
                     )
+                    n_constraints = len(convex_constraints)
                     logger.info(
-                        f"Pushed {len(convex_constraints)} constraint(s) to Convex Calls page "
+                        f"Pushed {n_constraints} constraint(s) to Convex Calls page "
                         f"for review (project={project_name})"
                     )
+
+                    # --- Feature: Telegram notification on Calls push ---
+                    # Fire a notification so the user knows constraints
+                    # are ready for review on the Calls page.
+                    try:
+                        await _send_calls_page_notification(
+                            chat_id=self._chat_id,
+                            count=n_constraints,
+                            call_title=call_title,
+                            project_name=project_name,
+                        )
+                    except Exception:
+                        logger.debug("Calls page notification failed (non-fatal)", exc_info=True)
+
+                    # --- Feature: Save raw transcript to Convex ---
+                    try:
+                        from bot.services.convex_client import save_call_transcript
+                        await save_call_transcript(
+                            call_id=call_id,
+                            call_title=call_title,
+                            project_name=project_name,
+                            call_date=call_date_ms,
+                            raw_transcript=user_message,
+                        )
+                    except Exception:
+                        logger.debug("Transcript save to Convex failed (non-fatal)", exc_info=True)
+
             except Exception:
                 logger.exception("Failed to push constraints to Convex Calls page (non-fatal)")
             if on_agent_event:
