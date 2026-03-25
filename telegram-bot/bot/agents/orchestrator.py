@@ -375,17 +375,17 @@ class NimrodOrchestrator:
                     is_resolved = c.get("resolved", False)
                     proposed_action = "CLOSE" if is_resolved else "NEW"
 
-                    # Map category → discipline
-                    category = c.get("category", "Other")
-                    discipline_map = {
-                        "CONSTRUCTION": "Civil",
-                        "PROCUREMENT": "Procurement",
-                        "ENGINEERING": "AG Electrical",
-                        "PERMITTING": "Environmental",
-                        "SAFETY": "Safety",
-                        "QUALITY": "Quality",
+                    # Use discipline directly from transcript extraction
+                    # (the prompt now asks for specific ConstraintsPro disciplines)
+                    VALID_DISCIPLINES = {
+                        "Safety", "Quality", "Civil", "Modules",
+                        "AG Electrical", "UG Electrical", "Piles",
+                        "Environmental", "Engineering", "Commissioning",
+                        "Racking", "Logistics", "BESS", "Substation",
+                        "Procurement", "Other",
                     }
-                    discipline = discipline_map.get(category.upper(), "Other")
+                    raw_discipline = c.get("discipline") or c.get("category") or "Other"
+                    discipline = raw_discipline if raw_discipline in VALID_DISCIPLINES else "Other"
 
                     # Map priority
                     priority_raw = c.get("priority", "MEDIUM").upper()

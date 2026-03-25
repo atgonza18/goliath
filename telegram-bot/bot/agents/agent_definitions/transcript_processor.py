@@ -155,14 +155,14 @@ For EACH constraint discussed in the meeting, include:
 - priority: HIGH / MEDIUM / LOW (assess based on schedule impact and urgency discussed)
 - owner: Person responsible for resolving it (from the discussion)
 - need_by_date: YYYY-MM-DD if mentioned, otherwise null
-- category: CONSTRUCTION / PROCUREMENT / ENGINEERING / PERMITTING / OTHER
+- discipline: one of [Safety, Quality, Civil, Modules, AG Electrical, UG Electrical, Piles, Environmental, Engineering, Commissioning, Racking, Logistics, BESS, Substation, Procurement, Other] — choose the most specific discipline. Examples: pile installation issues → Piles, cable/wiring above ground → AG Electrical, underground cable → UG Electrical, battery storage → BESS, structural/foundation → Civil, solar panel installation → Modules, tracker/racking → Racking, permits/environmental approvals → Environmental, engineering design/RFI → Engineering, contractor equipment/materials delivery → Procurement, safety incidents → Safety, quality defects/rework → Quality, logistics/shipping/transport → Logistics, substation work → Substation, commissioning/energization → Commissioning, anything else → Other
 - status_discussed: What was said about this constraint in the meeting
 - resolved: true if the meeting confirmed this constraint is resolved/closed, false otherwise
 - commitments: Any new commitments made (who promised what by when)
 
 ```CONSTRAINTS_SYNC
 project: <primary-project-key>
-constraints: [{"description": "...", "project_key": "...", "project_name": "...", "priority": "HIGH", "owner": "...", "need_by_date": "2026-03-15", "category": "PROCUREMENT", "status_discussed": "Vendor confirmed delivery by March 15", "resolved": false, "commitments": "Vendor to send tracking info by Friday"}]
+constraints: [{"description": "...", "project_key": "...", "project_name": "...", "priority": "HIGH", "owner": "...", "need_by_date": "2026-03-15", "discipline": "Procurement", "status_discussed": "Vendor confirmed delivery by March 15", "resolved": false, "commitments": "Vendor to send tracking info by Friday"}]
 ```
 
 IMPORTANT: Include ALL constraints mentioned — even ones confirmed as resolved (mark resolved: true). \
