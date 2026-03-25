@@ -359,6 +359,76 @@ class NimrodOrchestrator:
                 f"Transcript contained {len(constraints_sync_data['constraints'])} "
                 f"constraint(s) — running automatic ConstraintsPro cross-reference"
             )
+
+            # Push extracted constraints to Convex pendingConstraintSyncs table
+            # so they appear in the ConstraintsPro Calls review page.
+            try:
+                from bot.services.convex_client import push_pending_constraint_syncs
+                import time as _time
+
+                raw_constraints = constraints_sync_data["constraints"]
+                project_name = constraints_sync_data.get("project", "Unknown")
+
+                # Map transcript_processor's constraint format to Convex format
+                convex_constraints = []
+                for c in raw_constraints:
+                    is_resolved = c.get("resolved", False)
+                    proposed_action = "CLOSE" if is_resolved else "NEW"
+
+                    # Map category → discipline
+                    category = c.get("category", "Other")
+                    discipline_map = {
+                        "CONSTRUCTION": "Civil",
+                        "PROCUREMENT": "Procurement",
+                        "ENGINEERING": "AG Electrical",
+                        "PERMITTING": "Environmental",
+                        "SAFETY": "Safety",
+                        "QUALITY": "Quality",
+                    }
+                    discipline = discipline_map.get(category.upper(), "Other")
+
+                    # Map priority
+                    priority_raw = c.get("priority", "MEDIUM").upper()
+                    priority = {"HIGH": "high", "MEDIUM": "medium", "LOW": "low"}.get(priority_raw, "medium")
+
+                    # Build notes from status_discussed + commitments
+                    notes_parts = []
+                    if c.get("status_discussed"):
+                        notes_parts.append(c["status_discussed"])
+                    if c.get("commitments"):
+                        notes_parts.append(f"Commitments: {c['commitments']}")
+                    notes = " | ".join(notes_parts) if notes_parts else None
+
+                    convex_constraints.append({
+                        "proposedAction": proposed_action,
+                        "constraintData": {
+                            "description": c.get("description", ""),
+                            "discipline": discipline,
+                            "priority": priority,
+                            "owner": c.get("owner"),
+                            "notes": notes,
+                        },
+                    })
+
+                if convex_constraints:
+                    # Use the bot_id from the original transcript queue if available,
+                    # otherwise generate a call ID from timestamp
+                    call_id = getattr(self, '_current_call_id', None) or f"call-{int(_time.time())}"
+                    call_title = getattr(self, '_current_call_title', None) or f"Meeting — {project_name}"
+
+                    await push_pending_constraint_syncs(
+                        call_id=call_id,
+                        call_title=call_title,
+                        project_name=project_name,
+                        call_date=int(_time.time() * 1000),
+                        constraints=convex_constraints,
+                    )
+                    logger.info(
+                        f"Pushed {len(convex_constraints)} constraint(s) to Convex Calls page "
+                        f"for review (project={project_name})"
+                    )
+            except Exception:
+                logger.exception("Failed to push constraints to Convex Calls page (non-fatal)")
             if on_agent_event:
                 await on_agent_event({"type": "agent_start", "agent": "constraints_manager (auto cross-ref)", "task": "Cross-referencing extracted constraints against ConstraintsPro"})
 

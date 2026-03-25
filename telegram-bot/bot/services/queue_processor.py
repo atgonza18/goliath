@@ -460,9 +460,16 @@ async def _process_transcript_item(
     # The orchestrator will:
     #   1. Route to transcript_processor subagent (based on the body content)
     #   2. Extract constraints via CONSTRAINTS_SYNC block
-    #   3. Generate a sync proposal (human-in-the-loop for ConstraintsPro pushes)
-    #   4. Return the full analysis + sync proposal text
+    #   3. Push constraints to Convex Calls page for review
+    #   4. Generate a sync proposal (human-in-the-loop for ConstraintsPro pushes)
+    #   5. Return the full analysis + sync proposal text
     orchestrator = NimrodOrchestrator(memory=memory, chat_id=target_chat_id)
+
+    # Pass call metadata so the orchestrator can tag Convex pending syncs
+    # with the correct call_id (Recall.ai bot ID) and title.
+    bot_id_for_call = item.get("external_message_id") or ""
+    orchestrator._current_call_id = bot_id_for_call
+    orchestrator._current_call_title = item.get("subject") or f"Meeting transcript ({bot_id_for_call[:8]})"
 
     try:
         result = await asyncio.wait_for(
